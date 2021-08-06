@@ -45,8 +45,8 @@ enum LangC_TokenKind
 	LangC_TokenKind_LIntLiteral,
 	LangC_TokenKind_LLIntLiteral,
 	LangC_TokenKind_UintLiteral,
-	LangC_TokenKind_ULintLiteral,
-	LangC_TokenKind_ULLintLiteral,
+	LangC_TokenKind_LUintLiteral,
+	LangC_TokenKind_LLUintLiteral,
 	LangC_TokenKind_StringLiteral,
 	LangC_TokenKind_FloatLiteral,
 	LangC_TokenKind_DoubleLiteral,
@@ -60,6 +60,7 @@ enum LangC_TokenKind
 	LangC_TokenKind_LeftCurl, // {
 	LangC_TokenKind_RightCurl, // }
 	LangC_TokenKind_Dot, // .
+	LangC_TokenKind_VarArgs, // ...
 	LangC_TokenKind_Arrow, // ->
 	LangC_TokenKind_Comma, // ,
 	LangC_TokenKind_Colon, // :
@@ -144,8 +145,8 @@ internal const char* LangC_token_str_table[] = {
 	[LangC_TokenKind_LIntLiteral] = "(long literal)",
 	[LangC_TokenKind_LLIntLiteral] = "(long long literal)",
 	[LangC_TokenKind_UintLiteral] = "(unsigned literal)",
-	[LangC_TokenKind_ULintLiteral] = "(unsigned long literal)",
-	[LangC_TokenKind_ULLintLiteral] = "(unsigned long long literal)",
+	[LangC_TokenKind_LUintLiteral] = "(unsigned long literal)",
+	[LangC_TokenKind_LLUintLiteral] = "(unsigned long long literal)",
 	[LangC_TokenKind_StringLiteral] = "(const char[] literal)",
 	[LangC_TokenKind_FloatLiteral] = "(float literal)",
 	[LangC_TokenKind_DoubleLiteral] = "(double literal)",
@@ -159,6 +160,7 @@ internal const char* LangC_token_str_table[] = {
 	[LangC_TokenKind_LeftCurl] = "{",
 	[LangC_TokenKind_RightCurl] = "}",
 	[LangC_TokenKind_Dot] = ".",
+	[LangC_TokenKind_VarArgs] = "...",
 	[LangC_TokenKind_Arrow] = "->",
 	[LangC_TokenKind_Comma] = ",",
 	[LangC_TokenKind_Colon] = ":",
@@ -986,8 +988,17 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 		{
 			if (!LangC_IsNumeric((*phead)[1]))
 			{
-				ctx->token.kind = LangC_TokenKind_Dot;
-				++(*phead);
+				if ((*phead)[1] == '.' && (*phead)[2] == '.')
+				{
+					ctx->token.kind = LangC_TokenKind_VarArgs;
+					*phead += 3;
+				}
+				else
+				{
+					ctx->token.kind = LangC_TokenKind_Dot;
+					++(*phead);
+				}
+				
 				break;
 			}
 		} /* fallthrough */
