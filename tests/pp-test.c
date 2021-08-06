@@ -15,7 +15,7 @@ const CString name = "pepe";
 #define STR(x) #x
 #define STR2(x) STR(x)
 
-const char a_string = "pepe, " STR(MY_MACRO) " is " STR2(MY_MACRO);
+const char* a_string = "pepe, " STR(MY_MACRO) " is " STR2(MY_MACRO);
 
 int main(int argc, char* argv[])
 {

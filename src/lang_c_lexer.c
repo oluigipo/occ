@@ -349,6 +349,17 @@ LangC_LexerWarning(LangC_Lexer* ctx, const char* fmt, ...)
 	Print("\n");
 }
 
+internal const char*
+LangC_CurrentWorkingPath(LangC_Lexer* ctx)
+{
+	LangC_LexerFile* lexfile = &ctx->file;
+	
+	while (lexfile->next_included && lexfile->next_included->active)
+		lexfile = lexfile->next_included;
+	
+	return lexfile->path;
+}
+
 internal void
 LangC_IgnoreWhitespaces(const char** phead, bool32 newline)
 {
@@ -605,7 +616,7 @@ LangC_PopMacroContext(LangC_Lexer* ctx)
 
 // NOTE(ljre): 'phead' may be NULL if 'macro->is_func' is false.
 internal void
-LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro)
+LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro, bool32 expand_args)
 {
 	if (!ctx->macroctx_first)
 		ctx->macroctx_first = PushMemory(sizeof *ctx->macroctx_first);
@@ -625,8 +636,7 @@ LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro)
 	const char* head = macro->def;
 	
 	// ignore macro name
-	while (LangC_IsIdentChar(*head))
-		++head;
+	LangC_TokenizeIdent(&head);
 	
 	if (macro->is_func)
 	{
@@ -646,8 +656,32 @@ LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro)
 				
 				if (*head == '.')
 				{
-					assert(false);
-					// TODO: __VA_ARGS__
+					if (head[1] != '.' || head[2] != '.')
+					{
+						LangC_LexerError(ctx, "expected '...' for VA_ARGS.\n");
+						continue;
+					}
+					
+					head += 3;
+					const char name[] = "__VA_ARGS__";
+					
+					const char* begin = *phead;
+					LangC_IgnoreUntilPairOfNestedOr(phead, '(', ')', 0);
+					
+					const char* end = *phead;
+					uintsize size = (uintsize)(end - begin);
+					
+					uintsize def_len = sizeof(name) + 1 + size + 1;
+					char* def_str = PushMemory(def_len);
+					snprintf(def_str, def_len, "%s %.*s", name, (int32)size, begin);
+					
+					String def = {
+						.size = def_len,
+						.data = def_str,
+					};
+					
+					LangC_DefineMacro(ctx, def);
+					break;
 				}
 				else
 				{
@@ -667,7 +701,7 @@ LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro)
 					
 					uintsize def_len = ident.size + 1 + size + 1;
 					char* def_str = PushMemory(def_len);
-					snprintf(def_str, def_len, "%.*s %.*s", StrFmt(ident), size, begin);
+					snprintf(def_str, def_len, "%.*s %.*s", StrFmt(ident), (int32)size, begin);
 					
 					String def = {
 						.size = def_len,
@@ -686,6 +720,11 @@ LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro)
 			{
 				LangC_LexerError(ctx, "expected more arguments in function-like macro.\n");
 			}
+		}
+		
+		if (*head != ')')
+		{
+			LangC_LexerError(ctx, "expected ')' at the end of function-like macro arguments.\n");
 		}
 		
 		if (*head == ')' && **phead != ')')
@@ -716,7 +755,7 @@ LangC_ExpandMacro(LangC_Lexer* ctx, LangC_Macro* macro)
 	LangC_LexerMacroContext* end_context = ctx->macroctx_last;
 	
 	assert(!macro->is_func);
-	LangC_PushMacroContext(ctx, NULL, macro);
+	LangC_PushMacroContext(ctx, NULL, macro, false);
 	while (LangC_ConsumeEofState(ctx), ctx->macroctx_last != end_context)
 	{
 		// TODO(ljre): this isn't right - expanded macro should be raw text instead of tokens
@@ -782,11 +821,8 @@ LangC_IncludeFile(LangC_Lexer* ctx, String file, bool32 relative)
 	while (lexfile->next_included && lexfile->next_included->active)
 		lexfile = lexfile->next_included;
 	
-	if (!lexfile->next_included)
-	{
-		lexfile->next_included = PushMemory(sizeof *lexfile->next_included);
-		lexfile->next_included->previous_included = lexfile;
-	}
+	lexfile->next_included = PushMemory(sizeof *lexfile->next_included);
+	lexfile->next_included->previous_included = lexfile;
 	
 	if (relative)
 	{
@@ -1365,12 +1401,7 @@ LangC_NextToken(LangC_Lexer* ctx)
 				
 				if (macro)
 				{
-					if (macro->is_func)
-					{
-						// TODO(ljre): expand self parameters
-					}
-					
-					LangC_PushMacroContext(ctx, &macroctx->head, macro);
+					LangC_PushMacroContext(ctx, &macroctx->head, macro, true);
 					goto beginning;
 				}
 				
@@ -1426,6 +1457,7 @@ LangC_NextToken(LangC_Lexer* ctx)
 					
 					LangC_IgnoreWhitespaces(&lexfile->head, false);
 					
+					bool32 not = false;
 					if (MatchCString("if", begin, dirlen) ||
 						MatchCString("ifdef", begin, dirlen) ||
 						MatchCString("ifndef", begin, dirlen))
@@ -1447,6 +1479,17 @@ LangC_NextToken(LangC_Lexer* ctx)
 							ctx->ifdef_failed_nesting = 0;
 							
 							LangC_PreProcessorIf(ctx, lexfile);
+							goto beginning;
+						}
+					}
+					else if (MatchCString("elifdef", begin, dirlen) ||
+							 (MatchCString("elifndef", begin, dirlen) && (not = true)))
+					{
+						if (ctx->ifdef_failed_nesting == 1 && !ctx->ifdef_already_matched)
+						{
+							ctx->ifdef_failed_nesting = 0;
+							
+							LangC_PreProcessorIfdef(ctx, lexfile, not);
 							goto beginning;
 						}
 					}
@@ -1563,7 +1606,7 @@ LangC_NextToken(LangC_Lexer* ctx)
 					if (macro)
 					{
 						LangC_UpdateFileLineAndCol(lexfile);
-						LangC_PushMacroContext(ctx, &lexfile->head, macro);
+						LangC_PushMacroContext(ctx, &lexfile->head, macro, false);
 						goto beginning;
 					}
 					
@@ -1584,4 +1627,42 @@ LangC_NextToken(LangC_Lexer* ctx)
 			}
 		}
 	}
+}
+
+internal void
+LangC_EatToken(LangC_Lexer* ctx, LangC_TokenKind kind)
+{
+	if (ctx->token.kind != kind)
+	{
+		String got = LangC_TokenAsString(&ctx->token);
+		LangC_LexerError(ctx, "expected '%s', but got '%.*s'.\n", LangC_token_str_table[kind], StrFmt(got));
+	}
+	
+	LangC_NextToken(ctx);
+}
+
+internal bool32
+LangC_TryToEatToken(LangC_Lexer* ctx, LangC_TokenKind kind)
+{
+	if (ctx->token.kind == kind)
+	{
+		LangC_NextToken(ctx);
+		return true;
+	}
+	
+	return false;
+}
+
+internal bool32
+LangC_AssertToken(LangC_Lexer* ctx, LangC_TokenKind kind)
+{
+	if (ctx->token.kind != kind)
+	{
+		String got = LangC_TokenAsString(&ctx->token);
+		LangC_LexerError(ctx, "expected '%s', but got '%.*s'.\n", LangC_token_str_table[kind], StrFmt(got));
+		
+		return false;
+	}
+	
+	return true;
 }
