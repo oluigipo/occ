@@ -26,6 +26,7 @@ enum LangC_NodeKind
 	LangC_NodeKind_DoubleConstant,
 	LangC_NodeKind_StringConstant,
 	LangC_NodeKind_InitializerEntry,
+	LangC_NodeKind_EnumEntry,
 } typedef LangC_NodeKind;
 
 // Flags for any kind of node
@@ -167,6 +168,8 @@ struct LangC_Node
 	// type name = expr;
 	// type name(type->params, type->params->next, ...) body
 	// sizeof expr
+	// struct name body
+	// enum { body->name = body->expr, body->next->name, ... }
 	LangC_Node* condition;
 	LangC_Node* init;
 	LangC_Node* iter;
@@ -212,10 +215,12 @@ struct LangC_Node
 struct LangC_TypeNode typedef LangC_TypeNode;
 struct LangC_TypeNode
 {
+	LangC_TypeNode* next;
+	
 	uint64 flags; // LangC_Node_BaseType_(Union|Struct|Enum)
 	uint64 name_hash;
 	String name;
-	LangC_Node* decl; // NULL if type is incomplete. it may point to another incomplete type though.
+	LangC_Node* decl;
 };
 
 struct LangC_Parser typedef LangC_Parser;
@@ -225,6 +230,8 @@ struct LangC_Parser
 	
 	LangC_TypeNode* first_typenode;
 	LangC_TypeNode* last_typenode;
+	
+	// TODO(ljre): Stack of Typenodes. Push stack when entering function scope.
 };
 
 internal void
@@ -252,17 +259,38 @@ LangC_CreateNode(LangC_Parser* ctx, LangC_NodeKind kind)
 internal bool32
 LangC_BaseTypeFlagsHasType(uint64 flags)
 {
-	return 0 != (LangC_Node_BaseType_Char |
-				 LangC_Node_BaseType_Int |
-				 LangC_Node_BaseType_Float |
-				 LangC_Node_BaseType_Double |
-				 LangC_Node_BaseType_Typename);
+	return 0 != (flags & (LangC_Node_BaseType_Char |
+						  LangC_Node_BaseType_Int |
+						  LangC_Node_BaseType_Float |
+						  LangC_Node_BaseType_Double |
+						  LangC_Node_BaseType_Typename));
 }
 
 internal void
 LangC_DefineType(LangC_Parser* ctx, LangC_Node* decl)
 {
-	// TODO
+	assert(decl);
+	assert(decl->kind == LangC_NodeKind_Decl);
+	
+	LangC_TypeNode* type = ctx->last_typenode;
+	if (!type)
+	{
+		if (!ctx->first_typenode)
+		{
+			ctx->first_typenode = PushMemory(sizeof *ctx->first_typenode);
+		}
+		
+		type = ctx->last_typenode = ctx->first_typenode;
+	}
+	else if (!type->next)
+	{
+		type = ctx->last_typenode = type->next = PushMemory(sizeof *type->next);
+	}
+	
+	type->flags = decl->flags;
+	type->name = decl->name;
+	type->name_hash = SimpleHash(type->name);
+	type->decl = decl;
 }
 
 internal LangC_Node* LangC_ParseStmt(LangC_Parser* ctx, LangC_Node** out_last, bool32 allow_decl);
@@ -278,7 +306,21 @@ LangC_IsBeginningOfDeclOrType(LangC_Parser* ctx)
 	{
 		case LangC_TokenKind_Identifier:
 		{
-			// TODO(ljre): Check if identifier is a typename
+			String ident = ctx->lex.token.value_ident;
+			uint64 search_hash = SimpleHash(ident);
+			
+			LangC_TypeNode* type = ctx->first_typenode;
+			if (type)
+			{
+				do
+				{
+					if (type->name_hash == search_hash)
+						return true;
+				}
+				while (type != ctx->last_typenode && (type = type->next));
+			}
+			
+			return false;
 		}
 		
 		case LangC_TokenKind_Int:
@@ -307,6 +349,63 @@ LangC_IsBeginningOfDeclOrType(LangC_Parser* ctx)
 }
 
 internal LangC_Node*
+LangC_ParseEnumBody(LangC_Parser* ctx)
+{
+	LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftCurl);
+	LangC_Node* result = LangC_CreateNode(ctx, LangC_NodeKind_EnumEntry);
+	LangC_Node* last = result;
+	
+	if (LangC_AssertToken(&ctx->lex, LangC_TokenKind_Identifier))
+	{
+		result->name = ctx->lex.token.value_ident;
+	}
+	
+	if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Equals))
+	{
+		result->expr = LangC_ParseExpr(ctx, 1, false);
+	}
+	
+	while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma) &&
+		   ctx->lex.token.kind != LangC_TokenKind_RightCurl)
+	{
+		LangC_Node* new_node = LangC_CreateNode(ctx, LangC_NodeKind_EnumEntry);
+		
+		if (LangC_AssertToken(&ctx->lex, LangC_TokenKind_Identifier))
+		{
+			new_node->name = ctx->lex.token.value_ident;
+		}
+		
+		if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Equals))
+		{
+			new_node->expr = LangC_ParseExpr(ctx, 1, false);
+		}
+		
+		last = last->next = new_node;
+	}
+	
+	LangC_EatToken(&ctx->lex, LangC_TokenKind_RightCurl);
+	
+	return result;
+}
+
+internal LangC_Node*
+LangC_ParseStructBody(LangC_Parser* ctx)
+{
+	LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftCurl);
+	LangC_Node* last;
+	LangC_Node* result = LangC_ParseDecl(ctx, &last, false, false, true, false);
+	
+	while (!LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_RightCurl))
+	{
+		LangC_Node* new_last;
+		last->next = LangC_ParseDecl(ctx, &new_last, false, false, true, false);
+		last = new_last;
+	}
+	
+	return result;
+}
+
+internal LangC_Node*
 LangC_ParseDeclOrExpr(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, int32 level)
 {
 	LangC_Node* result = NULL;
@@ -326,17 +425,28 @@ LangC_ParseDeclOrExpr(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only
 internal LangC_Node*
 LangC_ParseInitializerField(LangC_Parser* ctx)
 {
-	// TODO
-	
-	return NULL;
+	// TODO(ljre): designated initializers
+	return LangC_ParseExpr(ctx, 1, true);
 }
 
 internal String
 LangC_PrepareStringLiteral(LangC_Parser* ctx)
 {
-	// TODO
+	String str;
+	char* buffer = NULL;
 	
-	return StrNull;
+	do
+	{
+		str = ctx->lex.token.value_str;
+		SB_PushArray(buffer, str.size, str.data);
+		LangC_NextToken(&ctx->lex);
+	}
+	while (ctx->lex.token.kind == LangC_TokenKind_StringLiteral);
+	
+	str.data = buffer;
+	str.size = SB_Len(buffer);
+	
+	return str;
 }
 
 internal LangC_Node*
@@ -474,7 +584,7 @@ LangC_ParseExprFactor(LangC_Parser* ctx, bool32 allow_init)
 		LangC_UpdateNode(ctx, 0, head);
 		head->flags = LangC_Node_Expr_Initializer;
 		if (has_unary)
-			LangC_LexerError(&ctx->lex, "expected expression.\n");
+			LangC_LexerError(&ctx->lex, "expected expression.");
 		
 		LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftCurl);
 		
@@ -487,10 +597,12 @@ LangC_ParseExprFactor(LangC_Parser* ctx, bool32 allow_init)
 		LangC_Node* last_init = head->init;
 		
 		while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma) &&
-			   !LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_RightCurl))
+			   ctx->lex.token.kind != LangC_TokenKind_RightCurl)
 		{
 			last_init = last_init->next = LangC_ParseInitializerField(ctx);
 		}
+		
+		LangC_EatToken(&ctx->lex, LangC_TokenKind_RightCurl);
 	}
 	else
 	{
@@ -572,7 +684,7 @@ LangC_ParseExprFactor(LangC_Parser* ctx, bool32 allow_init)
 			{
 				if (LangC_IsBeginningOfDeclOrType(ctx))
 				{
-					LangC_LexerError(&ctx->lex, "unexpected typename.\n");
+					LangC_LexerError(&ctx->lex, "unexpected typename.");
 				}
 				
 				LangC_UpdateNode(ctx, LangC_NodeKind_Ident, head);
@@ -583,7 +695,7 @@ LangC_ParseExprFactor(LangC_Parser* ctx, bool32 allow_init)
 			
 			default:
 			{
-				LangC_LexerError(&ctx->lex, "expected expression.\n");
+				LangC_LexerError(&ctx->lex, "expected expression.");
 			} break;
 		}
 	}
@@ -895,9 +1007,8 @@ LangC_ParseStmt(LangC_Parser* ctx, LangC_Node** out_last, bool32 allow_decl)
 			else
 			{
 				result = LangC_ParseExpr(ctx, 0, false);
+				LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 			}
-			
-			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 		} break;
 	}
 	
@@ -973,7 +1084,7 @@ LangC_ParseRestOfDecl(LangC_Parser* ctx, LangC_Node* base, LangC_Node* decl, boo
 				
 				if (head->type->kind != LangC_NodeKind_PointerType)
 				{
-					LangC_LexerError(&ctx->lex, "invalid use of 'restrict' with a non-pointer type.\n");
+					LangC_LexerError(&ctx->lex, "invalid use of 'restrict' with a non-pointer type.");
 				}
 				
 				head->type->kind |= LangC_Node_Restrict;
@@ -982,7 +1093,7 @@ LangC_ParseRestOfDecl(LangC_Parser* ctx, LangC_Node* base, LangC_Node* decl, boo
 			case LangC_TokenKind_Register:
 			{
 				LangC_NextToken(&ctx->lex);
-				LangC_LexerWarning(&ctx->lex, "'register' is straight up ignored here.\n");
+				LangC_LexerWarning(&ctx->lex, "'register' is straight up ignored here.");
 				
 				head->type->kind |= LangC_Node_Register;
 			} continue;
@@ -1010,7 +1121,7 @@ LangC_ParseRestOfDecl(LangC_Parser* ctx, LangC_Node* base, LangC_Node* decl, boo
 			case LangC_TokenKind_LeftParen:
 			{
 				LangC_NextToken(&ctx->lex);
-				LangC_Node* newtype = LangC_CreateNode(ctx, LangC_NodeKind_ArrayType);
+				LangC_Node* newtype = LangC_CreateNode(ctx, LangC_NodeKind_FunctionType);
 				newtype->type = head->type;
 				head->type = newtype;
 				head = newtype;
@@ -1082,18 +1193,18 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (is_global)
 				{
-					LangC_LexerError(&ctx->lex, "cannot use automatic storage for global object.\n");
+					LangC_LexerError(&ctx->lex, "cannot use automatic storage for global object.");
 				}
 				
 				if (type_only)
 				{
-					LangC_LexerError(&ctx->lex, "expected a type.\n");
+					LangC_LexerError(&ctx->lex, "expected a type.");
 					break;
 				}
 				
 				if (decl->flags & LangC_Node_Auto)
 				{
-					LangC_LexerError(&ctx->lex, "repeated use of keyword 'auto'.\n");
+					LangC_LexerError(&ctx->lex, "repeated use of keyword 'auto'.");
 				}
 				
 				decl->flags |= LangC_Node_Auto;
@@ -1103,11 +1214,11 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (base->flags & LangC_Node_BaseType_Char)
 				{
-					LangC_LexerError(&ctx->lex, "repeated use of keyword 'char'.\n");
+					LangC_LexerError(&ctx->lex, "repeated use of keyword 'char'.");
 				}
 				else if (LangC_BaseTypeFlagsHasType(base->flags))
 				{
-					LangC_LexerError(&ctx->lex, "object cannot have more of one type.\n");
+					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				}
 				
 				base->flags |= LangC_Node_BaseType_Char;
@@ -1117,7 +1228,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (base->flags & LangC_Node_Const)
 				{
-					LangC_LexerError(&ctx->lex, "too much constness.\n");
+					LangC_LexerError(&ctx->lex, "too much constness.");
 				}
 				
 				base->flags |= LangC_Node_Const;
@@ -1127,11 +1238,11 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (base->flags & LangC_Node_BaseType_Double)
 				{
-					LangC_LexerError(&ctx->lex, "repeated use of keyword 'double'.\n");
+					LangC_LexerError(&ctx->lex, "repeated use of keyword 'double'.");
 				}
 				else if (LangC_BaseTypeFlagsHasType(base->flags))
 				{
-					LangC_LexerError(&ctx->lex, "object cannot have more of one type.\n");
+					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				}
 				
 				base->flags |= LangC_Node_BaseType_Double;
@@ -1141,27 +1252,48 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (type_only)
 				{
-					LangC_LexerError(&ctx->lex, "expected a type.\n");
+					LangC_LexerError(&ctx->lex, "expected a type.");
 					break;
 				}
 				
 				if (decl->flags & (LangC_Node_Static | LangC_Node_Auto))
 				{
-					LangC_LexerError(&ctx->lex, "invalid combination of storage modifiers.\n");
+					LangC_LexerError(&ctx->lex, "invalid combination of storage modifiers.");
 				}
 				
 				decl->flags |= LangC_Node_Extern;
+			} break;
+			
+			case LangC_TokenKind_Enum:
+			{
+				if (LangC_BaseTypeFlagsHasType(base->flags))
+				{
+					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
+				}
+				
+				base->flags |= LangC_Node_BaseType_Enum;
+				
+				LangC_NextToken(&ctx->lex);
+				if (ctx->lex.token.kind == LangC_TokenKind_Identifier)
+				{
+					base->name = ctx->lex.token.value_ident;
+					
+					LangC_NextToken(&ctx->lex);
+				}
+				
+				if (ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
+					base->body = LangC_ParseEnumBody(ctx);
 			} break;
 			
 			case LangC_TokenKind_Float:
 			{
 				if (base->flags & LangC_Node_BaseType_Float)
 				{
-					LangC_LexerError(&ctx->lex, "repeated use of keyword 'float'.\n");
+					LangC_LexerError(&ctx->lex, "repeated use of keyword 'float'.");
 				}
 				else if (LangC_BaseTypeFlagsHasType(base->flags))
 				{
-					LangC_LexerError(&ctx->lex, "object cannot have more of one type.\n");
+					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				}
 				
 				base->flags |= LangC_Node_BaseType_Float;
@@ -1171,11 +1303,11 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (base->flags & LangC_Node_BaseType_Int)
 				{
-					LangC_LexerError(&ctx->lex, "repeated use of keyword 'int'.\n");
+					LangC_LexerError(&ctx->lex, "repeated use of keyword 'int'.");
 				}
 				else if (LangC_BaseTypeFlagsHasType(base->flags))
 				{
-					LangC_LexerError(&ctx->lex, "object cannot have more of one type.\n");
+					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				}
 				
 				base->flags |= LangC_Node_BaseType_Int;
@@ -1185,11 +1317,11 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (base->flags & (LangC_Node_BaseType_Long | LangC_Node_BaseType_Short))
 				{
-					LangC_LexerError(&ctx->lex, "too long for me.\n");
+					LangC_LexerError(&ctx->lex, "too long for me.");
 				}
 				else if (base->flags & LangC_Node_BaseType_Short)
 				{
-					LangC_LexerError(&ctx->lex, "'long' does not work with 'short'.\n");
+					LangC_LexerError(&ctx->lex, "'long' does not work with 'short'.");
 				}
 				else if (base->flags & LangC_Node_BaseType_Long)
 				{
@@ -1197,7 +1329,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 				}
 				else if (LangC_BaseTypeFlagsHasType(base->flags))
 				{
-					LangC_LexerError(&ctx->lex, "object cannot have more of one type.\n");
+					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				}
 				else
 				{
@@ -1207,7 +1339,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			
 			case LangC_TokenKind_Register:
 			{
-				LangC_LexerWarning(&ctx->lex, "'register' keyword is straight up ignore here.\n");
+				LangC_LexerWarning(&ctx->lex, "'register' keyword is straight up ignore here.");
 				base->flags |= LangC_Node_Register;
 			} break;
 			
@@ -1215,7 +1347,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (base->flags & LangC_Node_Restrict)
 				{
-					LangC_LexerError(&ctx->lex, "repeated use of keyword 'restrict'.\n");
+					LangC_LexerError(&ctx->lex, "repeated use of keyword 'restrict'.");
 				}
 				
 				base->flags |= LangC_Node_Restrict;
@@ -1225,7 +1357,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (base->flags & LangC_Node_BaseType_Long)
 				{
-					LangC_LexerError(&ctx->lex, "'short' does not work with 'long'.\n");
+					LangC_LexerError(&ctx->lex, "'short' does not work with 'long'.");
 				}
 				else if (base->flags & LangC_Node_BaseType_Short)
 				{
@@ -1239,11 +1371,11 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (base->flags & LangC_Node_BaseType_Signed)
 				{
-					LangC_LexerError(&ctx->lex, "repeated use of keyword 'signed'.\n");
+					LangC_LexerError(&ctx->lex, "repeated use of keyword 'signed'.");
 				}
 				else if (base->flags & LangC_Node_BaseType_Unsigned)
 				{
-					LangC_LexerError(&ctx->lex, "'signed' does not work with 'unsigned'.\n");
+					LangC_LexerError(&ctx->lex, "'signed' does not work with 'unsigned'.");
 				}
 				
 				base->flags |= LangC_Node_BaseType_Signed;
@@ -1253,17 +1385,17 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (type_only)
 				{
-					LangC_LexerError(&ctx->lex, "expected a type.\n");
+					LangC_LexerError(&ctx->lex, "expected a type.");
 					break;
 				}
 				
 				if (decl->flags & (LangC_Node_Auto | LangC_Node_Extern))
 				{
-					LangC_LexerError(&ctx->lex, "invalid combination of storage modifiers.\n");
+					LangC_LexerError(&ctx->lex, "invalid combination of storage modifiers.");
 				}
 				else if (decl->flags & (LangC_Node_Static))
 				{
-					LangC_LexerError(&ctx->lex, "repeated use of keyword 'static'.\n");
+					LangC_LexerError(&ctx->lex, "repeated use of keyword 'static'.");
 				}
 				
 				decl->flags |= LangC_Node_Static;
@@ -1273,32 +1405,34 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (LangC_BaseTypeFlagsHasType(base->flags))
 				{
-					LangC_LexerError(&ctx->lex, "object cannot have more of one type.\n");
-				}
-				
-				LangC_NextToken(&ctx->lex);
-				
-				if (ctx->lex.token.kind != LangC_TokenKind_Identifier)
-				{
-					LangC_LexerError(&ctx->lex, "expected identifier after 'struct' keyword.\n");
-					break;
+					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				}
 				
 				base->flags |= LangC_Node_BaseType_Struct;
-				base->name = ctx->lex.token.value_ident;
+				
+				LangC_NextToken(&ctx->lex);
+				if (ctx->lex.token.kind == LangC_TokenKind_Identifier)
+				{
+					base->name = ctx->lex.token.value_ident;
+					
+					LangC_NextToken(&ctx->lex);
+				}
+				
+				if (ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
+					base->body = LangC_ParseStructBody(ctx);
 			} break;
 			
 			case LangC_TokenKind_Typedef:
 			{
 				if (type_only)
 				{
-					LangC_LexerError(&ctx->lex, "expected a type.\n");
+					LangC_LexerError(&ctx->lex, "expected a type.");
 					break;
 				}
 				
 				if (decl->flags & LangC_Node_Typedef)
 				{
-					LangC_LexerError(&ctx->lex, "repeated use of keyword 'typedef'.\n");
+					LangC_LexerError(&ctx->lex, "repeated use of keyword 'typedef'.");
 				}
 				
 				decl->flags |= LangC_Node_Typedef;
@@ -1308,30 +1442,32 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (LangC_BaseTypeFlagsHasType(base->flags))
 				{
-					LangC_LexerError(&ctx->lex, "object cannot have more of one type.\n");
-				}
-				
-				LangC_NextToken(&ctx->lex);
-				
-				if (ctx->lex.token.kind != LangC_TokenKind_Identifier)
-				{
-					LangC_LexerError(&ctx->lex, "expected identifier after 'union' keyword.\n");
-					break;
+					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				}
 				
 				base->flags |= LangC_Node_BaseType_Union;
-				base->name = ctx->lex.token.value_ident;
+				
+				LangC_NextToken(&ctx->lex);
+				if (ctx->lex.token.kind == LangC_TokenKind_Identifier)
+				{
+					base->name = ctx->lex.token.value_ident;
+					
+					LangC_NextToken(&ctx->lex);
+				}
+				
+				if (ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
+					base->body = LangC_ParseStructBody(ctx);
 			} break;
 			
 			case LangC_TokenKind_Unsigned:
 			{
 				if (base->flags & LangC_Node_BaseType_Unsigned)
 				{
-					LangC_LexerError(&ctx->lex, "repeated use of keyword 'unsigned'.\n");
+					LangC_LexerError(&ctx->lex, "repeated use of keyword 'unsigned'.");
 				}
 				else if (base->flags & LangC_Node_BaseType_Signed)
 				{
-					LangC_LexerError(&ctx->lex, "'unsigned' does not work with 'signed'.\n");
+					LangC_LexerError(&ctx->lex, "'unsigned' does not work with 'signed'.");
 				}
 				
 				base->flags |= LangC_Node_BaseType_Unsigned;
@@ -1341,11 +1477,11 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (base->flags & LangC_Node_BaseType_Void)
 				{
-					LangC_LexerError(&ctx->lex, "repeated use of keyword 'void'.\n");
+					LangC_LexerError(&ctx->lex, "repeated use of keyword 'void'.");
 				}
 				else if (LangC_BaseTypeFlagsHasType(base->flags))
 				{
-					LangC_LexerError(&ctx->lex, "object cannot have more of one type.\n");
+					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				}
 				
 				base->flags |= LangC_Node_BaseType_Void;
@@ -1355,7 +1491,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (base->flags & LangC_Node_Volatile)
 				{
-					LangC_LexerError(&ctx->lex, "repeated use of keyword 'volatile'.\n");
+					LangC_LexerError(&ctx->lex, "repeated use of keyword 'volatile'.");
 				}
 				
 				base->flags |= LangC_Node_Volatile;
@@ -1365,11 +1501,11 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (base->flags & LangC_Node_BaseType_Bool)
 				{
-					LangC_LexerError(&ctx->lex, "repeated use of keyword '_Bool'.\n");
+					LangC_LexerError(&ctx->lex, "repeated use of keyword '_Bool'.");
 				}
 				else if (LangC_BaseTypeFlagsHasType(base->flags))
 				{
-					LangC_LexerError(&ctx->lex, "object cannot have more of one type.\n");
+					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				}
 				
 				base->flags |= LangC_Node_BaseType_Bool;
@@ -1379,11 +1515,26 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			{
 				if (base->flags & LangC_Node_BaseType_Complex)
 				{
-					LangC_LexerError(&ctx->lex, "repeated use of keyword '_Complex'.\n");
+					LangC_LexerError(&ctx->lex, "repeated use of keyword '_Complex'.");
 				}
 				
 				base->flags |= LangC_Node_BaseType_Complex;
 			} break;
+			
+			case LangC_TokenKind_Identifier:
+			{
+				if (LangC_IsBeginningOfDeclOrType(ctx))
+				{
+					if (LangC_BaseTypeFlagsHasType(base->flags))
+					{
+						LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
+					}
+					
+					base->flags |= LangC_Node_BaseType_Typename;
+					base->name = ctx->lex.token.value_ident;
+					break;
+				}
+			} /* fallthrough */
 			
 			default: goto out_of_loop;
 		}
@@ -1400,7 +1551,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 								 LangC_Node_BaseType_Short |
 								 LangC_Node_BaseType_Long)))
 		{
-			LangC_LexerWarning(&ctx->lex, "implicit type 'int'.\n");
+			LangC_LexerWarning(&ctx->lex, "implicit type 'int'.");
 		}
 		
 		base->flags = LangC_Node_BaseType_Int;
@@ -1437,12 +1588,12 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 	{
 		if (type->kind != LangC_NodeKind_FunctionType)
 		{
-			LangC_LexerError(&ctx->lex, "invalid block for non-function declaration.\n");
+			LangC_LexerError(&ctx->lex, "invalid block for non-function declaration.");
 		}
 		
 		if (!is_global)
 		{
-			LangC_LexerError(&ctx->lex, "function definitions are only allowed in global scope.\n");
+			LangC_LexerError(&ctx->lex, "function definitions are only allowed in global scope.");
 		}
 		
 		decl->stmt = LangC_ParseBlock(ctx, NULL);
@@ -1455,6 +1606,9 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			decl->expr = LangC_ParseExpr(ctx, 1, true);
 		}
 		
+		if (decl->flags & LangC_Node_Typedef)
+			LangC_DefineType(ctx, decl);
+		
 		if (allow_multiple)
 		{
 			while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma))
@@ -1463,14 +1617,17 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 				new_node->type = LangC_ParseRestOfDecl(ctx, base, new_node, false, is_global);
 				last = last->next = new_node;
 				
+				if (decl->flags & LangC_Node_Typedef)
+					LangC_DefineType(ctx, last);
+				
 				if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Assign))
 				{
 					new_node->expr = LangC_ParseExpr(ctx, 1, true);
 				}
 			}
+			
+			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 		}
-		
-		LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 	}
 	
 	if (out_last)

@@ -135,7 +135,7 @@ internal const char* LangC_token_str_table[] = {
 	[LangC_TokenKind_Typedef] = "typedef",
 	[LangC_TokenKind_Union] = "union",
 	[LangC_TokenKind_Unsigned] = "unsigned",
-	[LangC_TokenKind_Void] = "unsigned",
+	[LangC_TokenKind_Void] = "void",
 	[LangC_TokenKind_Volatile] = "volatile",
 	[LangC_TokenKind_While] = "while",
 	[LangC_TokenKind_Bool] = "bool",
@@ -318,6 +318,8 @@ LangC_LexerError(LangC_Lexer* ctx, const char* fmt, ...)
 	LangC_LexerFile* lexfile = &ctx->file;
 	ctx->error = true;
 	
+	Print("\n");
+	
 	while (lexfile->next_included && lexfile->next_included->active)
 	{
 		Print("%s(%i:%i): in included file\n", lexfile->path, lexfile->line, lexfile->col);
@@ -336,6 +338,8 @@ internal void
 LangC_LexerWarning(LangC_Lexer* ctx, const char* fmt, ...)
 {
 	LangC_LexerFile* lexfile = &ctx->file;
+	
+	Print("\n");
 	
 	while (lexfile->next_included && lexfile->next_included->active)
 	{
@@ -582,7 +586,11 @@ LangC_TokenAsString(LangC_Token* tok)
 	
 	switch (tok->kind)
 	{
-		// TODO
+		case LangC_TokenKind_Identifier:
+		{
+			result = tok->value_ident;
+		} break;
+		
 		default:
 		{
 			const char* str = LangC_token_str_table[tok->kind];
@@ -720,18 +728,18 @@ LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro,
 			
 			if (*head == ',' && **phead != ',')
 			{
-				LangC_LexerError(ctx, "expected more arguments in function-like macro.\n");
+				LangC_LexerError(ctx, "expected more arguments in function-like macro.");
 			}
 		}
 		
 		if (*head != ')')
 		{
-			LangC_LexerError(ctx, "expected ')' at the end of function-like macro arguments.\n");
+			LangC_LexerError(ctx, "expected ')' at the end of function-like macro arguments.");
 		}
 		
 		if (*head == ')' && **phead != ')')
 		{
-			LangC_LexerWarning(ctx, "excessive number of arguments for function-like macro.\n");
+			LangC_LexerWarning(ctx, "excessive number of arguments for function-like macro.");
 			LangC_IgnoreUntilPairOfNestedOr(phead, '(', ')', 0);
 		}
 		
@@ -856,7 +864,7 @@ LangC_IncludeFile(LangC_Lexer* ctx, String file, bool32 relative)
 			return; // success
 	}
 	
-	LangC_LexerError(ctx, "cannot locate/open included file '%.*s'.\n", file.size, file.data);
+	LangC_LexerError(ctx, "cannot locate/open included file '%.*s'.", file.size, file.data);
 }
 
 internal void
@@ -937,7 +945,7 @@ LangC_PreProcessorInclude(LangC_Lexer* ctx, LangC_LexerFile* lexfile)
 	
 	if (begin + 1 >= end)
 	{
-		LangC_LexerError(ctx, "missing file to include.\n");
+		LangC_LexerError(ctx, "missing file to include.");
 		return;
 	}
 	
@@ -956,7 +964,7 @@ LangC_PreProcessorInclude(LangC_Lexer* ctx, LangC_LexerFile* lexfile)
 	}
 	else
 	{
-		LangC_LexerError(ctx, "invalid syntax for include directive.\n");
+		LangC_LexerError(ctx, "invalid syntax for include directive.");
 		return;
 	}
 	
@@ -967,7 +975,7 @@ LangC_PreProcessorInclude(LangC_Lexer* ctx, LangC_LexerFile* lexfile)
 	
 	if (*path_end != pair)
 	{
-		LangC_LexerError(ctx, "missing '%c' at the end of path.\n", pair);
+		LangC_LexerError(ctx, "missing '%c' at the end of path.", pair);
 		return;
 	}
 	
@@ -1030,7 +1038,7 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 			{
 				if (base == 16)
 				{
-					LangC_LexerError(ctx, "error: floats cannot begin with '0x'.\n");
+					LangC_LexerError(ctx, "error: floats cannot begin with '0x'.");
 				}
 				
 				++end;
@@ -1084,7 +1092,7 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 			
 			if (*end != '"')
 			{
-				LangC_LexerError(ctx, "missing closing quote.\n");
+				LangC_LexerError(ctx, "missing closing quote.");
 				break;
 			}
 			
@@ -1131,7 +1139,7 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 			
 			if ((*phead)[0] != '\'')
 			{
-				LangC_LexerError(ctx, "missing pair of character literal.\n");
+				LangC_LexerError(ctx, "missing pair of character literal.");
 				break;
 			}
 			
@@ -1344,7 +1352,7 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 		
 		default:
 		{
-			LangC_LexerError(ctx, "unexpected token '%c'.\n", (*phead)[0]);
+			LangC_LexerError(ctx, "unexpected token '%c'.", (*phead)[0]);
 			++(*phead);
 		} break;
 	}
@@ -1374,7 +1382,7 @@ LangC_NextToken(LangC_Lexer* ctx)
 				
 				if (!LangC_IsIdentMacroParameter(ident, macroctx->expanding_macro))
 				{
-					LangC_LexerError(ctx, "'%.*s' is not a parameter.\n", StrFmt(ident));
+					LangC_LexerError(ctx, "'%.*s' is not a parameter.", StrFmt(ident));
 					
 					// fallback
 					ctx->token.kind = LangC_TokenKind_Identifier;
@@ -1448,6 +1456,9 @@ LangC_NextToken(LangC_Lexer* ctx)
 		
 		LangC_IgnoreWhitespaces(&lexfile->head, true);
 		LangC_UpdateFileLineAndCol(lexfile);
+		
+		ctx->token.line = lexfile->line;
+		ctx->token.col = lexfile->col;
 		
 		if (ctx->ifdef_failed_nesting > 0)
 		{
@@ -1586,7 +1597,7 @@ LangC_NextToken(LangC_Lexer* ctx)
 						
 						int32 len = (int32)(lexfile->head - begin);
 						
-						LangC_LexerError(ctx, "%.*s\n", len, begin);
+						LangC_LexerError(ctx, "%.*s", len, begin);
 					}
 					else if (MatchCString("include", begin, dirlen))
 					{
@@ -1599,7 +1610,7 @@ LangC_NextToken(LangC_Lexer* ctx)
 					}
 					else
 					{
-						LangC_LexerError(ctx, "unknown pre-processor directive '%.*s'.\n", dirlen, begin);
+						LangC_LexerError(ctx, "unknown pre-processor directive '%.*s'.", dirlen, begin);
 						LangC_IgnoreUntilEndOfLine(lexfile);
 					}
 				} goto beginning;
@@ -1646,7 +1657,7 @@ LangC_EatToken(LangC_Lexer* ctx, LangC_TokenKind kind)
 	if (ctx->token.kind != kind)
 	{
 		String got = LangC_TokenAsString(&ctx->token);
-		LangC_LexerError(ctx, "expected '%s', but got '%.*s'.\n", LangC_token_str_table[kind], StrFmt(got));
+		LangC_LexerError(ctx, "expected '%s', but got '%.*s'.", LangC_token_str_table[kind], StrFmt(got));
 	}
 	
 	LangC_NextToken(ctx);
@@ -1670,7 +1681,7 @@ LangC_AssertToken(LangC_Lexer* ctx, LangC_TokenKind kind)
 	if (ctx->token.kind != kind)
 	{
 		String got = LangC_TokenAsString(&ctx->token);
-		LangC_LexerError(ctx, "expected '%s', but got '%.*s'.\n", LangC_token_str_table[kind], StrFmt(got));
+		LangC_LexerError(ctx, "expected '%s', but got '%.*s'.", LangC_token_str_table[kind], StrFmt(got));
 		
 		return false;
 	}

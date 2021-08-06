@@ -17,6 +17,8 @@ const CString name = "pepe";
 
 const char* a_string = "pepe, " STR(MY_MACRO) " is " STR2(MY_MACRO);
 
+#include <stdio.h>
+
 int main(int argc, char* argv[])
 {
 	int typedef a;
