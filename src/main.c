@@ -23,7 +23,7 @@ PushMemory(uintsize size)
 		global_arena_memory = malloc(global_arena_size);
 	}
 	
-	void* result = global_arena_memory + global_arena_offset;
+	void* result = (uint8*)global_arena_memory + global_arena_offset;
 	global_arena_offset += size;
 	
 	memset(result, 0, size);

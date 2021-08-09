@@ -388,8 +388,8 @@ LangC_IgnoreWhitespaces(const char** phead, bool32 newline)
 			while ((*phead)[0] && ((*phead)[-2] != '*' || (*phead)[-1] != '/'))
 				++(*phead);
 		}
-		else if ((*phead)[0] == ' ' || (*phead)[0] == '\t' ||
-				 (newline && ((*phead)[0] == '\r' || (*phead)[0] == '\n')))
+		else if ((*phead)[0] == ' ' || (*phead)[0] == '\t' || (*phead)[0] == '\r' ||
+				 (newline && (*phead)[0] == '\n'))
 		{
 			++(*phead);
 		}
@@ -1022,6 +1022,11 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 					(*phead) += 2;
 					base = 16;
 				}
+				else if ((*phead)[1] == 'b')
+				{
+					(*phead) += 2;
+					base = 2;
+				}
 				else
 				{
 					(*phead) += 1;
@@ -1037,9 +1042,9 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 			if (*end == '.')
 			{
 				if (base == 16)
-				{
 					LangC_LexerError(ctx, "error: floats cannot begin with '0x'.");
-				}
+				else if (base == 2)
+					LangC_LexerError(ctx, "error: floats cannot begin with '0b'.");
 				
 				++end;
 				while (LangC_IsNumeric(*end)) ++end;
@@ -1049,6 +1054,10 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 					++end;
 					ctx->token.kind = LangC_TokenKind_FloatLiteral;
 					ctx->token.value_float = strtof(begin, NULL);
+				}
+				else if (*end == 'e' || *end == 'E')
+				{
+					// TODO(ljre)
 				}
 				else
 				{
@@ -1491,7 +1500,6 @@ LangC_NextToken(LangC_Lexer* ctx)
 						if (ctx->ifdef_failed_nesting == 1 && !ctx->ifdef_already_matched)
 						{
 							ctx->ifdef_failed_nesting = 0;
-							goto beginning;
 						}
 					}
 					else if (MatchCString("elif", begin, dirlen))
@@ -1561,15 +1569,10 @@ LangC_NextToken(LangC_Lexer* ctx)
 					{
 						LangC_PreProcessorIfdef(ctx, lexfile, true);
 					}
-					else if (MatchCString("else", begin, dirlen))
-					{
-						ctx->ifdef_already_matched = true;
-						++ctx->ifdef_failed_nesting;
-						--ctx->ifdef_nesting;
-						
-						LangC_IgnoreUntilEndOfLine(lexfile);
-					}
-					else if (MatchCString("elif", begin, dirlen))
+					else if (MatchCString("else", begin, dirlen) ||
+							 MatchCString("elif", begin, dirlen) ||
+							 MatchCString("elifdef", begin, dirlen) ||
+							 MatchCString("elifndef", begin, dirlen))
 					{
 						ctx->ifdef_already_matched = true;
 						++ctx->ifdef_failed_nesting;

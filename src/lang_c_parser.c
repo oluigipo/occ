@@ -263,7 +263,10 @@ LangC_BaseTypeFlagsHasType(uint64 flags)
 						  LangC_Node_BaseType_Int |
 						  LangC_Node_BaseType_Float |
 						  LangC_Node_BaseType_Double |
-						  LangC_Node_BaseType_Typename));
+						  LangC_Node_BaseType_Typename |
+						  LangC_Node_BaseType_Struct |
+						  LangC_Node_BaseType_Enum |
+						  LangC_Node_BaseType_Union));
 }
 
 internal void
@@ -998,6 +1001,16 @@ LangC_ParseStmt(LangC_Parser* ctx, LangC_Node** out_last, bool32 allow_decl)
 			result->stmt = LangC_ParseStmt(ctx, NULL, false);
 		} break;
 		
+		case LangC_TokenKind_Return:
+		{
+			last = result = LangC_CreateNode(ctx, LangC_NodeKind_ReturnStmt);
+			
+			LangC_NextToken(&ctx->lex);
+			result->expr = LangC_ParseExpr(ctx, 0, false);
+			
+			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
+		} break;
+		
 		default:
 		{
 			if (allow_decl)
@@ -1006,7 +1019,7 @@ LangC_ParseStmt(LangC_Parser* ctx, LangC_Node** out_last, bool32 allow_decl)
 			}
 			else
 			{
-				result = LangC_ParseExpr(ctx, 0, false);
+				last = result = LangC_ParseExpr(ctx, 0, false);
 				LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 			}
 		} break;
@@ -1283,7 +1296,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 				
 				if (ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
 					base->body = LangC_ParseEnumBody(ctx);
-			} break;
+			} continue;  // ignore the LangC_NextToken() at the end.
 			
 			case LangC_TokenKind_Float:
 			{
@@ -1315,7 +1328,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			
 			case LangC_TokenKind_Long:
 			{
-				if (base->flags & (LangC_Node_BaseType_Long | LangC_Node_BaseType_Short))
+				if (LangC_Node_BaseType_LongLong == (base->flags & LangC_Node_BaseType_LongLong))
 				{
 					LangC_LexerError(&ctx->lex, "too long for me.");
 				}
@@ -1325,6 +1338,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 				}
 				else if (base->flags & LangC_Node_BaseType_Long)
 				{
+					// combination of long and short flags is long long
 					base->flags |= LangC_Node_BaseType_Short;
 				}
 				else if (LangC_BaseTypeFlagsHasType(base->flags))
@@ -1420,7 +1434,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 				
 				if (ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
 					base->body = LangC_ParseStructBody(ctx);
-			} break;
+			} continue;  // ignore the LangC_NextToken() at the end.
 			
 			case LangC_TokenKind_Typedef:
 			{
@@ -1457,7 +1471,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 				
 				if (ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
 					base->body = LangC_ParseStructBody(ctx);
-			} break;
+			} continue; // ignore the LangC_NextToken() at the end.
 			
 			case LangC_TokenKind_Unsigned:
 			{
@@ -1584,7 +1598,14 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 	LangC_Node* last = decl;
 	decl->type = type;
 	
-	if (ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
+	if (decl->flags & LangC_Node_Typedef)
+		LangC_DefineType(ctx, decl);
+	
+	if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Semicolon))
+	{
+		// ignore others else ifs - TryToEatToken() already has done it's job.
+	}
+	else if (ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
 	{
 		if (type->kind != LangC_NodeKind_FunctionType)
 		{
@@ -1600,17 +1621,16 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 	}
 	else
 	{
-		// TODO(ljre): put this inside 'if (allow_multiple)'? parameters can't have default values
-		if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Assign))
-		{
-			decl->expr = LangC_ParseExpr(ctx, 1, true);
-		}
-		
-		if (decl->flags & LangC_Node_Typedef)
-			LangC_DefineType(ctx, decl);
-		
 		if (allow_multiple)
 		{
+			if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Assign))
+			{
+				if (decl->flags & LangC_Node_Typedef)
+					LangC_LexerError(&ctx->lex, "cannot assign to types.");
+				
+				decl->expr = LangC_ParseExpr(ctx, 1, true);
+			}
+			
 			while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma))
 			{
 				LangC_Node* new_node = LangC_CreateNode(ctx, LangC_NodeKind_Decl);
@@ -1618,9 +1638,10 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 				last = last->next = new_node;
 				
 				if (decl->flags & LangC_Node_Typedef)
+				{
 					LangC_DefineType(ctx, last);
-				
-				if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Assign))
+				}
+				else if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Assign))
 				{
 					new_node->expr = LangC_ParseExpr(ctx, 1, true);
 				}
@@ -1649,6 +1670,11 @@ LangC_ParseFile(const char* path)
 	LangC_DefineMacro(&ctx.lex, Str("__x86_64 1"));
 	LangC_DefineMacro(&ctx.lex, Str("_WIN32 1"));
 	LangC_DefineMacro(&ctx.lex, Str("_WIN64 1"));
+	LangC_DefineMacro(&ctx.lex, Str("__OCC__ 1"));
+	LangC_DefineMacro(&ctx.lex, Str("__int64 long long"));
+	LangC_DefineMacro(&ctx.lex, Str("__int32 int"));
+	LangC_DefineMacro(&ctx.lex, Str("__int16 short"));
+	LangC_DefineMacro(&ctx.lex, Str("__int8 char"));
 	
 	if (LangC_InitLexerFile(&ctx.lex.file, path) < 0)
 		return NULL;
