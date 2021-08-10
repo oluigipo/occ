@@ -366,6 +366,21 @@ LangC_CurrentWorkingPath(LangC_Lexer* ctx)
 	return lexfile->path;
 }
 
+internal LangC_LexerFile*
+LangC_CurrentLexerFile(LangC_Lexer* ctx)
+{
+	LangC_LexerFile* lexfile = &ctx->file;
+	if (!lexfile->active)
+		return NULL;
+	
+	while (lexfile->next_included && lexfile->next_included->active)
+	{
+		lexfile = lexfile->next_included;
+	}
+	
+	return lexfile;
+}
+
 internal void
 LangC_IgnoreWhitespaces(const char** phead, bool32 newline)
 {
@@ -460,12 +475,6 @@ LangC_UpdateFileLineAndCol(LangC_LexerFile* lexfile)
 }
 
 internal void
-LangC_ConsumeEofState(LangC_Lexer* ctx)
-{
-	// TODO
-}
-
-internal void
 LangC_DefineMacro(LangC_Lexer* ctx, String def)
 {
 	if (!ctx->last_macro)
@@ -528,9 +537,24 @@ LangC_UndefineMacro(LangC_Lexer* ctx, String name)
 	}
 }
 
+// Values for 'func':
+//     0 = false,
+//     1 = true,
+//     2 = doesnt matter,
+//     3 = want function, but it's ok to not be
 internal LangC_Macro*
-LangC_FindMacro(LangC_Lexer* ctx, String name, int32 func /* 0 = false, 1 = true, 2 = doesnt matter */)
+LangC_FindMacro(LangC_Lexer* ctx, String name, int32 func)
 {
+	if (func == 3)
+	{
+		LangC_Macro* result = LangC_FindMacro(ctx, name, 1);
+		
+		if (!result)
+			result = LangC_FindMacro(ctx, name, 0);
+		
+		return result;
+	}
+	
 	// NOTE(ljre): This is a backwards search.
 	
 	uint64 search_hash = SimpleHash(name);
@@ -757,30 +781,48 @@ LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro,
 	ctx->macroctx_last->head = head;
 }
 
-internal String
-LangC_ExpandMacro(LangC_Lexer* ctx, LangC_Macro* macro)
+internal void
+LangC_ConsumeEofState(LangC_Lexer* ctx)
 {
-	char* buf = NULL;
-	SB_ReserveAtLeast(buf, 64);
-	LangC_LexerMacroContext* end_context = ctx->macroctx_last;
-	
-	assert(!macro->is_func);
-	LangC_PushMacroContext(ctx, NULL, macro, false);
-	while (LangC_ConsumeEofState(ctx), ctx->macroctx_last != end_context)
+	for (;;)
 	{
-		// TODO(ljre): this isn't right - expanded macro should be raw text instead of tokens
-		LangC_NextToken(ctx);
-		String str = LangC_TokenAsString(&ctx->token);
-		
-		SB_PushArray(buf, str.size, str.data);
+		if (ctx->macroctx_last != NULL)
+		{
+			LangC_LexerMacroContext* macroctx = ctx->macroctx_last;
+			LangC_IgnoreWhitespaces(&macroctx->head, true);
+			
+			if (!*macroctx->head)
+			{
+				LangC_PopMacroContext(ctx);
+			}
+			else
+			{
+				break;
+			}
+		}
+		else
+		{
+			LangC_LexerFile* lexfile = &ctx->file;
+			if (!lexfile->active)
+				break;
+			
+			while (lexfile->next_included && lexfile->next_included->active)
+			{
+				lexfile = lexfile->next_included;
+			}
+			
+			LangC_IgnoreWhitespaces(&lexfile->head, true);
+			
+			if (!*lexfile->head)
+			{
+				lexfile->active = false;
+			}
+			else
+			{
+				break;
+			}
+		}
 	}
-	
-	String result = {
-		.size = SB_Len(buf),
-		.data = buf,
-	};
-	
-	return result;
 }
 
 internal uint8
@@ -793,8 +835,67 @@ LangC_ValueOfEscaped(const char** ptr)
 		case '\\': value = '\\'; ++*ptr; break;
 		case '\'': value = '\''; ++*ptr; break;
 		case '"': value = '"'; ++*ptr; break;
-		case '0': value = 0; ++*ptr; break;
-		// TODO: everything else
+		case 'a': value = 0x07; ++*ptr; break;
+		case 'b': value = 0x08; ++*ptr; break;
+		case 'e': value = 0x1B; ++*ptr; break;
+		case 'f': value = 0x0C; ++*ptr; break;
+		case 'n': value = 0x0A; ++*ptr; break;
+		case 'r': value = 0x0D; ++*ptr; break;
+		case 't': value = 0x09; ++*ptr; break;
+		case 'v': value = 0x0B; ++*ptr; break;
+		case '?': value = '?'; ++*ptr; break;
+		
+		case '0': case '1': case '2': case '3':
+		case '4': case '5': case '6': case '7':
+		{
+			value = **ptr;
+			++*ptr;
+			
+			int32 chars_in_octal = 2; // limit of 3 chars. one is already parsed
+			
+			while (chars_in_octal > 0 && **ptr >= '0' && **ptr <= '8')
+			{
+				value *= 8;
+				value += **ptr;
+				++*ptr;
+				--chars_in_octal;
+			}
+		} break;
+		
+		case 'x':
+		{
+			++*ptr;
+			
+			int32 chars_in_hex = 2;
+			
+			while (chars_in_hex > 0 &&
+				   ((**ptr >= '0' && **ptr <= '9') ||
+					(**ptr >= 'a' && **ptr <= 'f') ||
+					(**ptr >= 'A' && **ptr <= 'F')))
+			{
+				value *= 16;
+				
+				if (**ptr >= 'a')
+					value += 10 + (**ptr - 'a');
+				else if (**ptr >= 'A')
+					value += 10 + (**ptr - 'A');
+				else
+					value += **ptr - '0';
+				
+				++*ptr;
+			}
+		} break;
+		
+		case 'u':
+		{
+			// TODO(ljre)
+		} break;
+		
+		case 'U':
+		{
+			// TODO(ljre)
+		} break;
+		
 		default: value = **ptr; ++*ptr; break;
 	}
 	
@@ -802,9 +903,9 @@ LangC_ValueOfEscaped(const char** ptr)
 }
 
 internal int32
-LangC_EvalPreProcessorExpr(LangC_Lexer* ctx, LangC_LexerFile* lexfile, String expr)
+LangC_EvalPreProcessorExpr(LangC_Lexer* ctx, String expr)
 {
-	// TODO
+	
 	
 	return 0;
 }
@@ -924,7 +1025,7 @@ LangC_PreProcessorIf(LangC_Lexer* ctx, LangC_LexerFile* lexfile)
 		.data = begin,
 	};
 	
-	if (LangC_EvalPreProcessorExpr(ctx, lexfile, expr))
+	if (LangC_EvalPreProcessorExpr(ctx, expr))
 	{
 		++ctx->ifdef_nesting;
 	}
@@ -1370,13 +1471,16 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 internal void
 LangC_NextToken(LangC_Lexer* ctx)
 {
+	String ident;
+	LangC_LexerFile* lexfile;
+	
 	beginning:;
 	
 	if (ctx->macroctx_last != NULL)
 	{
 		//~ Macro State
 		LangC_LexerMacroContext* macroctx = ctx->macroctx_last;
-		LangC_IgnoreWhitespaces(&macroctx->head, false);
+		LangC_IgnoreWhitespaces(&macroctx->head, true);
 		
 		switch (*macroctx->head)
 		{
@@ -1387,7 +1491,7 @@ LangC_NextToken(LangC_Lexer* ctx)
 				++macroctx->head;
 				
 				LangC_IgnoreWhitespaces(&macroctx->head, false);
-				String ident = LangC_TokenizeIdent(&macroctx->head);
+				ident = LangC_TokenizeIdent(&macroctx->head);
 				
 				if (!LangC_IsIdentMacroParameter(ident, macroctx->expanding_macro))
 				{
@@ -1422,11 +1526,23 @@ LangC_NextToken(LangC_Lexer* ctx)
 			case 'o': case 'p': case 'q': case 'r': case 's': case 't': case 'u': case 'v': case 'w': case 'x':
 			case 'y': case 'z': case '_':
 			{
-				String ident = LangC_TokenizeIdent(&macroctx->head);
+				ident = LangC_TokenizeIdent(&macroctx->head);
 				
-				// TODO(ljre): Proper macro expansion - what if this macro expands to a function macro?
-				LangC_Macro* macro = LangC_FindMacro(ctx, ident, *macroctx->head == '(');
+				LangC_ConsumeEofState(ctx);
+				macroctx = ctx->macroctx_last;
+				if (!macroctx)
+				{
+					lexfile = LangC_CurrentLexerFile(ctx);
+					goto ident_lexing_outside_macroctx;
+				}
 				
+				if (macroctx->head[0] == '#' && macroctx->head[1] == '#')
+				{
+					// TODO(ljre): concatenation
+					break;
+				}
+				
+				LangC_Macro* macro = LangC_FindMacro(ctx, ident, *macroctx->head == '(' ? 3 : 0);
 				if (macro)
 				{
 					LangC_PushMacroContext(ctx, &macroctx->head, macro, true);
@@ -1451,16 +1567,11 @@ LangC_NextToken(LangC_Lexer* ctx)
 	}
 	else
 	{
-		LangC_LexerFile* lexfile = &ctx->file;
-		if (!lexfile->active)
+		lexfile = LangC_CurrentLexerFile(ctx);
+		if (!lexfile)
 		{
 			ctx->token.kind = LangC_TokenKind_Eof;
 			return;
-		}
-		
-		while (lexfile->next_included && lexfile->next_included->active)
-		{
-			lexfile = lexfile->next_included;
 		}
 		
 		LangC_IgnoreWhitespaces(&lexfile->head, true);
@@ -1625,8 +1736,11 @@ LangC_NextToken(LangC_Lexer* ctx)
 				case 'k': case 'l': case 'm': case 'n': case 'o': case 'p': case 'q': case 'r': case 's':
 				case 't': case 'u': case 'v': case 'w': case 'x': case 'y': case 'z': case '_':
 				{
-					String ident = LangC_TokenizeIdent(&lexfile->head);
-					LangC_Macro* macro = LangC_FindMacro(ctx, ident, *lexfile->head == '(');
+					ident = LangC_TokenizeIdent(&lexfile->head);
+					LangC_IgnoreWhitespaces(&lexfile->head, true);
+					
+					ident_lexing_outside_macroctx:;
+					LangC_Macro* macro = LangC_FindMacro(ctx, ident,  *lexfile->head == '(' ? 3 : 0);
 					
 					if (macro)
 					{

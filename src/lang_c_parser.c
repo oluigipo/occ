@@ -1601,11 +1601,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 	if (decl->flags & LangC_Node_Typedef)
 		LangC_DefineType(ctx, decl);
 	
-	if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Semicolon))
-	{
-		// ignore others else ifs - TryToEatToken() already has done it's job.
-	}
-	else if (ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
+	if (ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
 	{
 		if (type->kind != LangC_NodeKind_FunctionType)
 		{
@@ -1661,7 +1657,7 @@ internal LangC_Node*
 LangC_ParseFile(const char* path)
 {
 	LangC_Parser ctx = { 0 };
-	LangC_Node* first_node;
+	LangC_Node* first_node = NULL;
 	LangC_Node* last_node;
 	
 	LangC_DefineMacro(&ctx.lex, Str("__STDC__ 1"));
@@ -1679,6 +1675,7 @@ LangC_ParseFile(const char* path)
 	if (LangC_InitLexerFile(&ctx.lex.file, path) < 0)
 		return NULL;
 	
+#if 1
 	LangC_NextToken(&ctx.lex);
 	
 	first_node = LangC_ParseDecl(&ctx, &last_node, false, true, true, false);
@@ -1689,16 +1686,17 @@ LangC_ParseFile(const char* path)
 		last_node->next = LangC_ParseDecl(&ctx, &new_last, false, true, true, false);
 		last_node = new_last;
 	}
-	
-	/*while (LangC_NextToken(&ctx), ctx.token.kind != LangC_TokenKind_Eof)
+#else
+	while (LangC_NextToken(&ctx.lex), ctx.lex.token.kind != LangC_TokenKind_Eof)
 	{
-		switch (ctx.token.kind)
+		switch (ctx.lex.token.kind)
 		{
-			case LangC_TokenKind_Identifier: Print("%.*s (ident)\n", StrFmt(ctx.token.value_ident)); break;
-			case LangC_TokenKind_StringLiteral: Print("\"%.*s\"\n", StrFmt(ctx.token.value_str)); break;
-			default: Print("%s\n", LangC_token_str_table[ctx.token.kind]); break;
+			case LangC_TokenKind_Identifier: Print("%.*s (ident)\n", StrFmt(ctx.lex.token.value_ident)); break;
+			case LangC_TokenKind_StringLiteral: Print("\"%.*s\"\n", StrFmt(ctx.lex.token.value_str)); break;
+			default: Print("%s\n", LangC_token_str_table[ctx.lex.token.kind]); break;
 		}
-	}*/
+	}
+#endif
 	
 	return first_node;
 }

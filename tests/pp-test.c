@@ -1,6 +1,9 @@
 #define MY_MACRO hello
 #define MY_MACROFN(x) MY_MACRO ## x
 
+#define STR(x) #x
+#define STR2(x) STR(x)
+
 #ifdef MY_MACRO
 #   error MY_MACRO is defined!
 #elif defined(MY_MACROFN)
@@ -10,10 +13,9 @@
 #endif
 
 #define CString char*
-const CString name = "pepe";
+#define OTHER_STR STR
 
-#define STR(x) #x
-#define STR2(x) STR(x)
+const CString name = OTHER_STR(pepe);
 
 const char* a_string = "pepe, " STR(MY_MACRO) " is " STR2(MY_MACRO);
 
