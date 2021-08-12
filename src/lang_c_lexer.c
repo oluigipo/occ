@@ -274,6 +274,8 @@ struct LangC_Lexer
 	LangC_LexerMacroContext* macroctx_last;
 };
 
+internal void LangC_ConsumeEofState(LangC_Lexer* ctx);
+internal void LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro);
 internal void LangC_NextToken(LangC_Lexer* ctx);
 
 internal int32
@@ -353,6 +355,21 @@ LangC_LexerWarning(LangC_Lexer* ctx, const char* fmt, ...)
 	PrintVarargs(fmt, args);
 	va_end(args);
 	Print("\n");
+}
+
+internal String
+LangC_ConcatStrings(String left, String right)
+{
+	uintsize size = left.size + right.size;
+	
+	char* data = PushMemory(size);
+	memcpy(data, left.data, left.size);
+	memcpy(data + left.size, right.data, right.size);
+	
+	return (String) {
+		.size = size,
+		.data = data,
+	};
 }
 
 internal const char*
@@ -451,6 +468,19 @@ LangC_TokenizeIdent(const char** phead)
 {
 	const char* begin = *phead;
 	while (LangC_IsIdentChar(**phead))
+		++*phead;
+	
+	return (String) {
+		.data = begin,
+		.size = (uintsize)(*phead - begin),
+	};
+}
+
+internal String
+LangC_TokenizeIdentRanged(const char** phead, const char* end)
+{
+	const char* begin = *phead;
+	while (*phead < end && LangC_IsIdentChar(**phead))
 		++*phead;
 	
 	return (String) {
@@ -648,25 +678,94 @@ LangC_PopMacroContext(LangC_Lexer* ctx)
 	}
 }
 
-// NOTE(ljre): 'phead' may be NULL if 'macro->is_func' is false.
-internal void
-LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro, bool32 expand_args)
+internal bool32
+LangC_IsCurrentMacroContext(LangC_Lexer* ctx, LangC_LexerMacroContext* macroctx)
 {
-	if (!ctx->macroctx_first)
-		ctx->macroctx_first = PushMemory(sizeof *ctx->macroctx_first);
+	if (!ctx->macroctx_last)
+		return false;
+	
+	LangC_LexerMacroContext* current = ctx->macroctx_first;
+	do
+	{
+		if (current == macroctx)
+			return true;
+	}
+	while (current != ctx->macroctx_last && (current = current->next));
+	
+	return false;
+}
+
+internal void
+LangC_ExpandMacroToStretchyBuffer(LangC_Lexer* ctx, LangC_Macro* macro, char** buf)
+{
+	// TODO(ljre): make this better
+	
+	LangC_PushMacroContext(ctx, NULL, macro);
+	LangC_LexerMacroContext* macroctx = ctx->macroctx_last;
+	
+	while (LangC_ConsumeEofState(ctx), LangC_IsCurrentMacroContext(ctx, macroctx))
+	{
+		LangC_NextToken(ctx);
+		String str = LangC_TokenAsString(&ctx->token);
+		SB_PushArray(*buf, str.size, str.data);
+	}
+}
+
+internal String
+LangC_ExpandCurrentMacroParameters(LangC_Lexer* ctx, String name, const char* begin, const char* end)
+{
+	char* buf = NULL;
+	SB_ReserveAtLeast(buf, name.size + (uintsize)(end - begin) + 2);
+	
+	SB_PushArray(buf, name.size, name.data);
+	SB_Push(buf, ' ');
 	
 	if (!ctx->macroctx_last)
 	{
-		ctx->macroctx_last = ctx->macroctx_first;
+		SB_PushArray(buf, (uintsize)(end - begin), begin);
 	}
 	else
 	{
-		if (!ctx->macroctx_last->next)
-			ctx->macroctx_last->next = PushMemory(sizeof *ctx->macroctx_last->next);
+		LangC_LexerMacroContext* macroctx = ctx->macroctx_last;
 		
-		ctx->macroctx_last = ctx->macroctx_last->next;
+		while (begin < end)
+		{
+			if (LangC_IsIdentChar(*begin))
+			{
+				String ident = LangC_TokenizeIdentRanged(&begin, end);
+				
+				if (LangC_IsIdentMacroParameter(ident, macroctx->expanding_macro))
+				{
+					LangC_Macro* macro = LangC_FindMacro(ctx, ident, false);
+					LangC_ExpandMacroToStretchyBuffer(ctx, macro, &buf);
+				}
+				else
+				{
+					SB_PushArray(buf, ident.size, ident.data);
+				}
+			}
+			else
+			{
+				SB_Push(buf, *begin);
+				++begin;
+			}
+		}
 	}
 	
+	SB_Push(buf, 0);
+	String result = {
+		.size = SB_Len(buf),
+		.data = buf,
+	};
+	
+	return result;
+}
+
+// NOTE(ljre): 'phead' may be NULL if 'macro->is_func' is false.
+internal void
+LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro)
+{
+	LangC_Macro* saved_last_macro = ctx->last_macro;
 	const char* head = macro->def;
 	
 	// ignore macro name
@@ -703,16 +802,7 @@ LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro,
 					LangC_IgnoreUntilPairOfNestedOr(phead, '(', ')', 0);
 					
 					const char* end = *phead;
-					uintsize size = (uintsize)(end - begin);
-					
-					uintsize def_len = sizeof(name) + 1 + size + 1;
-					char* def_str = PushMemory(def_len);
-					snprintf(def_str, def_len, "%s %.*s", name, (int32)size, begin);
-					
-					String def = {
-						.size = def_len,
-						.data = def_str,
-					};
+					String def = LangC_ExpandCurrentMacroParameters(ctx, Str(name), begin, end);
 					
 					LangC_DefineMacro(ctx, def);
 					break;
@@ -731,16 +821,7 @@ LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro,
 					}
 					
 					const char* end = *phead;
-					uintsize size = (uintsize)(end - begin);
-					
-					uintsize def_len = ident.size + 1 + size + 1;
-					char* def_str = PushMemory(def_len);
-					snprintf(def_str, def_len, "%.*s %.*s", StrFmt(ident), (int32)size, begin);
-					
-					String def = {
-						.size = def_len,
-						.data = def_str,
-					};
+					String def = LangC_ExpandCurrentMacroParameters(ctx, ident, begin, end);
 					
 					LangC_DefineMacro(ctx, def);
 				}
@@ -776,7 +857,22 @@ LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro,
 		LangC_IgnoreWhitespaces(&head, false);
 	}
 	
-	ctx->macroctx_last->saved_last_macro = ctx->last_macro;
+	if (!ctx->macroctx_first)
+		ctx->macroctx_first = PushMemory(sizeof *ctx->macroctx_first);
+	
+	if (!ctx->macroctx_last)
+	{
+		ctx->macroctx_last = ctx->macroctx_first;
+	}
+	else
+	{
+		if (!ctx->macroctx_last->next)
+			ctx->macroctx_last->next = PushMemory(sizeof *ctx->macroctx_last->next);
+		
+		ctx->macroctx_last = ctx->macroctx_last->next;
+	}
+	
+	ctx->macroctx_last->saved_last_macro = saved_last_macro;
 	ctx->macroctx_last->expanding_macro = macro;
 	ctx->macroctx_last->head = head;
 }
@@ -1468,6 +1564,7 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 	}
 }
 
+internal bool32 LangC_AssertToken(LangC_Lexer* ctx, LangC_TokenKind kind);
 internal void
 LangC_NextToken(LangC_Lexer* ctx)
 {
@@ -1536,16 +1633,39 @@ LangC_NextToken(LangC_Lexer* ctx)
 					goto ident_lexing_outside_macroctx;
 				}
 				
-				if (macroctx->head[0] == '#' && macroctx->head[1] == '#')
+				before_macro_expansion:;
+				LangC_Macro* macro = LangC_FindMacro(ctx, ident, *macroctx->head == '(' ? 3 : 0);
+				
+				if (!(macro && LangC_IsIdentMacroParameter(ident, macroctx->expanding_macro)) &&
+					macroctx->head[0] == '#' && macroctx->head[1] == '#')
 				{
-					// TODO(ljre): concatenation
-					break;
+					macroctx->head += 2;
+					LangC_IgnoreWhitespaces(&macroctx->head, true);
+					
+					if (!macroctx->head[0])
+					{
+						LangC_LexerError(ctx, "'##' should never appear at the end of a macro.");
+					}
+					else
+					{
+						String next_ident = LangC_TokenizeIdent(&macroctx->head);
+						
+						if (LangC_IsIdentMacroParameter(next_ident, macroctx->expanding_macro))
+						{
+							LangC_NextToken(ctx);
+							LangC_AssertToken(ctx, LangC_TokenKind_Identifier);
+							next_ident = ctx->token.value_ident;
+						}
+						
+						ident = LangC_ConcatStrings(ident, next_ident);
+						
+						goto before_macro_expansion;
+					}
 				}
 				
-				LangC_Macro* macro = LangC_FindMacro(ctx, ident, *macroctx->head == '(' ? 3 : 0);
 				if (macro)
 				{
-					LangC_PushMacroContext(ctx, &macroctx->head, macro, true);
+					LangC_PushMacroContext(ctx, &macroctx->head, macro);
 					goto beginning;
 				}
 				
@@ -1745,7 +1865,7 @@ LangC_NextToken(LangC_Lexer* ctx)
 					if (macro)
 					{
 						LangC_UpdateFileLineAndCol(lexfile);
-						LangC_PushMacroContext(ctx, &lexfile->head, macro, false);
+						LangC_PushMacroContext(ctx, &lexfile->head, macro);
 						goto beginning;
 					}
 					
