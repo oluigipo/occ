@@ -27,6 +27,7 @@ enum LangC_NodeKind
 	LangC_NodeKind_StringConstant,
 	LangC_NodeKind_InitializerEntry,
 	LangC_NodeKind_EnumEntry,
+	LangC_NodeKind_Label,
 } typedef LangC_NodeKind;
 
 // Flags for any kind of node
@@ -1022,6 +1023,12 @@ LangC_ParseStmt(LangC_Parser* ctx, LangC_Node** out_last, bool32 allow_decl)
 				last = result = LangC_ParseExpr(ctx, 0, false);
 				LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 			}
+			
+			if (result->kind == LangC_NodeKind_Ident && LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Colon))
+			{
+				result->kind = LangC_NodeKind_Label;
+				result->stmt = LangC_ParseStmt(ctx, NULL, false);
+			}
 		} break;
 	}
 	
@@ -1176,6 +1183,12 @@ LangC_ParseRestOfDecl(LangC_Parser* ctx, LangC_Node* base, LangC_Node* decl, boo
 				if (ctx->lex.token.kind != LangC_TokenKind_RightBrkt)
 				{
 					head->expr = LangC_ParseExpr(ctx, 0, false);
+				}
+				else if (is_global)
+				{
+					LangC_LexerWarning(&ctx->lex, "implicit length of 1 in array.");
+					head->expr = LangC_CreateNode(ctx, LangC_NodeKind_IntConstant);
+					head->expr->value_int = 1;
 				}
 				
 				LangC_EatToken(&ctx->lex, LangC_TokenKind_RightBrkt);
@@ -1558,6 +1571,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 	
 	out_of_loop:;
 	
+	bool32 implicit_int = false;
 	if (!LangC_BaseTypeFlagsHasType(base->flags))
 	{
 		if (0 == (base->flags & (LangC_Node_BaseType_Unsigned |
@@ -1565,7 +1579,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 								 LangC_Node_BaseType_Short |
 								 LangC_Node_BaseType_Long)))
 		{
-			LangC_LexerWarning(&ctx->lex, "implicit type 'int'.");
+			implicit_int = true;
 		}
 		
 		base->flags = LangC_Node_BaseType_Int;
@@ -1575,7 +1589,26 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 		// TODO(ljre): validate use of modifiers
 	}
 	
+	right_before_parsing_rest_of_decl:;
 	LangC_Node* type = LangC_ParseRestOfDecl(ctx, base, decl, type_only, is_global);
+	
+	if (implicit_int)
+	{
+		if (type->kind == LangC_NodeKind_BaseType &&
+			decl->name.size > 0 &&
+			(ctx->lex.token.kind == LangC_TokenKind_Identifier ||
+			 ctx->lex.token.kind == LangC_TokenKind_Mul ||
+			 LangC_IsBeginningOfDeclOrType(ctx)))
+		{
+			LangC_LexerError(&ctx->lex, "'%.*s' is not a typename", StrFmt(decl->name));
+			implicit_int = false;
+			goto right_before_parsing_rest_of_decl;
+		}
+		else
+		{
+			LangC_LexerWarning(&ctx->lex, "implicit type 'int'.");
+		}
+	}
 	
 	if (decay)
 	{

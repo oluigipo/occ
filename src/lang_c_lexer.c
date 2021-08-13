@@ -48,6 +48,7 @@ enum LangC_TokenKind
 	LangC_TokenKind_LUintLiteral,
 	LangC_TokenKind_LLUintLiteral,
 	LangC_TokenKind_StringLiteral,
+	LangC_TokenKind_WideStringLiteral,
 	LangC_TokenKind_FloatLiteral,
 	LangC_TokenKind_DoubleLiteral,
 	
@@ -148,6 +149,7 @@ internal const char* LangC_token_str_table[] = {
 	[LangC_TokenKind_LUintLiteral] = "(unsigned long literal)",
 	[LangC_TokenKind_LLUintLiteral] = "(unsigned long long literal)",
 	[LangC_TokenKind_StringLiteral] = "(const char[] literal)",
+	[LangC_TokenKind_WideStringLiteral] = "(const wchar_t[] literal)",
 	[LangC_TokenKind_FloatLiteral] = "(float literal)",
 	[LangC_TokenKind_DoubleLiteral] = "(double literal)",
 	
@@ -205,6 +207,7 @@ struct LangC_Token
 {
 	int32 line, col;
 	LangC_TokenKind kind;
+	String as_string;
 	
 	union
 	{
@@ -281,6 +284,7 @@ internal void LangC_NextToken(LangC_Lexer* ctx);
 internal int32
 LangC_InitLexerFile(LangC_LexerFile* lexfile, const char* path)
 {
+	// TODO(ljre): File contents caching
 	//Print("Loading file '%s'\n", path);
 	
 	lexfile->source = OS_ReadWholeFile(path);
@@ -633,31 +637,6 @@ LangC_IsIdentMacroParameter(String ident, LangC_Macro* macro)
 	return false;
 }
 
-internal String
-LangC_TokenAsString(LangC_Token* tok)
-{
-	String result;
-	
-	switch (tok->kind)
-	{
-		case LangC_TokenKind_Identifier:
-		{
-			result = tok->value_ident;
-		} break;
-		
-		default:
-		{
-			const char* str = LangC_token_str_table[tok->kind];
-			uintsize len = strlen(str);
-			
-			result.data = str;
-			result.size = len;
-		} break;
-	}
-	
-	return result;
-}
-
 internal void
 LangC_PopMacroContext(LangC_Lexer* ctx)
 {
@@ -706,7 +685,7 @@ LangC_ExpandMacroToStretchyBuffer(LangC_Lexer* ctx, LangC_Macro* macro, char** b
 	while (LangC_ConsumeEofState(ctx), LangC_IsCurrentMacroContext(ctx, macroctx))
 	{
 		LangC_NextToken(ctx);
-		String str = LangC_TokenAsString(&ctx->token);
+		String str = ctx->token.as_string;
 		SB_PushArray(*buf, str.size, str.data);
 	}
 }
@@ -820,6 +799,16 @@ LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro)
 						return;
 					}
 					
+					// TODO(ljre): What happens if we do
+					//             #define Test(...) AnotherTest(__VA_ARGS__, 10)
+					//             #define AnotherTest(x, y) y
+					//             
+					//             note: it will give incorrect results
+					
+					// TODO(ljre): I'm too lazy to fix this now, so here is my solution:
+					//             call LangC_ExpandCurrentMacroParameters in the whole parameter list, then
+					//             begin to parse that instead
+					
 					const char* end = *phead;
 					String def = LangC_ExpandCurrentMacroParameters(ctx, ident, begin, end);
 					
@@ -921,10 +910,10 @@ LangC_ConsumeEofState(LangC_Lexer* ctx)
 	}
 }
 
-internal uint8
+internal int32
 LangC_ValueOfEscaped(const char** ptr)
 {
-	uint8 value = 0;
+	int32 value = 0;
 	
 	switch (**ptr)
 	{
@@ -949,7 +938,7 @@ LangC_ValueOfEscaped(const char** ptr)
 			
 			int32 chars_in_octal = 2; // limit of 3 chars. one is already parsed
 			
-			while (chars_in_octal > 0 && **ptr >= '0' && **ptr <= '8')
+			while (chars_in_octal > 0 && **ptr >= '0' && **ptr < '8')
 			{
 				value *= 8;
 				value += **ptr;
@@ -1001,7 +990,7 @@ LangC_ValueOfEscaped(const char** ptr)
 internal int32
 LangC_EvalPreProcessorExpr(LangC_Lexer* ctx, String expr)
 {
-	
+	// TODO(ljre)
 	
 	return 0;
 }
@@ -1068,9 +1057,8 @@ internal void
 LangC_PreProcessorDefine(LangC_Lexer* ctx, LangC_LexerFile* lexfile)
 {
 	const char* begin = lexfile->head;
-	
-	const char* end = begin;
-	while (*end && (*end != '\n' || end[-1] == '\\')) ++end;
+	LangC_IgnoreUntilEndOfLine(lexfile);
+	const char* end = lexfile->head;
 	
 	String def = {
 		.size = (uintsize)(end - begin),
@@ -1187,6 +1175,8 @@ LangC_PreProcessorInclude(LangC_Lexer* ctx, LangC_LexerFile* lexfile)
 internal void
 LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 {
+	ctx->token.as_string.data = *phead;
+	
 	switch (**phead)
 	{
 		case '.':
@@ -1278,6 +1268,7 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 			}
 			
 			int32 eaten = (int32)(end - begin);
+			ctx->token.as_string.size += eaten;
 			(*phead) += eaten;
 		} break;
 		
@@ -1562,6 +1553,8 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 			++(*phead);
 		} break;
 	}
+	
+	ctx->token.as_string.size = (uintsize)(*phead - ctx->token.as_string.data);
 }
 
 internal bool32 LangC_AssertToken(LangC_Lexer* ctx, LangC_TokenKind kind);
@@ -1614,10 +1607,26 @@ LangC_NextToken(LangC_Lexer* ctx)
 				
 				ctx->token.kind = LangC_TokenKind_StringLiteral;
 				ctx->token.value_str = value;
+				ctx->token.as_string = value;
 			} break;
 			
+			case 'L':
+			{
+				if (lexfile->head[1] == '"')
+				{
+					++lexfile->head;
+					LangC_TokenizeSimpleTokens(ctx, &lexfile->head);
+					ctx->token.kind = LangC_TokenKind_WideStringLiteral;
+					++ctx->token.as_string.size;
+					--ctx->token.as_string.data;
+					break;
+				}
+				//else
+				
+			} /* fallthrough */
+			
 			case 'A': case 'B': case 'C': case 'D': case 'E': case 'F': case 'G': case 'H': case 'I': case 'J':
-			case 'K': case 'L': case 'M': case 'N': case 'O': case 'P': case 'Q': case 'R': case 'S': case 'T':
+			case 'K': case 'M': case 'N': case 'O': case 'P': case 'Q': case 'R': case 'S': case 'T':
 			case 'U': case 'V': case 'W': case 'X': case 'Y': case 'Z': case 'a': case 'b': case 'c': case 'd':
 			case 'e': case 'f': case 'g': case 'h': case 'i': case 'j': case 'k': case 'l': case 'm': case 'n':
 			case 'o': case 'p': case 'q': case 'r': case 's': case 't': case 'u': case 'v': case 'w': case 'x':
@@ -1680,6 +1689,8 @@ LangC_NextToken(LangC_Lexer* ctx)
 						break;
 					}
 				}
+				
+				ctx->token.as_string = ident;
 			} break;
 			
 			default: LangC_TokenizeSimpleTokens(ctx, &macroctx->head); break;
@@ -1849,8 +1860,23 @@ LangC_NextToken(LangC_Lexer* ctx)
 					}
 				} goto beginning;
 				
+				case 'L':
+				{
+					if (lexfile->head[1] == '"')
+					{
+						++lexfile->head;
+						LangC_TokenizeSimpleTokens(ctx, &lexfile->head);
+						ctx->token.kind = LangC_TokenKind_WideStringLiteral;
+						
+						++ctx->token.as_string.size;
+						--ctx->token.as_string.data;
+					}
+					//else
+					
+				} /* fallthrough */
+				
 				case 'A': case 'B': case 'C': case 'D': case 'E': case 'F': case 'G': case 'H': case 'I':
-				case 'J': case 'K': case 'L': case 'M': case 'N': case 'O': case 'P': case 'Q': case 'R':
+				case 'J': case 'K': case 'M': case 'N': case 'O': case 'P': case 'Q': case 'R':
 				case 'S': case 'T': case 'U': case 'V': case 'W': case 'X': case 'Y': case 'Z': case 'a':
 				case 'b': case 'c': case 'd': case 'e': case 'f': case 'g': case 'h': case 'i': case 'j':
 				case 'k': case 'l': case 'm': case 'n': case 'o': case 'p': case 'q': case 'r': case 's':
@@ -1880,6 +1906,8 @@ LangC_NextToken(LangC_Lexer* ctx)
 							break;
 						}
 					}
+					
+					ctx->token.as_string = ident;
 				} break;
 				
 				default: LangC_TokenizeSimpleTokens(ctx, &lexfile->head); break;
@@ -1893,7 +1921,7 @@ LangC_EatToken(LangC_Lexer* ctx, LangC_TokenKind kind)
 {
 	if (ctx->token.kind != kind)
 	{
-		String got = LangC_TokenAsString(&ctx->token);
+		String got = ctx->token.as_string;
 		LangC_LexerError(ctx, "expected '%s', but got '%.*s'.", LangC_token_str_table[kind], StrFmt(got));
 	}
 	
@@ -1917,7 +1945,7 @@ LangC_AssertToken(LangC_Lexer* ctx, LangC_TokenKind kind)
 {
 	if (ctx->token.kind != kind)
 	{
-		String got = LangC_TokenAsString(&ctx->token);
+		String got = ctx->token.as_string;
 		LangC_LexerError(ctx, "expected '%s', but got '%.*s'.", LangC_token_str_table[kind], StrFmt(got));
 		
 		return false;
