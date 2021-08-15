@@ -25,6 +25,7 @@ enum LangC_NodeKind
 	LangC_NodeKind_FloatConstant,
 	LangC_NodeKind_DoubleConstant,
 	LangC_NodeKind_StringConstant,
+	LangC_NodeKind_WideStringConstant,
 	LangC_NodeKind_InitializerEntry,
 	LangC_NodeKind_EnumEntry,
 	LangC_NodeKind_Label,
@@ -171,6 +172,7 @@ struct LangC_Node
 	// sizeof expr
 	// struct name body
 	// enum { body->name = body->expr, body->next->name, ... }
+	// name: stmt
 	LangC_Node* condition;
 	LangC_Node* init;
 	LangC_Node* iter;
@@ -434,10 +436,11 @@ LangC_ParseInitializerField(LangC_Parser* ctx)
 }
 
 internal String
-LangC_PrepareStringLiteral(LangC_Parser* ctx)
+LangC_PrepareStringLiteral(LangC_Parser* ctx, bool32* is_wide)
 {
 	String str;
 	char* buffer = NULL;
+	*is_wide = false;
 	
 	do
 	{
@@ -445,7 +448,8 @@ LangC_PrepareStringLiteral(LangC_Parser* ctx)
 		SB_PushArray(buffer, str.size, str.data);
 		LangC_NextToken(&ctx->lex);
 	}
-	while (ctx->lex.token.kind == LangC_TokenKind_StringLiteral);
+	while (ctx->lex.token.kind == LangC_TokenKind_StringLiteral ||
+		   (ctx->lex.token.kind == LangC_TokenKind_WideStringLiteral && (*is_wide = true)));
 	
 	str.data = buffer;
 	str.size = SB_Len(buffer);
@@ -663,9 +667,15 @@ LangC_ParseExprFactor(LangC_Parser* ctx, bool32 allow_init)
 			} break;
 			
 			case LangC_TokenKind_StringLiteral:
+			case LangC_TokenKind_WideStringLiteral:
 			{
+				bool32 is_wide;
+				
 				LangC_UpdateNode(ctx, LangC_NodeKind_StringConstant, head);
-				head->value_str = LangC_PrepareStringLiteral(ctx);
+				head->value_str = LangC_PrepareStringLiteral(ctx, &is_wide);
+				
+				if (is_wide)
+					head->kind = LangC_NodeKind_WideStringConstant;
 			} break;
 			
 			case LangC_TokenKind_FloatLiteral:
@@ -794,54 +804,45 @@ LangC_ParseExprFactor(LangC_Parser* ctx, bool32 allow_init)
 	return result;
 }
 
-struct LangC_OperatorPrecedence typedef LangC_OperatorPrecedence;
-struct LangC_OperatorPrecedence
-{
-	// from lower to higher
-	int16 level; // if <= 0, it's not a binary operator
-	bool16 right2left;
-	int32 op;
-};
-
-internal LangC_OperatorPrecedence LangC_operators_precedence[] = {
-	[LangC_TokenKind_Comma] = { 1, false, LangC_Node_Expr_Comma },
+internal int32 LangC_token_to_op[] = {
+	[LangC_TokenKind_Comma] = LangC_Node_Expr_Comma,
 	
-	[LangC_TokenKind_Assign] = { 2, true, LangC_Node_Expr_Assign },
-	[LangC_TokenKind_PlusAssign] = { 2, true, LangC_Node_Expr_AssignAdd },
-	[LangC_TokenKind_MinusAssign] = { 2, true, LangC_Node_Expr_AssignSub },
-	[LangC_TokenKind_MulAssign] = { 2, true, LangC_Node_Expr_AssignMul },
-	[LangC_TokenKind_DivAssign] = { 2, true, LangC_Node_Expr_AssignDiv },
-	[LangC_TokenKind_LeftShiftAssign] = { 2, true, LangC_Node_Expr_AssignLeftShift },
-	[LangC_TokenKind_RightShiftAssign] = { 2, true, LangC_Node_Expr_AssignRightShift },
-	[LangC_TokenKind_AndAssign] = { 2, true, LangC_Node_Expr_AssignAnd },
-	[LangC_TokenKind_OrAssign] = { 2, true, LangC_Node_Expr_AssignOr },
-	[LangC_TokenKind_XorAssign] = { 2, true, LangC_Node_Expr_AssignXor },
+	[LangC_TokenKind_Assign] = LangC_Node_Expr_Assign,
+	[LangC_TokenKind_PlusAssign] = LangC_Node_Expr_AssignAdd,
+	[LangC_TokenKind_MinusAssign] = LangC_Node_Expr_AssignSub,
+	[LangC_TokenKind_MulAssign] = LangC_Node_Expr_AssignMul,
+	[LangC_TokenKind_DivAssign] = LangC_Node_Expr_AssignDiv,
+	[LangC_TokenKind_LeftShiftAssign] = LangC_Node_Expr_AssignLeftShift,
+	[LangC_TokenKind_RightShiftAssign] = LangC_Node_Expr_AssignRightShift,
+	[LangC_TokenKind_AndAssign] = LangC_Node_Expr_AssignAnd,
+	[LangC_TokenKind_OrAssign] = LangC_Node_Expr_AssignOr,
+	[LangC_TokenKind_XorAssign] = LangC_Node_Expr_AssignXor,
 	
-	[LangC_TokenKind_QuestionMark] = { 3, true, LangC_Node_Expr_Ternary },
+	[LangC_TokenKind_QuestionMark] = LangC_Node_Expr_Ternary,
 	
-	[LangC_TokenKind_LOr] = { 3, false, LangC_Node_Expr_LogicalOr },
-	[LangC_TokenKind_LAnd] = { 4, false, LangC_Node_Expr_LogicalAnd },
-	[LangC_TokenKind_Or] = { 5, false, LangC_Node_Expr_Or },
-	[LangC_TokenKind_Xor] = { 6, false, LangC_Node_Expr_Xor },
-	[LangC_TokenKind_And] = { 7, false, LangC_Node_Expr_And },
+	[LangC_TokenKind_LOr] = LangC_Node_Expr_LogicalOr,
+	[LangC_TokenKind_LAnd] = LangC_Node_Expr_LogicalAnd,
+	[LangC_TokenKind_Or] = LangC_Node_Expr_Or,
+	[LangC_TokenKind_Xor] = LangC_Node_Expr_Xor,
+	[LangC_TokenKind_And] = LangC_Node_Expr_And,
 	
-	[LangC_TokenKind_Equals] = { 8, false, LangC_Node_Expr_Equals },
-	[LangC_TokenKind_NotEquals] = { 8, false, LangC_Node_Expr_NotEquals },
+	[LangC_TokenKind_Equals] = LangC_Node_Expr_Equals,
+	[LangC_TokenKind_NotEquals] = LangC_Node_Expr_NotEquals,
 	
-	[LangC_TokenKind_LThan] = { 9, false, LangC_Node_Expr_LThan },
-	[LangC_TokenKind_GThan] = { 9, false, LangC_Node_Expr_GThan },
-	[LangC_TokenKind_LEqual] = { 9, false, LangC_Node_Expr_LEqual },
-	[LangC_TokenKind_GEqual] = { 9, false, LangC_Node_Expr_GEqual },
+	[LangC_TokenKind_LThan] = LangC_Node_Expr_LThan,
+	[LangC_TokenKind_GThan] = LangC_Node_Expr_GThan,
+	[LangC_TokenKind_LEqual] = LangC_Node_Expr_LEqual,
+	[LangC_TokenKind_GEqual] = LangC_Node_Expr_GEqual,
 	
-	[LangC_TokenKind_LeftShift] = { 10, false, LangC_Node_Expr_LeftShift },
-	[LangC_TokenKind_RightShift] = { 10, false, LangC_Node_Expr_RightShift },
+	[LangC_TokenKind_LeftShift] = LangC_Node_Expr_LeftShift,
+	[LangC_TokenKind_RightShift] = LangC_Node_Expr_RightShift,
 	
-	[LangC_TokenKind_Plus] = { 11, false, LangC_Node_Expr_Add },
-	[LangC_TokenKind_Minus] = { 11, false, LangC_Node_Expr_Sub },
+	[LangC_TokenKind_Plus] = LangC_Node_Expr_Add,
+	[LangC_TokenKind_Minus] = LangC_Node_Expr_Sub,
 	
-	[LangC_TokenKind_Mul] = { 12, false, LangC_Node_Expr_Mul },
-	[LangC_TokenKind_Div] = { 12, false, LangC_Node_Expr_Div },
-	[LangC_TokenKind_Mod] = { 12, false, LangC_Node_Expr_Mod },
+	[LangC_TokenKind_Mul] = LangC_Node_Expr_Mul,
+	[LangC_TokenKind_Div] = LangC_Node_Expr_Div,
+	[LangC_TokenKind_Mod] = LangC_Node_Expr_Mod,
 };
 
 internal LangC_Node*
@@ -853,7 +854,7 @@ LangC_ParseExpr(LangC_Parser* ctx, int32 level, bool32 allow_init)
 	while (prec = LangC_operators_precedence[ctx->lex.token.kind],
 		   prec.level > level)
 	{
-		int32 op = prec.op;
+		int32 op = LangC_token_to_op[ctx->lex.token.kind];
 		LangC_NextToken(&ctx->lex);
 		LangC_Node* right = LangC_ParseExprFactor(ctx, false);
 		
@@ -875,7 +876,7 @@ LangC_ParseExpr(LangC_Parser* ctx, int32 level, bool32 allow_init)
 				LangC_EatToken(&ctx->lex, LangC_TokenKind_Colon);
 				tmp->branch2 = LangC_ParseExpr(ctx, level + 1, false);
 			} else {
-				tmp->flags = lookahead_prec.op;
+				tmp->flags = LangC_token_to_op[lookahead];
 				tmp->left = right;
 				tmp->right = LangC_ParseExpr(ctx, level + 1, false);
 			}
@@ -1014,20 +1015,23 @@ LangC_ParseStmt(LangC_Parser* ctx, LangC_Node** out_last, bool32 allow_decl)
 		
 		default:
 		{
-			if (allow_decl)
+			if (allow_decl && LangC_IsBeginningOfDeclOrType(ctx))
 			{
-				result = LangC_ParseDeclOrExpr(ctx, &last, false, 0);
+				result = LangC_ParseDecl(ctx, &last, false, false, true, false);
 			}
 			else
 			{
 				last = result = LangC_ParseExpr(ctx, 0, false);
-				LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
-			}
-			
-			if (result->kind == LangC_NodeKind_Ident && LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Colon))
-			{
-				result->kind = LangC_NodeKind_Label;
-				result->stmt = LangC_ParseStmt(ctx, NULL, false);
+				
+				if (result->kind == LangC_NodeKind_Ident && LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Colon))
+				{
+					result->kind = LangC_NodeKind_Label;
+					result->stmt = LangC_ParseStmt(ctx, NULL, false);
+				}
+				else
+				{
+					LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
+				}
 			}
 		} break;
 	}
@@ -1561,6 +1565,10 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 					base->name = ctx->lex.token.value_ident;
 					break;
 				}
+				else if (type_only)
+				{
+					LangC_LexerError(&ctx->lex, "'%.*s' is not a typename", StrFmt(ctx->lex.token.value_ident));
+				}
 			} /* fallthrough */
 			
 			default: goto out_of_loop;
@@ -1589,7 +1597,6 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 		// TODO(ljre): validate use of modifiers
 	}
 	
-	right_before_parsing_rest_of_decl:;
 	LangC_Node* type = LangC_ParseRestOfDecl(ctx, base, decl, type_only, is_global);
 	
 	if (implicit_int)
@@ -1601,8 +1608,7 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 			 LangC_IsBeginningOfDeclOrType(ctx)))
 		{
 			LangC_LexerError(&ctx->lex, "'%.*s' is not a typename", StrFmt(decl->name));
-			implicit_int = false;
-			goto right_before_parsing_rest_of_decl;
+			type = LangC_ParseRestOfDecl(ctx, base, decl, type_only, is_global);
 		}
 		else
 		{

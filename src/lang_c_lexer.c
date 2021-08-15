@@ -1,208 +1,3 @@
-enum LangC_TokenKind
-{
-	LangC_TokenKind_Eof = 0,
-	
-	LangC_TokenKind__FirstKeyword,
-	LangC_TokenKind_Auto = LangC_TokenKind__FirstKeyword,
-	LangC_TokenKind_Break,
-	LangC_TokenKind_Case,
-	LangC_TokenKind_Char,
-	LangC_TokenKind_Const,
-	LangC_TokenKind_Continue,
-	LangC_TokenKind_Default,
-	LangC_TokenKind_Do,
-	LangC_TokenKind_Double,
-	LangC_TokenKind_Else,
-	LangC_TokenKind_Enum,
-	LangC_TokenKind_Extern,
-	LangC_TokenKind_Float,
-	LangC_TokenKind_For,
-	LangC_TokenKind_Goto,
-	LangC_TokenKind_If,
-	LangC_TokenKind_Inline,
-	LangC_TokenKind_Int,
-	LangC_TokenKind_Long,
-	LangC_TokenKind_Register,
-	LangC_TokenKind_Restrict,
-	LangC_TokenKind_Return,
-	LangC_TokenKind_Short,
-	LangC_TokenKind_Signed,
-	LangC_TokenKind_Sizeof,
-	LangC_TokenKind_Static,
-	LangC_TokenKind_Struct,
-	LangC_TokenKind_Switch,
-	LangC_TokenKind_Typedef,
-	LangC_TokenKind_Union,
-	LangC_TokenKind_Unsigned,
-	LangC_TokenKind_Void,
-	LangC_TokenKind_Volatile,
-	LangC_TokenKind_While,
-	LangC_TokenKind_Bool,
-	LangC_TokenKind_Complex,
-	LangC_TokenKind__LastKeyword = LangC_TokenKind_Complex,
-	
-	LangC_TokenKind_IntLiteral,
-	LangC_TokenKind_LIntLiteral,
-	LangC_TokenKind_LLIntLiteral,
-	LangC_TokenKind_UintLiteral,
-	LangC_TokenKind_LUintLiteral,
-	LangC_TokenKind_LLUintLiteral,
-	LangC_TokenKind_StringLiteral,
-	LangC_TokenKind_WideStringLiteral,
-	LangC_TokenKind_FloatLiteral,
-	LangC_TokenKind_DoubleLiteral,
-	
-	LangC_TokenKind_Identifier,
-	
-	LangC_TokenKind_LeftParen, // (
-	LangC_TokenKind_RightParen, // )
-	LangC_TokenKind_LeftBrkt, // [
-	LangC_TokenKind_RightBrkt, // ]
-	LangC_TokenKind_LeftCurl, // {
-	LangC_TokenKind_RightCurl, // }
-	LangC_TokenKind_Dot, // .
-	LangC_TokenKind_VarArgs, // ...
-	LangC_TokenKind_Arrow, // ->
-	LangC_TokenKind_Comma, // ,
-	LangC_TokenKind_Colon, // :
-	LangC_TokenKind_Semicolon, // ;
-	LangC_TokenKind_QuestionMark, // ?
-	LangC_TokenKind_Plus, // +
-	LangC_TokenKind_Minus, // -
-	LangC_TokenKind_Mul, // *
-	LangC_TokenKind_Div, // /
-	LangC_TokenKind_Mod, // %
-	LangC_TokenKind_LThan, // <
-	LangC_TokenKind_GThan, // >
-	LangC_TokenKind_LEqual, // <=
-	LangC_TokenKind_GEqual, // >=
-	LangC_TokenKind_Equals, // ==
-	LangC_TokenKind_Inc, // ++
-	LangC_TokenKind_Dec, // --
-	LangC_TokenKind_LNot, // !
-	LangC_TokenKind_LAnd, // &&
-	LangC_TokenKind_LOr, // ||
-	LangC_TokenKind_Not, // ~
-	LangC_TokenKind_And, // &
-	LangC_TokenKind_Or, // |
-	LangC_TokenKind_Xor, // ^
-	LangC_TokenKind_LeftShift, // <<
-	LangC_TokenKind_RightShift, // >>
-	LangC_TokenKind_NotEquals, // !=
-	LangC_TokenKind_Assign, // =
-	LangC_TokenKind_PlusAssign, // +=
-	LangC_TokenKind_MinusAssign, // -=
-	LangC_TokenKind_MulAssign, // *=
-	LangC_TokenKind_DivAssign, // /=
-	LangC_TokenKind_ModAssign, // %=
-	LangC_TokenKind_LeftShiftAssign, // <<=
-	LangC_TokenKind_RightShiftAssign, // >>=
-	LangC_TokenKind_AndAssign, // &=
-	LangC_TokenKind_OrAssign, // |=
-	LangC_TokenKind_XorAssign, // ^=
-} typedef LangC_TokenKind;
-
-internal const char* LangC_token_str_table[] = {
-	[LangC_TokenKind_Eof] = "(EOF)",
-	
-	[LangC_TokenKind_Auto] = "auto",
-	[LangC_TokenKind_Break] = "break",
-	[LangC_TokenKind_Case] = "case",
-	[LangC_TokenKind_Char] = "char",
-	[LangC_TokenKind_Const] = "const",
-	[LangC_TokenKind_Continue] = "continue",
-	[LangC_TokenKind_Default] = "default",
-	[LangC_TokenKind_Do] = "do",
-	[LangC_TokenKind_Double] = "double",
-	[LangC_TokenKind_Else] = "else",
-	[LangC_TokenKind_Enum] = "enum",
-	[LangC_TokenKind_Extern] = "extern",
-	[LangC_TokenKind_Float] = "float",
-	[LangC_TokenKind_For] = "for",
-	[LangC_TokenKind_Goto] = "goto",
-	[LangC_TokenKind_If] = "if",
-	[LangC_TokenKind_Inline] = "inline",
-	[LangC_TokenKind_Int] = "int",
-	[LangC_TokenKind_Long] = "long",
-	[LangC_TokenKind_Register] = "register",
-	[LangC_TokenKind_Restrict] = "restrict",
-	[LangC_TokenKind_Return] = "return",
-	[LangC_TokenKind_Short] = "short",
-	[LangC_TokenKind_Signed] = "signed",
-	[LangC_TokenKind_Sizeof] = "sizeof",
-	[LangC_TokenKind_Static] = "static",
-	[LangC_TokenKind_Struct] = "struct",
-	[LangC_TokenKind_Switch] = "switch",
-	[LangC_TokenKind_Typedef] = "typedef",
-	[LangC_TokenKind_Union] = "union",
-	[LangC_TokenKind_Unsigned] = "unsigned",
-	[LangC_TokenKind_Void] = "void",
-	[LangC_TokenKind_Volatile] = "volatile",
-	[LangC_TokenKind_While] = "while",
-	[LangC_TokenKind_Bool] = "bool",
-	[LangC_TokenKind_Complex] = "complex",
-	
-	[LangC_TokenKind_IntLiteral] = "(int literal)",
-	[LangC_TokenKind_LIntLiteral] = "(long literal)",
-	[LangC_TokenKind_LLIntLiteral] = "(long long literal)",
-	[LangC_TokenKind_UintLiteral] = "(unsigned literal)",
-	[LangC_TokenKind_LUintLiteral] = "(unsigned long literal)",
-	[LangC_TokenKind_LLUintLiteral] = "(unsigned long long literal)",
-	[LangC_TokenKind_StringLiteral] = "(const char[] literal)",
-	[LangC_TokenKind_WideStringLiteral] = "(const wchar_t[] literal)",
-	[LangC_TokenKind_FloatLiteral] = "(float literal)",
-	[LangC_TokenKind_DoubleLiteral] = "(double literal)",
-	
-	[LangC_TokenKind_Identifier] = "(identifier)",
-	
-	[LangC_TokenKind_LeftParen] = "(",
-	[LangC_TokenKind_RightParen] = ")",
-	[LangC_TokenKind_LeftBrkt] = "[",
-	[LangC_TokenKind_RightBrkt] = "]",
-	[LangC_TokenKind_LeftCurl] = "{",
-	[LangC_TokenKind_RightCurl] = "}",
-	[LangC_TokenKind_Dot] = ".",
-	[LangC_TokenKind_VarArgs] = "...",
-	[LangC_TokenKind_Arrow] = "->",
-	[LangC_TokenKind_Comma] = ",",
-	[LangC_TokenKind_Colon] = ":",
-	[LangC_TokenKind_Semicolon] = ";",
-	[LangC_TokenKind_QuestionMark] = "?",
-	[LangC_TokenKind_Plus] = "+",
-	[LangC_TokenKind_Minus] = "-",
-	[LangC_TokenKind_Mul] = "*",
-	[LangC_TokenKind_Div] = "/",
-	[LangC_TokenKind_Mod] = "%",
-	[LangC_TokenKind_LThan] = "<",
-	[LangC_TokenKind_GThan] = ">",
-	[LangC_TokenKind_LEqual] = "<=",
-	[LangC_TokenKind_GEqual] = ">=",
-	[LangC_TokenKind_Equals] = "==",
-	[LangC_TokenKind_Inc] = "++",
-	[LangC_TokenKind_Dec] = "--",
-	[LangC_TokenKind_LNot] = "!",
-	[LangC_TokenKind_LAnd] = "&&",
-	[LangC_TokenKind_LOr] = "||",
-	[LangC_TokenKind_Not] = "~",
-	[LangC_TokenKind_And] = "&",
-	[LangC_TokenKind_Or] = "|",
-	[LangC_TokenKind_Xor] = "^",
-	[LangC_TokenKind_LeftShift] = "<<",
-	[LangC_TokenKind_RightShift] = ">>",
-	[LangC_TokenKind_NotEquals] = "!=",
-	[LangC_TokenKind_Assign] = "=",
-	[LangC_TokenKind_PlusAssign] = "+=",
-	[LangC_TokenKind_MinusAssign] = "-=",
-	[LangC_TokenKind_MulAssign] = "*=",
-	[LangC_TokenKind_DivAssign] = "/=",
-	[LangC_TokenKind_ModAssign] = "%=",
-	[LangC_TokenKind_LeftShiftAssign] = "<<=",
-	[LangC_TokenKind_RightShiftAssign] = ">>=",
-	[LangC_TokenKind_AndAssign] = "&=",
-	[LangC_TokenKind_OrAssign] = "|=",
-	[LangC_TokenKind_XorAssign] = "^=",
-};
-
 struct LangC_Token
 {
 	int32 line, col;
@@ -280,14 +75,47 @@ struct LangC_Lexer
 internal void LangC_ConsumeEofState(LangC_Lexer* ctx);
 internal void LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro);
 internal void LangC_NextToken(LangC_Lexer* ctx);
+internal void LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead);
+internal int32 LangC_EvalPreProcessorExpr(LangC_Lexer* ctx, String expr);
 
 internal int32
 LangC_InitLexerFile(LangC_LexerFile* lexfile, const char* path)
 {
-	// TODO(ljre): File contents caching
-	//Print("Loading file '%s'\n", path);
+	// bora fazer isso
+	struct CachedFile
+	{
+		uint64 hash;
+		const char* contents;
+	};
 	
-	lexfile->source = OS_ReadWholeFile(path);
+	static struct CachedFile cached_files[1024];
+	static int32 cached_files_count;
+	
+	const char* data = NULL;
+	uint64 search_hash = SimpleHashNullTerminated(path);
+	int32 i = 0;
+	
+	for (; i < cached_files_count; ++i)
+	{
+		if (cached_files[i].hash == search_hash)
+		{
+			data = cached_files[i].contents;
+			break;
+		}
+	}
+	
+	if (!data)
+	{
+		if (i >= cached_files_count)
+			i = ArrayLength(cached_files)/2; // fuck it
+		
+		data = OS_ReadWholeFile(path);
+		
+		cached_files[i].hash = search_hash;
+		cached_files[i].contents = data;
+	}
+	
+	lexfile->source = data;
 	lexfile->head = lexfile->source;
 	lexfile->previous_head = lexfile->head;
 	lexfile->line = lexfile->col = 1;
@@ -549,8 +377,6 @@ LangC_DefineMacro(LangC_Lexer* ctx, String def)
 internal void
 LangC_UndefineMacro(LangC_Lexer* ctx, String name)
 {
-	// TODO(ljre): better way?
-	
 	if (!ctx->first_macro)
 		return;
 	
@@ -677,8 +503,6 @@ LangC_IsCurrentMacroContext(LangC_Lexer* ctx, LangC_LexerMacroContext* macroctx)
 internal void
 LangC_ExpandMacroToStretchyBuffer(LangC_Lexer* ctx, LangC_Macro* macro, char** buf)
 {
-	// TODO(ljre): make this better
-	
 	LangC_PushMacroContext(ctx, NULL, macro);
 	LangC_LexerMacroContext* macroctx = ctx->macroctx_last;
 	
@@ -686,18 +510,18 @@ LangC_ExpandMacroToStretchyBuffer(LangC_Lexer* ctx, LangC_Macro* macro, char** b
 	{
 		LangC_NextToken(ctx);
 		String str = ctx->token.as_string;
+		
 		SB_PushArray(*buf, str.size, str.data);
+		SB_Push(*buf, ' ');
 	}
 }
 
+// NOTE(ljre): returned string is null-terminated as well
 internal String
-LangC_ExpandCurrentMacroParameters(LangC_Lexer* ctx, String name, const char* begin, const char* end)
+LangC_ExpandCurrentMacroParameters(LangC_Lexer* ctx, const char* begin, const char* end)
 {
 	char* buf = NULL;
-	SB_ReserveAtLeast(buf, name.size + (uintsize)(end - begin) + 2);
-	
-	SB_PushArray(buf, name.size, name.data);
-	SB_Push(buf, ' ');
+	SB_ReserveAtLeast(buf, (uintsize)(end - begin) + 1);
 	
 	if (!ctx->macroctx_last)
 	{
@@ -745,105 +569,119 @@ internal void
 LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro)
 {
 	LangC_Macro* saved_last_macro = ctx->last_macro;
-	const char* head = macro->def;
+	const char* macro_head = macro->def;
 	
 	// ignore macro name
-	LangC_TokenizeIdent(&head);
+	LangC_TokenizeIdent(&macro_head);
 	
 	if (macro->is_func)
 	{
-		assert(*head == '(');
-		++head;
+		assert(*macro_head == '(');
+		++macro_head;
 		
 		// implementation shouldn't call this function if there's "macro type" mismatch
 		assert(**phead == '(');
 		++*phead;
 		
-		if (*head != ')')
+		// NOTE(ljre): Expand current expanding macro parameters
+		const char* head = *phead;
+		{
+			LangC_IgnoreUntilPairOfNestedOr(phead, '(', ')', 0);
+			const char* end = *phead;
+			
+			String expanded_args = LangC_ExpandCurrentMacroParameters(ctx, head, end);
+			head = expanded_args.data; // guaranteed to be null-terminated
+		}
+		
+		if (*macro_head != ')')
 		{
 			do
 			{
+				LangC_IgnoreWhitespaces(&macro_head, false);
 				LangC_IgnoreWhitespaces(&head, false);
-				LangC_IgnoreWhitespaces(phead, false);
 				
-				if (*head == '.')
+				if (*macro_head == '.')
 				{
-					if (head[1] != '.' || head[2] != '.')
+					if (macro_head[1] != '.' || macro_head[2] != '.')
 					{
 						LangC_LexerError(ctx, "expected '...' for VA_ARGS.\n");
 						continue;
 					}
 					
-					head += 3;
+					macro_head += 3;
 					const char name[] = "__VA_ARGS__";
 					
-					const char* begin = *phead;
-					LangC_IgnoreUntilPairOfNestedOr(phead, '(', ')', 0);
+					const char* begin = head;
+					LangC_IgnoreUntilPairOfNestedOr(&head, '(', ')', 0);
+					const char* end = head;
 					
-					const char* end = *phead;
-					String def = LangC_ExpandCurrentMacroParameters(ctx, Str(name), begin, end);
+					uintsize len = (uintsize)(end - begin);
+					
+					uintsize def_len = sizeof(name) + len + 1;
+					char* def_str = PushMemory(def_len);
+					
+					memcpy(def_str, name, sizeof(name)-1);
+					def_str[sizeof(name)] = ' ';
+					memcpy(def_str + sizeof(name), begin, len);
+					def_str[def_len-1] = 0;
+					
+					String def = {
+						.size = def_len,
+						.data = def_str,
+					};
 					
 					LangC_DefineMacro(ctx, def);
 					break;
 				}
 				else
 				{
-					String ident = LangC_TokenizeIdent(&head);
+					String ident = LangC_TokenizeIdent(&macro_head);
 					
-					const char* begin = *phead;
-					LangC_IgnoreUntilPairOfNestedOr(phead, '(', ')', ',');
+					const char* begin = head;
+					LangC_IgnoreUntilPairOfNestedOr(&head, '(', ')', ',');
 					
-					if (!**phead)
-					{
-						LangC_LexerError(ctx, "unexpected end-of-file.\n");
-						return;
-					}
+					const char* end = head;
+					uintsize len = (uintsize)(end - begin);
 					
-					// TODO(ljre): What happens if we do
-					//             #define Test(...) AnotherTest(__VA_ARGS__, 10)
-					//             #define AnotherTest(x, y) y
-					//             
-					//             note: it will give incorrect results
+					uintsize def_len = ident.size + 1 + len + 1;
+					char* def_str = PushMemory(def_len);
 					
-					// TODO(ljre): I'm too lazy to fix this now, so here is my solution:
-					//             call LangC_ExpandCurrentMacroParameters in the whole parameter list, then
-					//             begin to parse that instead
+					memcpy(def_str, ident.data, ident.size);
+					def_str[ident.size] = ' ';
+					memcpy(def_str + ident.size + 1, begin, len);
+					def_str[def_len-1] = 0;
 					
-					const char* end = *phead;
-					String def = LangC_ExpandCurrentMacroParameters(ctx, ident, begin, end);
+					String def = {
+						.size = def_len,
+						.data = def_str,
+					};
 					
 					LangC_DefineMacro(ctx, def);
 				}
 				
+				LangC_IgnoreWhitespaces(&macro_head, false);
 				LangC_IgnoreWhitespaces(&head, false);
-				LangC_IgnoreWhitespaces(phead, false);
 			}
-			while (*head == ',' && *(*phead) == ',' && ++head);
+			while (*macro_head == ',' && *head == ',' && (++macro_head, ++head));
 			
-			if (*head == ',' && **phead != ',')
+			if (*macro_head == ',' && *head != ',')
 			{
 				LangC_LexerError(ctx, "expected more arguments in function-like macro.");
 			}
 		}
 		
-		if (*head != ')')
+		if (*macro_head != ')')
 		{
 			LangC_LexerError(ctx, "expected ')' at the end of function-like macro arguments.");
 		}
 		
-		if (*head == ')' && **phead != ')')
-		{
-			LangC_LexerWarning(ctx, "excessive number of arguments for function-like macro.");
-			LangC_IgnoreUntilPairOfNestedOr(phead, '(', ')', 0);
-		}
-		
-		assert(*head == ')');
-		++head;
+		assert(*macro_head == ')');
+		++macro_head;
 		
 		assert(**phead == ')');
 		++*phead;
 		
-		LangC_IgnoreWhitespaces(&head, false);
+		LangC_IgnoreWhitespaces(&macro_head, false);
 	}
 	
 	if (!ctx->macroctx_first)
@@ -863,7 +701,7 @@ LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro)
 	
 	ctx->macroctx_last->saved_last_macro = saved_last_macro;
 	ctx->macroctx_last->expanding_macro = macro;
-	ctx->macroctx_last->head = head;
+	ctx->macroctx_last->head = macro_head;
 }
 
 internal void
@@ -914,6 +752,7 @@ internal int32
 LangC_ValueOfEscaped(const char** ptr)
 {
 	int32 value = 0;
+	int32 chars_in_hex = 0;
 	
 	switch (**ptr)
 	{
@@ -947,11 +786,12 @@ LangC_ValueOfEscaped(const char** ptr)
 			}
 		} break;
 		
-		case 'x':
+		/**/ if (0) case 'x': chars_in_hex = 2;
+		else if (0) case 'u': chars_in_hex = 4;
+		else        case 'U': chars_in_hex = 8;
+		
 		{
 			++*ptr;
-			
-			int32 chars_in_hex = 2;
 			
 			while (chars_in_hex > 0 &&
 				   ((**ptr >= '0' && **ptr <= '9') ||
@@ -971,28 +811,10 @@ LangC_ValueOfEscaped(const char** ptr)
 			}
 		} break;
 		
-		case 'u':
-		{
-			// TODO(ljre)
-		} break;
-		
-		case 'U':
-		{
-			// TODO(ljre)
-		} break;
-		
 		default: value = **ptr; ++*ptr; break;
 	}
 	
 	return value;
-}
-
-internal int32
-LangC_EvalPreProcessorExpr(LangC_Lexer* ctx, String expr)
-{
-	// TODO(ljre)
-	
-	return 0;
 }
 
 internal int32
@@ -1204,7 +1026,7 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 			int32 base = 10;
 			if ((*phead)[0] == '0')
 			{
-				if ((*phead)[1] == 'x')
+				if ((*phead)[1] == 'x' || (*phead)[1] == 'X')
 				{
 					(*phead) += 2;
 					base = 16;
@@ -1226,15 +1048,26 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 			
 			while (LangC_IsNumeric(*end)) ++end;
 			
+			if (*end == 'e' || *end == 'E')
+				goto parse_exponent;
+			
 			if (*end == '.')
 			{
-				if (base == 16)
-					LangC_LexerError(ctx, "error: floats cannot begin with '0x'.");
-				else if (base == 2)
+				while (LangC_IsNumeric(*++end));
+				
+				if (base == 2)
 					LangC_LexerError(ctx, "error: floats cannot begin with '0b'.");
 				
-				++end;
-				while (LangC_IsNumeric(*end)) ++end;
+				if (*end == 'e' || *end == 'E' || (base == 16 && (*end == 'p' || *end == 'P')))
+				{
+					parse_exponent:;
+					++end;
+					
+					if (*end == '+' || *end == '-')
+						++end;
+					
+					while (LangC_IsNumeric(*end)) ++end;
+				}
 				
 				if (*end == 'f' || *end == 'F')
 				{
@@ -1242,12 +1075,11 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 					ctx->token.kind = LangC_TokenKind_FloatLiteral;
 					ctx->token.value_float = strtof(begin, NULL);
 				}
-				else if (*end == 'e' || *end == 'E')
-				{
-					// TODO(ljre)
-				}
 				else
 				{
+					if (*end == 'l' || *end == 'L')
+						++end;
+					
 					ctx->token.kind = LangC_TokenKind_DoubleLiteral;
 					ctx->token.value_double = strtod(begin, NULL);
 				}
@@ -1269,7 +1101,7 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 			
 			int32 eaten = (int32)(end - begin);
 			ctx->token.as_string.size += eaten;
-			(*phead) += eaten;
+			*phead += eaten;
 		} break;
 		
 		case '"':
@@ -1952,4 +1784,13 @@ LangC_AssertToken(LangC_Lexer* ctx, LangC_TokenKind kind)
 	}
 	
 	return true;
+}
+
+//~ NOTE(ljre): this stuff below if fucking awful
+// TODO(ljre): I've deleted everything. do it again later
+
+internal int32
+LangC_EvalPreProcessorExpr(LangC_Lexer* ctx, String expr)
+{
+	return 0;
 }

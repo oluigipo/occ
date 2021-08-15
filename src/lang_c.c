@@ -3,6 +3,7 @@
 internal char LangC_global_include_dirs[LangC_MAX_INCLUDE_DIRS][MAX_PATH_SIZE];
 internal uintsize LangC_global_include_dirs_count;
 
+#include "lang_c_definitions.h"
 #include "lang_c_lexer.c"
 #include "lang_c_parser.c"
 

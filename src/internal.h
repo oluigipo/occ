@@ -66,6 +66,21 @@ SimpleHash(String str)
 	return hash;
 }
 
+internal uint64
+SimpleHashNullTerminated(const char* str)
+{
+	uint64 hash = 2166136261ull;
+	
+	while (*str) {
+		uint8 value = *str++;
+		
+		hash ^= value;
+		hash *= 16777619ull;
+	}
+	
+	return hash;
+}
+
 internal void* PushMemory(uintsize size);
 
 //~ Stretchy Buffers
@@ -84,7 +99,7 @@ struct StretchyBufferHeader
 #define SB_Len(buf) ((buf) ? SB__Len(buf) : 0)
 #define SB_ReserveAtLeast(buf,s) SB__ReserveAtLeast((void**)&(buf), s, sizeof *(buf))
 #define SB_ReserveMore(buf,s) SB_ReserveAtLeast(buf,SB_Len(buf)+(s))
-#define SB_Push(buf,item) (SB_ReserveAtLeast(buf, SB_Len(buf)+1), buf[SB__Len(buf)++] = (item))
+#define SB_Push(buf,item) (SB_ReserveAtLeast(buf, SB_Len(buf)+1), (buf)[SB__Len(buf)++] = (item))
 #define SB_End(buf) ((buf) + SB_Len(buf))
 #define SB_AddLen(buf,s) (SB__Len(buf) += (s))
 #define SB_PushArray(buf,s,data) (SB_ReserveAtLeast(buf, SB_Len(buf)+(s)),\
