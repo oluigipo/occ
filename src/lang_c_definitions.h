@@ -45,12 +45,16 @@ enum LangC_TokenKind
 	LangC_TokenKind_Complex,
 	LangC_TokenKind__LastKeyword = LangC_TokenKind_Complex,
 	
+	// NOTE(ljre): those 3 below shall be in order
 	LangC_TokenKind_IntLiteral,
 	LangC_TokenKind_LIntLiteral,
 	LangC_TokenKind_LLIntLiteral,
+	
+	// NOTE(ljre): same thing for those 3
 	LangC_TokenKind_UintLiteral,
 	LangC_TokenKind_LUintLiteral,
 	LangC_TokenKind_LLUintLiteral,
+	
 	LangC_TokenKind_StringLiteral,
 	LangC_TokenKind_WideStringLiteral,
 	LangC_TokenKind_FloatLiteral,
@@ -104,9 +108,11 @@ enum LangC_TokenKind
 	LangC_TokenKind_AndAssign, // &=
 	LangC_TokenKind_OrAssign, // |=
 	LangC_TokenKind_XorAssign, // ^=
+	
+	LangC_TokenKind__Count,
 } typedef LangC_TokenKind;
 
-internal const char* LangC_token_str_table[] = {
+internal const char* LangC_token_str_table[LangC_TokenKind__Count] = {
 	[LangC_TokenKind_Eof] = "(EOF)",
 	[LangC_TokenKind_NewLine] = "(EOL)",
 	
@@ -216,7 +222,7 @@ struct LangC_OperatorPrecedence
 	bool16 right2left;
 };
 
-internal LangC_OperatorPrecedence LangC_operators_precedence[] = {
+internal LangC_OperatorPrecedence LangC_operators_precedence[LangC_TokenKind__Count] = {
 	[LangC_TokenKind_Comma] = { 1, false, },
 	
 	[LangC_TokenKind_Assign] = { 2, true, },

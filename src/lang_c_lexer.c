@@ -109,10 +109,14 @@ LangC_InitLexerFile(LangC_LexerFile* lexfile, const char* path)
 	
 	if (!data)
 	{
-		if (i >= cached_files_count)
-			i = ArrayLength(cached_files)/2; // fuck it
-		
 		data = OS_ReadWholeFile(path);
+		if (!data)
+			return -1;
+		
+		if (cached_files_count >= ArrayLength(cached_files))
+			cached_files_count = ArrayLength(cached_files)/2; // fuck it
+		
+		i = cached_files_count++;
 		
 		cached_files[i].hash = search_hash;
 		cached_files[i].contents = data;
