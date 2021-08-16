@@ -62,8 +62,10 @@ struct LangC_Lexer
 	LangC_LexerFile file;
 	int32 ifdef_failed_nesting;
 	int32 ifdef_nesting;
-	bool32 ifdef_already_matched;
-	bool32 error;
+	bool16 ifdef_already_matched;
+	bool16 error;
+	bool16 newline_as_token;
+	bool16 dont_expand_macros; // 'dont' because ZII
 	
 	LangC_Macro* first_macro;
 	LangC_Macro* last_macro;
@@ -74,9 +76,10 @@ struct LangC_Lexer
 
 internal void LangC_ConsumeEofState(LangC_Lexer* ctx);
 internal void LangC_PushMacroContext(LangC_Lexer* ctx, const char** phead, LangC_Macro* macro);
+internal bool32 LangC_AssertToken(LangC_Lexer* ctx, LangC_TokenKind kind);
 internal void LangC_NextToken(LangC_Lexer* ctx);
 internal void LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead);
-internal int32 LangC_EvalPreProcessorExpr(LangC_Lexer* ctx, String expr);
+internal int32 LangC_EvalPreProcessorExpr(LangC_Lexer* ctx);
 
 internal int32
 LangC_InitLexerFile(LangC_LexerFile* lexfile, const char* path)
@@ -922,16 +925,7 @@ LangC_PreProcessorIfdef(LangC_Lexer* ctx, LangC_LexerFile* lexfile, bool32 not)
 internal void
 LangC_PreProcessorIf(LangC_Lexer* ctx, LangC_LexerFile* lexfile)
 {
-	const char* begin = lexfile->head;
-	LangC_IgnoreUntilEndOfLine(lexfile);
-	const char* end = lexfile->head;
-	
-	String expr = {
-		.size = (uintsize)(end - begin),
-		.data = begin,
-	};
-	
-	if (LangC_EvalPreProcessorExpr(ctx, expr))
+	if (LangC_EvalPreProcessorExpr(ctx))
 	{
 		++ctx->ifdef_nesting;
 	}
@@ -1389,7 +1383,6 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 	ctx->token.as_string.size = (uintsize)(*phead - ctx->token.as_string.data);
 }
 
-internal bool32 LangC_AssertToken(LangC_Lexer* ctx, LangC_TokenKind kind);
 internal void
 LangC_NextToken(LangC_Lexer* ctx)
 {
@@ -1402,11 +1395,11 @@ LangC_NextToken(LangC_Lexer* ctx)
 	{
 		//~ Macro State
 		LangC_LexerMacroContext* macroctx = ctx->macroctx_last;
-		LangC_IgnoreWhitespaces(&macroctx->head, true);
+		LangC_IgnoreWhitespaces(&macroctx->head, !ctx->newline_as_token);
 		
 		switch (*macroctx->head)
 		{
-			case 0: LangC_PopMacroContext(ctx); goto beginning;
+			case 0: LangC_PopMacroContext(ctx); ctx->newline_as_token = false; goto beginning;
 			
 			case '#': // Stringify
 			{
@@ -1537,7 +1530,7 @@ LangC_NextToken(LangC_Lexer* ctx)
 			return;
 		}
 		
-		LangC_IgnoreWhitespaces(&lexfile->head, true);
+		LangC_IgnoreWhitespaces(&lexfile->head, !ctx->newline_as_token || ctx->ifdef_failed_nesting > 0);
 		LangC_UpdateFileLineAndCol(lexfile);
 		
 		ctx->token.line = lexfile->line;
@@ -1617,7 +1610,12 @@ LangC_NextToken(LangC_Lexer* ctx)
 			//~ Normal State
 			switch (*lexfile->head)
 			{
-				case 0: lexfile->active = false; goto beginning;
+				case 0: lexfile->active = false; ctx->newline_as_token = false; goto beginning;
+				case '\n':
+				{
+					ctx->token.kind = LangC_TokenKind_NewLine;
+					++lexfile->head;
+				} break;
 				
 				case '#':
 				{
@@ -1717,14 +1715,17 @@ LangC_NextToken(LangC_Lexer* ctx)
 					ident = LangC_TokenizeIdent(&lexfile->head);
 					LangC_IgnoreWhitespaces(&lexfile->head, true);
 					
-					ident_lexing_outside_macroctx:;
-					LangC_Macro* macro = LangC_FindMacro(ctx, ident,  *lexfile->head == '(' ? 3 : 0);
-					
-					if (macro)
+					if (!ctx->dont_expand_macros)
 					{
-						LangC_UpdateFileLineAndCol(lexfile);
-						LangC_PushMacroContext(ctx, &lexfile->head, macro);
-						goto beginning;
+						ident_lexing_outside_macroctx:;
+						LangC_Macro* macro = LangC_FindMacro(ctx, ident,  *lexfile->head == '(' ? 3 : 0);
+						
+						if (macro)
+						{
+							LangC_UpdateFileLineAndCol(lexfile);
+							LangC_PushMacroContext(ctx, &lexfile->head, macro);
+							goto beginning;
+						}
 					}
 					
 					ctx->token.kind = LangC_TokenKind_Identifier;
@@ -1786,11 +1787,214 @@ LangC_AssertToken(LangC_Lexer* ctx, LangC_TokenKind kind)
 	return true;
 }
 
-//~ NOTE(ljre): this stuff below if fucking awful
-// TODO(ljre): I've deleted everything. do it again later
+//~ NOTE(ljre): this is awful
+internal int32 LangC_EvalPreProcessorExpr_Binary(LangC_Lexer* ctx, int32 level);
 
 internal int32
-LangC_EvalPreProcessorExpr(LangC_Lexer* ctx, String expr)
+LangC_EvalPreProcessorExpr_Factor(LangC_Lexer* ctx)
 {
+	beginning:;
+	
+	switch (ctx->token.kind)
+	{
+		case LangC_TokenKind_Minus:
+		{
+			LangC_NextToken(ctx);
+			return -LangC_EvalPreProcessorExpr_Factor(ctx);
+		} break;
+		
+		case LangC_TokenKind_Plus:
+		{
+			LangC_NextToken(ctx);
+			goto beginning;
+		} break;
+		
+		case LangC_TokenKind_Not:
+		{
+			LangC_NextToken(ctx);
+			return ~LangC_EvalPreProcessorExpr_Factor(ctx);
+		} break;
+		
+		case LangC_TokenKind_LNot:
+		{
+			LangC_NextToken(ctx);
+			return !LangC_EvalPreProcessorExpr_Factor(ctx);
+		} break;
+	}
+	
+	int32 result = 0;
+	
+	switch (ctx->token.kind)
+	{
+		case LangC_TokenKind_IntLiteral:
+		case LangC_TokenKind_LIntLiteral:
+		case LangC_TokenKind_LLIntLiteral:
+		{
+			result = (int32)ctx->token.value_int;
+			LangC_NextToken(ctx);
+		} break;
+		
+		case LangC_TokenKind_UintLiteral:
+		case LangC_TokenKind_LUintLiteral:
+		case LangC_TokenKind_LLUintLiteral:
+		{
+			result = (int32)ctx->token.value_uint;
+			LangC_NextToken(ctx);
+		} break;
+		
+		case LangC_TokenKind_Identifier:
+		{
+			if (MatchCString("defined", ctx->token.value_ident.data, ctx->token.value_ident.size))
+			{
+				String name;
+				ctx->dont_expand_macros = true;
+				
+				LangC_NextToken(ctx);
+				if (LangC_TryToEatToken(ctx, LangC_TokenKind_LeftParen))
+				{
+					if (!LangC_AssertToken(ctx, LangC_TokenKind_Identifier))
+						break;
+					name = ctx->token.value_ident;
+					
+					LangC_NextToken(ctx);
+					LangC_EatToken(ctx, LangC_TokenKind_RightParen);
+				}
+				else
+				{
+					if (!LangC_AssertToken(ctx, LangC_TokenKind_Identifier))
+						break;
+					name = ctx->token.value_ident;
+					
+					LangC_NextToken(ctx);
+				}
+				
+				result = (LangC_FindMacro(ctx, name, 2) != NULL);
+			}
+			else
+			{
+				result = 0;
+				LangC_NextToken(ctx);
+			}
+		} break;
+		
+		case LangC_TokenKind_LeftParen:
+		{
+			LangC_NextToken(ctx);
+			result = LangC_EvalPreProcessorExpr_Binary(ctx, 0);
+			LangC_EatToken(ctx, LangC_TokenKind_RightParen);
+		} break;
+	}
+	
+	ctx->dont_expand_macros = false;
+	
+	return result;
+}
+
+internal int32
+LangC_EvalPreProcessorExpr_Op(LangC_TokenKind op, int32 left, int32 right)
+{
+	switch (op)
+	{
+		case LangC_TokenKind_Comma: return right;
+		case LangC_TokenKind_Assign: return right;
+		case LangC_TokenKind_PlusAssign:
+		case LangC_TokenKind_Plus: return left + right;
+		case LangC_TokenKind_MinusAssign:
+		case LangC_TokenKind_Minus: return left - right;
+		case LangC_TokenKind_MulAssign:
+		case LangC_TokenKind_Mul: return left * right;
+		case LangC_TokenKind_DivAssign:
+		case LangC_TokenKind_Div:
+		{
+			if (right == 0)
+				return 0;
+			return left / right;
+		};
+		case LangC_TokenKind_ModAssign:
+		case LangC_TokenKind_Mod:
+		{
+			if (right == 0)
+				return 0;
+			return left % right;
+		};
+		case LangC_TokenKind_LeftShiftAssign:
+		case LangC_TokenKind_LeftShift: return left << right;
+		case LangC_TokenKind_RightShiftAssign:
+		case LangC_TokenKind_RightShift: return left >> right;
+		case LangC_TokenKind_AndAssign:
+		case LangC_TokenKind_And: return left & right;
+		case LangC_TokenKind_OrAssign:
+		case LangC_TokenKind_Or: return left | right;
+		case LangC_TokenKind_XorAssign:
+		case LangC_TokenKind_Xor: return left ^ right;
+		
+		case LangC_TokenKind_LOr: return left || right;
+		case LangC_TokenKind_LAnd: return left && right;
+		case LangC_TokenKind_Equals: return left == right;
+		case LangC_TokenKind_NotEquals: return left != right;
+		case LangC_TokenKind_LThan: return left < right;
+		case LangC_TokenKind_LEqual: return left <= right;
+		case LangC_TokenKind_GThan: return left > right;
+		case LangC_TokenKind_GEqual: return left >= right;
+	}
+	
 	return 0;
+}
+
+internal int32
+LangC_EvalPreProcessorExpr_Binary(LangC_Lexer* ctx, int32 level)
+{
+	int32 result = LangC_EvalPreProcessorExpr_Factor(ctx);
+	
+	LangC_OperatorPrecedence prec;
+	while (prec = LangC_operators_precedence[ctx->token.kind],
+		   prec.level > level)
+	{
+		LangC_TokenKind op = ctx->token.kind;
+		LangC_NextToken(ctx);
+		int32 right = LangC_EvalPreProcessorExpr_Factor(ctx);
+		
+		LangC_TokenKind lookahead = ctx->token.kind;
+		LangC_OperatorPrecedence lookahead_prec = LangC_operators_precedence[lookahead];
+		
+		while (lookahead_prec.level > 0 &&
+			   (lookahead_prec.level > prec.level ||
+				(lookahead_prec.level == prec.level && lookahead_prec.right2left))) {
+			LangC_NextToken(ctx);
+			
+			if (lookahead == LangC_TokenKind_QuestionMark) {
+				int32 if_true = LangC_EvalPreProcessorExpr_Binary(ctx, 1);
+				
+				LangC_EatToken(ctx, LangC_TokenKind_Colon);
+				int32 if_false = LangC_EvalPreProcessorExpr_Binary(ctx, level + 1);
+				
+				right = right ? if_true : if_false;
+			} else {
+				int32 other = LangC_EvalPreProcessorExpr_Binary(ctx, level + 1);
+				
+				right = LangC_EvalPreProcessorExpr_Op(lookahead, right, other);
+			}
+			
+			lookahead = ctx->token.kind;
+			lookahead_prec = LangC_operators_precedence[lookahead];
+		}
+		
+		result = LangC_EvalPreProcessorExpr_Op(op, result, right);
+	}
+	
+	return result;
+}
+
+internal int32
+LangC_EvalPreProcessorExpr(LangC_Lexer* ctx)
+{
+	ctx->newline_as_token = true;
+	
+	LangC_NextToken(ctx);
+	int32 result = LangC_EvalPreProcessorExpr_Binary(ctx, 0);
+	
+	LangC_EatToken(ctx, LangC_TokenKind_NewLine);
+	ctx->newline_as_token = false;
+	
+	return result;
 }

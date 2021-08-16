@@ -4,6 +4,7 @@
 enum LangC_TokenKind
 {
 	LangC_TokenKind_Eof = 0,
+	LangC_TokenKind_NewLine, // only used when 'LangC_Lexer.newline_as_token' is true
 	
 	LangC_TokenKind__FirstKeyword,
 	LangC_TokenKind_Auto = LangC_TokenKind__FirstKeyword,
@@ -107,6 +108,7 @@ enum LangC_TokenKind
 
 internal const char* LangC_token_str_table[] = {
 	[LangC_TokenKind_Eof] = "(EOF)",
+	[LangC_TokenKind_NewLine] = "(EOL)",
 	
 	[LangC_TokenKind_Auto] = "auto",
 	[LangC_TokenKind_Break] = "break",
@@ -222,6 +224,7 @@ internal LangC_OperatorPrecedence LangC_operators_precedence[] = {
 	[LangC_TokenKind_MinusAssign] = { 2, true, },
 	[LangC_TokenKind_MulAssign] = { 2, true, },
 	[LangC_TokenKind_DivAssign] = { 2, true, },
+	[LangC_TokenKind_ModAssign] = { 2, true, },
 	[LangC_TokenKind_LeftShiftAssign] = { 2, true, },
 	[LangC_TokenKind_RightShiftAssign] = { 2, true, },
 	[LangC_TokenKind_AndAssign] = { 2, true, },
