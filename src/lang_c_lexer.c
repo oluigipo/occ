@@ -1107,14 +1107,19 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 			const char* begin = (*phead);
 			const char* end = begin + 1;
 			
-			while (*end)
+			while (end[0] && end[0] != '"')
 			{
-				if (end[0] == '"' && end[-1] != '\\')
-					break;
 				if (end[0] == '\n')
 					break;
 				
-				++end;
+				if (end[0] == '\\' && (end[1] == '\n' || end[1] == '\\' || end[1] == '"'))
+				{
+					end += 2;
+				}
+				else
+				{
+					++end;
+				}
 			}
 			
 			if (*end != '"')
@@ -1441,10 +1446,10 @@ LangC_NextToken(LangC_Lexer* ctx)
 			
 			case 'L':
 			{
-				if (lexfile->head[1] == '"')
+				if (macroctx->head[1] == '"')
 				{
-					++lexfile->head;
-					LangC_TokenizeSimpleTokens(ctx, &lexfile->head);
+					++macroctx->head;
+					LangC_TokenizeSimpleTokens(ctx, &macroctx->head);
 					ctx->token.kind = LangC_TokenKind_WideStringLiteral;
 					++ctx->token.as_string.size;
 					--ctx->token.as_string.data;
@@ -1571,6 +1576,7 @@ LangC_NextToken(LangC_Lexer* ctx)
 						if (ctx->ifdef_failed_nesting == 1 && !ctx->ifdef_already_matched)
 						{
 							ctx->ifdef_failed_nesting = 0;
+							++ctx->ifdef_nesting;
 						}
 					}
 					else if (MatchCString("elif", begin, dirlen))
@@ -1617,7 +1623,9 @@ LangC_NextToken(LangC_Lexer* ctx)
 				case 0: lexfile->active = false; ctx->newline_as_token = false; goto beginning;
 				case '\n':
 				{
+					ctx->token.as_string = Str("(EOL)");
 					ctx->token.kind = LangC_TokenKind_NewLine;
+					ctx->newline_as_token = false;
 					++lexfile->head;
 				} break;
 				
@@ -1658,7 +1666,11 @@ LangC_NextToken(LangC_Lexer* ctx)
 					}
 					else if (MatchCString("endif", begin, dirlen))
 					{
-						--ctx->ifdef_nesting;
+						if (--ctx->ifdef_nesting < 0)
+						{
+							LangC_LexerError(ctx, "unmatched '#endif'.");
+						}
+						
 						LangC_IgnoreUntilEndOfLine(lexfile);
 					}
 					else if (MatchCString("define", begin, dirlen))
@@ -1848,9 +1860,10 @@ LangC_EvalPreProcessorExpr_Factor(LangC_Lexer* ctx)
 		
 		case LangC_TokenKind_Identifier:
 		{
-			if (MatchCString("defined", ctx->token.value_ident.data, ctx->token.value_ident.size))
+			String name = ctx->token.value_ident;
+			
+			if (MatchCString("defined", name.data, name.size))
 			{
-				String name;
 				ctx->dont_expand_macros = true;
 				
 				LangC_NextToken(ctx);
@@ -1878,6 +1891,29 @@ LangC_EvalPreProcessorExpr_Factor(LangC_Lexer* ctx)
 			{
 				result = 0;
 				LangC_NextToken(ctx);
+				
+				if (ctx->token.kind == LangC_TokenKind_LeftParen)
+				{
+					LangC_LexerError(ctx, "unknown macro function '%.*s'.", StrFmt(name));
+					ctx->dont_expand_macros = true;
+					LangC_NextToken(ctx);
+					
+					int32 nested = 1;
+					while (ctx->token.kind && ctx->token.kind != LangC_TokenKind_NewLine)
+					{
+						if (ctx->token.kind == LangC_TokenKind_LeftParen)
+							++nested;
+						else if (ctx->token.kind == LangC_TokenKind_RightParen && --nested <= 0)
+							break;
+						
+						LangC_NextToken(ctx);
+					}
+					
+					if (LangC_AssertToken(ctx, LangC_TokenKind_RightParen))
+					{
+						LangC_NextToken(ctx);
+					}
+				}
 			}
 		} break;
 		
@@ -1997,8 +2033,10 @@ LangC_EvalPreProcessorExpr(LangC_Lexer* ctx)
 	LangC_NextToken(ctx);
 	int32 result = LangC_EvalPreProcessorExpr_Binary(ctx, 0);
 	
-	LangC_EatToken(ctx, LangC_TokenKind_NewLine);
-	ctx->newline_as_token = false;
+	ctx->dont_expand_macros = true;
+	while (ctx->newline_as_token)
+		LangC_NextToken(ctx);
+	ctx->dont_expand_macros = false;
 	
 	return result;
 }

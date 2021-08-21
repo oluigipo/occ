@@ -1214,8 +1214,11 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 	
 	LangC_Node* base = LangC_CreateNode(ctx, LangC_NodeKind_BaseType);
 	
+	beginning:;
+	bool32 at_least_one_base = false;
+	
 	// Parse Base Type
-	for (;;)
+	for (;; at_least_one_base = true)
 	{
 		switch (ctx->lex.token.kind)
 		{
@@ -1589,31 +1592,56 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 		{
 			implicit_int = true;
 		}
-		
-		base->flags = LangC_Node_BaseType_Int;
 	}
 	else
 	{
 		// TODO(ljre): validate use of modifiers
 	}
 	
+	right_before_parsing_rest_of_decl:;
 	LangC_Node* type = LangC_ParseRestOfDecl(ctx, base, decl, type_only, is_global);
 	
 	if (implicit_int)
 	{
-		if (type->kind == LangC_NodeKind_BaseType &&
-			decl->name.size > 0 &&
-			(ctx->lex.token.kind == LangC_TokenKind_Identifier ||
-			 ctx->lex.token.kind == LangC_TokenKind_Mul ||
-			 LangC_IsBeginningOfDeclOrType(ctx)))
+		bool32 reported = false;
+		
+		if (type->kind == LangC_NodeKind_BaseType)
 		{
-			LangC_LexerError(&ctx->lex, "'%.*s' is not a typename", StrFmt(decl->name));
-			type = LangC_ParseRestOfDecl(ctx, base, decl, type_only, is_global);
+			if (type_only)
+			{
+				if (ctx->lex.token.kind == LangC_TokenKind_Identifier)
+				{
+					reported = true;
+					String name = ctx->lex.token.value_ident;
+					LangC_LexerError(&ctx->lex, "'%.*s' is not a typename", StrFmt(name));
+					LangC_NextToken(&ctx->lex);
+					
+					goto beginning;
+				}
+			}
+			else if (LangC_IsBeginningOfDeclOrType(ctx))
+			{
+				reported = true;
+				LangC_LexerError(&ctx->lex, "'%.*s' is not a typename", StrFmt(decl->name));
+				
+				goto beginning;
+			}
+			else if (ctx->lex.token.kind == LangC_TokenKind_Identifier ||
+					 ctx->lex.token.kind == LangC_TokenKind_Mul)
+			{
+				reported = true;
+				LangC_LexerError(&ctx->lex, "'%.*s' is not a typename", StrFmt(decl->name));
+				
+				goto right_before_parsing_rest_of_decl;
+			}
 		}
-		else
+		
+		if (!reported)
 		{
 			LangC_LexerWarning(&ctx->lex, "implicit type 'int'.");
 		}
+		
+		base->flags = LangC_Node_BaseType_Int;
 	}
 	
 	if (decay)
@@ -1710,6 +1738,9 @@ LangC_ParseFile(const char* path)
 	LangC_DefineMacro(&ctx.lex, Str("__int32 int"));
 	LangC_DefineMacro(&ctx.lex, Str("__int16 short"));
 	LangC_DefineMacro(&ctx.lex, Str("__int8 char"));
+	LangC_DefineMacro(&ctx.lex, Str("__builtin_va_list void*"));
+	LangC_DefineMacro(&ctx.lex, Str("__builtin_va_start(l,p) ((l) = &(p)+1)"));
+	LangC_DefineMacro(&ctx.lex, Str("__builtin_va_end(l) ((l) = NULL)"));
 	
 	if (LangC_InitLexerFile(&ctx.lex.file, path) < 0)
 		return NULL;

@@ -3,6 +3,7 @@
 
 //~ Types
 #include <stdint.h>
+#include <stddef.h>
 
 typedef int8_t int8;
 typedef int16_t int16;
@@ -102,9 +103,9 @@ struct StretchyBufferHeader
 #define SB_Push(buf,item) (SB_ReserveAtLeast(buf, SB_Len(buf)+1), (buf)[SB__Len(buf)++] = (item))
 #define SB_End(buf) ((buf) + SB_Len(buf))
 #define SB_AddLen(buf,s) (SB__Len(buf) += (s))
-#define SB_PushArray(buf,s,data) (SB_ReserveAtLeast(buf, SB_Len(buf)+(s)),\
-memcpy((buf) + SB__Len(buf),data,s),\
-SB__Len(buf) += (s))
+#define SB_PushArray(buf,s,data) (SB_ReserveMore(buf, s),\
+memcpy(SB_End(buf), data, s),\
+SB_AddLen(buf, s))
 
 internal void
 SB__ReserveAtLeast(void** buf, uint32 count, uint32 size)
@@ -131,6 +132,8 @@ SB__ReserveAtLeast(void** buf, uint32 count, uint32 size)
 			new_header->cap = newcap;
 			
 			memcpy(new_header + 1, header + 1, header->len * size);
+			
+			header = new_header;
 		}
 	}
 	else
