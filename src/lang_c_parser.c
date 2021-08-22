@@ -1154,22 +1154,30 @@ LangC_ParseRestOfDecl(LangC_Parser* ctx, LangC_Node* base, LangC_Node* decl, boo
 				{
 					result->type->flags |= LangC_Node_FunctionType_VarArgs;
 				}
-				else if (!LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Void))
+				else
 				{
 					LangC_Node* last_param;
 					result->type->params = LangC_ParseDecl(ctx, &last_param, false, false, false, true);
 					
-					while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma))
+					if (result->type->params->kind == LangC_Node_BaseType_Void)
 					{
-						if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_VarArgs))
+						// makes it easier to check later
+						result->type->params = NULL;
+					}
+					else
+					{
+						while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma))
 						{
-							head->flags |= LangC_Node_FunctionType_VarArgs;
-							break;
+							if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_VarArgs))
+							{
+								head->flags |= LangC_Node_FunctionType_VarArgs;
+								break;
+							}
+							
+							LangC_Node* new_last_param;
+							last_param->next = LangC_ParseDecl(ctx, &new_last_param, false, false, false, true);
+							last_param = new_last_param;
 						}
-						
-						LangC_Node* new_last_param;
-						last_param->next = LangC_ParseDecl(ctx, &new_last_param, false, false, false, true);
-						last_param = new_last_param;
 					}
 				}
 				
@@ -1747,6 +1755,12 @@ LangC_ParseFile(const char* path)
 	LangC_DefineMacro(&ctx.lex, Str("__builtin_va_start(l,p) ((l) = &(p)+1)"));
 	LangC_DefineMacro(&ctx.lex, Str("__builtin_va_end(l) ((l) = NULL)"));
 	LangC_DefineMacro(&ctx.lex, Str("__attribute(...)"));
+	LangC_DefineMacro(&ctx.lex, Str("__declspec(...)"));
+	LangC_DefineMacro(&ctx.lex, Str("__cdecl"));
+	LangC_DefineMacro(&ctx.lex, Str("__stdcall"));
+	LangC_DefineMacro(&ctx.lex, Str("__vectorcall"));
+	LangC_DefineMacro(&ctx.lex, Str("_VA_LIST_DEFINED"));
+	LangC_DefineMacro(&ctx.lex, Str("va_list void*"));
 	
 	if (LangC_InitLexerFile(&ctx.lex.file, path) < 0)
 		return NULL;

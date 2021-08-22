@@ -938,6 +938,8 @@ LangC_PreProcessorIf(LangC_Lexer* ctx, LangC_LexerFile* lexfile)
 	{
 		++ctx->ifdef_failed_nesting;
 	}
+	
+	ctx->newline_as_token = false;
 }
 
 internal void
@@ -1411,7 +1413,7 @@ LangC_NextToken(LangC_Lexer* ctx)
 		
 		switch (*macroctx->head)
 		{
-			case 0: LangC_PopMacroContext(ctx); ctx->newline_as_token = false; goto beginning;
+			case 0: LangC_PopMacroContext(ctx); goto beginning;
 			
 			case '#': // Stringify
 			{
@@ -1768,16 +1770,20 @@ LangC_NextToken(LangC_Lexer* ctx)
 	}
 }
 
-internal void
+internal bool32
 LangC_EatToken(LangC_Lexer* ctx, LangC_TokenKind kind)
 {
+	bool32 result = true;
+	
 	if (ctx->token.kind != kind)
 	{
 		String got = ctx->token.as_string;
 		LangC_LexerError(ctx, "expected '%s', but got '%.*s'.", LangC_token_str_table[kind], StrFmt(got));
+		result = false;
 	}
 	
 	LangC_NextToken(ctx);
+	return result;
 }
 
 internal bool32
@@ -2035,11 +2041,6 @@ LangC_EvalPreProcessorExpr(LangC_Lexer* ctx)
 	
 	LangC_NextToken(ctx);
 	int32 result = LangC_EvalPreProcessorExpr_Binary(ctx, 0);
-	
-	ctx->dont_expand_macros = true;
-	while (ctx->newline_as_token)
-		LangC_NextToken(ctx);
-	ctx->dont_expand_macros = false;
 	
 	return result;
 }
