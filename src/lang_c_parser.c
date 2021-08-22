@@ -266,6 +266,7 @@ LangC_BaseTypeFlagsHasType(uint64 flags)
 						  LangC_Node_BaseType_Int |
 						  LangC_Node_BaseType_Float |
 						  LangC_Node_BaseType_Double |
+						  LangC_Node_BaseType_Void |
 						  LangC_Node_BaseType_Typename |
 						  LangC_Node_BaseType_Struct |
 						  LangC_Node_BaseType_Enum |
@@ -786,7 +787,7 @@ LangC_ParseExprFactor(LangC_Parser* ctx, bool32 allow_init)
 				}
 				
 				LangC_Node* new_node = LangC_CreateNode(ctx, LangC_NodeKind_Expr);
-				new_node->flags = LangC_Node_Expr_Access;
+				new_node->flags = flag;
 				new_node->expr = head;
 				head = new_node;
 				
@@ -1111,7 +1112,7 @@ LangC_ParseRestOfDecl(LangC_Parser* ctx, LangC_Node* base, LangC_Node* decl, boo
 					LangC_LexerError(&ctx->lex, "invalid use of 'restrict' with a non-pointer type.");
 				}
 				
-				head->type->kind |= LangC_Node_Restrict;
+				head->type->flags |= LangC_Node_Restrict;
 			} continue;
 			
 			case LangC_TokenKind_Register:
@@ -1119,7 +1120,7 @@ LangC_ParseRestOfDecl(LangC_Parser* ctx, LangC_Node* base, LangC_Node* decl, boo
 				LangC_NextToken(&ctx->lex);
 				LangC_LexerWarning(&ctx->lex, "'register' is straight up ignored here.");
 				
-				head->type->kind |= LangC_Node_Register;
+				head->type->flags |= LangC_Node_Register;
 			} continue;
 		}
 		
@@ -1146,18 +1147,17 @@ LangC_ParseRestOfDecl(LangC_Parser* ctx, LangC_Node* base, LangC_Node* decl, boo
 			{
 				LangC_NextToken(&ctx->lex);
 				LangC_Node* newtype = LangC_CreateNode(ctx, LangC_NodeKind_FunctionType);
-				newtype->type = head->type;
-				head->type = newtype;
-				head = newtype;
+				newtype->type = result->type;
+				result->type = newtype;
 				
 				if (ctx->lex.token.kind == LangC_TokenKind_RightParen)
 				{
-					head->flags |= LangC_Node_FunctionType_VarArgs;
+					result->type->flags |= LangC_Node_FunctionType_VarArgs;
 				}
 				else if (!LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Void))
 				{
 					LangC_Node* last_param;
-					head->params = LangC_ParseDecl(ctx, &last_param, false, false, false, true);
+					result->type->params = LangC_ParseDecl(ctx, &last_param, false, false, false, true);
 					
 					while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma))
 					{
@@ -1180,19 +1180,18 @@ LangC_ParseRestOfDecl(LangC_Parser* ctx, LangC_Node* base, LangC_Node* decl, boo
 			{
 				LangC_NextToken(&ctx->lex);
 				LangC_Node* newtype = LangC_CreateNode(ctx, LangC_NodeKind_ArrayType);
-				newtype->type = head->type;
-				head->type = newtype;
-				head = newtype;
+				newtype->type = result->type;
+				result->type = newtype;
 				
 				if (ctx->lex.token.kind != LangC_TokenKind_RightBrkt)
 				{
-					head->expr = LangC_ParseExpr(ctx, 0, false);
+					result->type->expr = LangC_ParseExpr(ctx, 0, false);
 				}
 				else if (is_global)
 				{
 					LangC_LexerWarning(&ctx->lex, "implicit length of 1 in array.");
-					head->expr = LangC_CreateNode(ctx, LangC_NodeKind_IntConstant);
-					head->expr->value_int = 1;
+					result->type->expr = LangC_CreateNode(ctx, LangC_NodeKind_IntConstant);
+					result->type->expr->value_int = 1;
 				}
 				
 				LangC_EatToken(&ctx->lex, LangC_TokenKind_RightBrkt);
@@ -1738,9 +1737,16 @@ LangC_ParseFile(const char* path)
 	LangC_DefineMacro(&ctx.lex, Str("__int32 int"));
 	LangC_DefineMacro(&ctx.lex, Str("__int16 short"));
 	LangC_DefineMacro(&ctx.lex, Str("__int8 char"));
+	LangC_DefineMacro(&ctx.lex, Str("__inline inline"));
+	LangC_DefineMacro(&ctx.lex, Str("__inline__ inline"));
+	LangC_DefineMacro(&ctx.lex, Str("__restrict restrict"));
+	LangC_DefineMacro(&ctx.lex, Str("__restrict__ restrict"));
+	LangC_DefineMacro(&ctx.lex, Str("__const const"));
+	LangC_DefineMacro(&ctx.lex, Str("__const__ const"));
 	LangC_DefineMacro(&ctx.lex, Str("__builtin_va_list void*"));
 	LangC_DefineMacro(&ctx.lex, Str("__builtin_va_start(l,p) ((l) = &(p)+1)"));
 	LangC_DefineMacro(&ctx.lex, Str("__builtin_va_end(l) ((l) = NULL)"));
+	LangC_DefineMacro(&ctx.lex, Str("__attribute(...)"));
 	
 	if (LangC_InitLexerFile(&ctx.lex.file, path) < 0)
 		return NULL;

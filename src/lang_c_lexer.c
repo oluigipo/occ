@@ -136,9 +136,10 @@ LangC_InitLexerFile(LangC_LexerFile* lexfile, const char* path)
 }
 
 internal inline bool32
-LangC_IsNumeric(char ch)
+LangC_IsNumeric(char ch, int32 base)
 {
-	return (ch >= '0' & ch <= '9');
+	return (base == 2 && (ch == '0' || ch == '1') ||
+			(ch >= '0' && ch <= '9' || (base == 16 && (ch >= 'a' && ch <= 'f' || ch >= 'A' && ch <= 'F'))));
 }
 
 internal inline bool32
@@ -150,7 +151,7 @@ LangC_IsAlpha(char ch)
 internal inline bool32
 LangC_IsIdentChar(char ch)
 {
-	return ch == '_' || LangC_IsNumeric(ch) || LangC_IsAlpha(ch);
+	return ch == '_' || (ch >= '0' && ch <= '9') || LangC_IsAlpha(ch);
 }
 
 internal void
@@ -1001,7 +1002,7 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 	{
 		case '.':
 		{
-			if (!LangC_IsNumeric((*phead)[1]))
+			if (!LangC_IsNumeric((*phead)[1], 10))
 			{
 				if ((*phead)[1] == '.' && (*phead)[2] == '.')
 				{
@@ -1044,14 +1045,16 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 			const char* begin = (*phead);
 			const char* end = begin;
 			
-			while (LangC_IsNumeric(*end)) ++end;
+			while (LangC_IsNumeric(*end, base)) ++end;
 			
 			if (*end == 'e' || *end == 'E')
 				goto parse_exponent;
 			
 			if (*end == '.')
 			{
-				while (LangC_IsNumeric(*++end));
+				++end;
+				
+				while (LangC_IsNumeric(*end, base)) ++end;
 				
 				if (base == 2)
 					LangC_LexerError(ctx, "error: floats cannot begin with '0b'.");
@@ -1064,7 +1067,7 @@ LangC_TokenizeSimpleTokens(LangC_Lexer* ctx, const char** phead)
 					if (*end == '+' || *end == '-')
 						++end;
 					
-					while (LangC_IsNumeric(*end)) ++end;
+					while (LangC_IsNumeric(*end, 10)) ++end;
 				}
 				
 				if (*end == 'f' || *end == 'F')

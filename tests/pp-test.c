@@ -16,6 +16,14 @@
 #define OTHER_STR STR
 
 const CString name = OTHER_STR(pepe);
+void* hello(void)
+{
+	return "world";
+}
+
+int an_int = 0xffffULL;
+float a_float = 35.0f;
+float wtf = 0x8080.0p+3f;
 
 const char* a_string = "pepe, " STR(MY_MACRO) " is " STR2(MY_MACRO);
 
