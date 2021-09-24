@@ -29,7 +29,9 @@ enum LangC_NodeKind
 	LangC_NodeKind_InitializerEntry,
 	LangC_NodeKind_EnumEntry,
 	LangC_NodeKind_Label,
-} typedef LangC_NodeKind;
+	LangC_NodeKind_Attribute,
+}
+typedef LangC_NodeKind;
 
 // Flags for any kind of node
 enum
@@ -43,11 +45,19 @@ enum
 	LangC_Node_Extern = 1 << 25,
 	LangC_Node_Auto = 1 << 24,
 	LangC_Node_Typedef = 1 << 23,
+	LangC_Node_Inline = 1 << 22,
+	
+	LangC_Node_LowerBits = (1 << 22) - 1,
 };
 
 enum
 {
 	LangC_Node_FunctionType_VarArgs = 1,
+};
+
+enum
+{
+	LangC_Node_Attribute_Packed = 1,
 };
 
 enum
@@ -149,11 +159,12 @@ struct LangC_Node
 	LangC_NodeKind kind;
 	LangC_Node* next;
 	int32 line, col;
-	const char* source_path;
+	LangC_LexerFile* lexfile;
 	uint64 flags;
 	
 	String name;
 	LangC_Node* type;
+	LangC_Node* attributes;
 	
 	// for (init; condition; iter) branch1
 	// if (condition) branch1 else branch2
@@ -173,6 +184,8 @@ struct LangC_Node
 	// struct name body
 	// enum { body->name = body->expr, body->next->name, ... }
 	// name: stmt
+	// (type) init
+	// { .left[middle] = right, .name, expr, [middle] = right, }
 	LangC_Node* condition;
 	LangC_Node* init;
 	LangC_Node* iter;
@@ -195,7 +208,7 @@ struct LangC_Node
 		{
 			LangC_Node* left;
 			LangC_Node* right;
-			LangC_Node* unnamed_for_now;
+			LangC_Node* middle;
 		};
 		
 		struct
@@ -237,7 +250,7 @@ struct LangC_Parser
 	// TODO(ljre): Stack of Typenodes. Push stack when entering function scope.
 };
 
-internal void
+internal inline void
 LangC_UpdateNode(LangC_Parser* ctx, LangC_NodeKind kind, LangC_Node* result)
 {
 	assert(result);
@@ -246,10 +259,10 @@ LangC_UpdateNode(LangC_Parser* ctx, LangC_NodeKind kind, LangC_Node* result)
 		result->kind = kind;
 	result->line = ctx->lex.token.line;
 	result->col = ctx->lex.token.col;
-	result->source_path = LangC_CurrentWorkingPath(&ctx->lex);
+	result->lexfile = ctx->lex.file;
 }
 
-internal LangC_Node*
+internal inline LangC_Node*
 LangC_CreateNode(LangC_Parser* ctx, LangC_NodeKind kind)
 {
 	LangC_Node* result = PushMemory(sizeof *result);
@@ -259,7 +272,53 @@ LangC_CreateNode(LangC_Parser* ctx, LangC_NodeKind kind)
 	return result;
 }
 
-internal bool32
+internal void
+LangC_PrintIncludeTraceByLast(LangC_LexerFile* lexfile, int32 line)
+{
+	if (lexfile->included_from)
+	{
+		int32 my_line = lexfile->included_line;
+		LangC_PrintIncludeTraceByLast(lexfile->included_from, my_line);
+	}
+	
+	Print("%s(%i): in included file\n", lexfile->path, line);
+}
+
+internal void
+LangC_NodeError(LangC_Node* node, const char* fmt, ...)
+{
+	LangC_error_count++;
+	
+	node->flags |= LangC_Node_Poisoned;
+	LangC_LexerFile* lexfile = node->lexfile;
+	if (lexfile->included_from)
+		LangC_PrintIncludeTraceByLast(lexfile->included_from, lexfile->included_line);
+	
+	Print("%s(%i:%i): error: ", lexfile->path, node->line, node->col);
+	
+	va_list args;
+	va_start(args, fmt);
+	PrintVarargs(fmt, args);
+	va_end(args);
+	Print("\n");
+}
+
+internal void
+LangC_NodeWarning(LangC_Node* node, const char* fmt, ...)
+{
+	LangC_LexerFile* lexfile = node->lexfile;
+	if (lexfile->included_from)
+		LangC_PrintIncludeTraceByLast(lexfile->included_from, lexfile->included_line);
+	
+	Print("%s(%i:%i): warning: ", node->lexfile->path, node->line, node->col);
+	va_list args;
+	va_start(args, fmt);
+	PrintVarargs(fmt, args);
+	va_end(args);
+	Print("\n");
+}
+
+internal inline bool32
 LangC_BaseTypeFlagsHasType(uint64 flags)
 {
 	return 0 != (flags & (LangC_Node_BaseType_Char |
@@ -432,8 +491,59 @@ LangC_ParseDeclOrExpr(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only
 internal LangC_Node*
 LangC_ParseInitializerField(LangC_Parser* ctx)
 {
-	// TODO(ljre): designated initializers
-	return LangC_ParseExpr(ctx, 1, true);
+	LangC_Node* result = NULL;
+	
+	for (;;)
+	{
+		switch (ctx->lex.token.kind)
+		{
+			case LangC_TokenKind_Dot:
+			{
+				LangC_Node* newnode = LangC_CreateNode(ctx, LangC_NodeKind_InitializerEntry);
+				newnode->flags = LangC_Node_InitializerEntry_Field;
+				newnode->left = result;
+				
+				LangC_NextToken(&ctx->lex);
+				if (LangC_AssertToken(&ctx->lex, LangC_TokenKind_Identifier))
+				{
+					newnode->name = ctx->lex.token.value_ident;
+				}
+				
+				result = newnode;
+			} continue;
+			
+			case LangC_TokenKind_LeftBrkt:
+			{
+				LangC_Node* newnode = LangC_CreateNode(ctx, LangC_NodeKind_InitializerEntry);
+				newnode->flags = LangC_Node_InitializerEntry_ArrayIndex;
+				newnode->left = result;
+				
+				LangC_NextToken(&ctx->lex);
+				newnode->middle = LangC_ParseExpr(ctx, 0, false);
+				result = newnode;
+				
+				LangC_EatToken(&ctx->lex, LangC_TokenKind_RightBrkt);
+			} continue;
+			
+			default:
+			{
+				if (result)
+				{
+					LangC_EatToken(&ctx->lex, LangC_TokenKind_Assign);
+					
+					result->right = LangC_ParseExpr(ctx, 1, true);
+				}
+				else
+				{
+					result = LangC_ParseExpr(ctx, 1, true);
+				}
+			} break;
+		}
+		
+		break;
+	}
+	
+	return result;
 }
 
 internal String
@@ -795,6 +905,7 @@ LangC_ParseExprFactor(LangC_Parser* ctx, bool32 allow_init)
 				if (LangC_AssertToken(&ctx->lex, LangC_TokenKind_Identifier))
 				{
 					head->name = ctx->lex.token.value_ident;
+					LangC_NextToken(&ctx->lex);
 				}
 			} continue;
 		}
@@ -805,7 +916,7 @@ LangC_ParseExprFactor(LangC_Parser* ctx, bool32 allow_init)
 	return result;
 }
 
-internal int32 LangC_token_to_op[] = {
+internal int32 LangC_token_to_op[LangC_TokenKind__Count] = {
 	[LangC_TokenKind_Comma] = LangC_Node_Expr_Comma,
 	
 	[LangC_TokenKind_Assign] = LangC_Node_Expr_Assign,
@@ -889,8 +1000,20 @@ LangC_ParseExpr(LangC_Parser* ctx, int32 level, bool32 allow_init)
 		
 		LangC_Node* tmp = LangC_CreateNode(ctx, LangC_NodeKind_Expr);
 		tmp->flags = op;
-		tmp->left = result;
-		tmp->right = right;
+		
+		if (op == LangC_Node_Expr_Ternary)
+		{
+			tmp->condition = result;
+			tmp->branch1 = right;
+			
+			LangC_EatToken(&ctx->lex, LangC_TokenKind_Colon);
+			tmp->branch2 = LangC_ParseExpr(ctx, prec.level, false);
+		}
+		else
+		{
+			tmp->left = result;
+			tmp->right = right;
+		}
 		
 		result = tmp;
 	}
@@ -1353,6 +1476,22 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 				base->flags |= LangC_Node_BaseType_Int;
 			} break;
 			
+			case LangC_TokenKind_Inline:
+			{
+				if (type_only)
+				{
+					LangC_LexerError(&ctx->lex, "expected a type.");
+					break;
+				}
+				
+				if (decl->flags & LangC_Node_Inline)
+				{
+					LangC_LexerError(&ctx->lex, "repeated use of keyword 'inline'.");
+				}
+				
+				decl->flags |= LangC_Node_Inline;
+			} break;
+			
 			case LangC_TokenKind_Long:
 			{
 				if (LangC_Node_BaseType_LongLong == (base->flags & LangC_Node_BaseType_LongLong))
@@ -1645,7 +1784,10 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 		
 		if (!reported)
 		{
-			LangC_LexerWarning(&ctx->lex, "implicit type 'int'.");
+			if (type->kind == LangC_NodeKind_FunctionType)
+				LangC_LexerWarning(&ctx->lex, "implicit return type 'int'.");
+			else
+				LangC_LexerWarning(&ctx->lex, "implicit type 'int'.");
 		}
 		
 		base->flags = LangC_Node_BaseType_Int;
@@ -1728,13 +1870,14 @@ LangC_ParseDecl(LangC_Parser* ctx, LangC_Node** out_last, bool32 type_only, bool
 }
 
 internal LangC_Node*
-LangC_ParseFile(const char* path)
+LangC_ParseFile(const char* source)
 {
 	LangC_Parser ctx = { 0 };
 	LangC_Node* first_node = NULL;
 	LangC_Node* last_node;
 	
-	LangC_DefineMacro(&ctx.lex, Str("__STDC__ 1"));
+	/*
+LangC_DefineMacro(&ctx.lex, Str("__STDC__ 1"));
 	LangC_DefineMacro(&ctx.lex, Str("__STDC_HOSTED__ 1"));
 	LangC_DefineMacro(&ctx.lex, Str("__STDC_VERSION__ 199901L"));
 	LangC_DefineMacro(&ctx.lex, Str("__x86_64 1"));
@@ -1747,6 +1890,7 @@ LangC_ParseFile(const char* path)
 	LangC_DefineMacro(&ctx.lex, Str("__int8 char"));
 	LangC_DefineMacro(&ctx.lex, Str("__inline inline"));
 	LangC_DefineMacro(&ctx.lex, Str("__inline__ inline"));
+	LangC_DefineMacro(&ctx.lex, Str("__forceinline inline"));
 	LangC_DefineMacro(&ctx.lex, Str("__restrict restrict"));
 	LangC_DefineMacro(&ctx.lex, Str("__restrict__ restrict"));
 	LangC_DefineMacro(&ctx.lex, Str("__const const"));
@@ -1759,19 +1903,25 @@ LangC_ParseFile(const char* path)
 	LangC_DefineMacro(&ctx.lex, Str("__cdecl"));
 	LangC_DefineMacro(&ctx.lex, Str("__stdcall"));
 	LangC_DefineMacro(&ctx.lex, Str("__vectorcall"));
+	LangC_DefineMacro(&ctx.lex, Str("__fastcall"));
 	LangC_DefineMacro(&ctx.lex, Str("_VA_LIST_DEFINED"));
 	LangC_DefineMacro(&ctx.lex, Str("va_list void*"));
+	*/
 	
-	if (LangC_InitLexerFile(&ctx.lex.file, path) < 0)
-		return NULL;
+	LangC_SetupLexer(&ctx.lex, source);
 	
 #if 1
 	LangC_NextToken(&ctx.lex);
 	
+	while (ctx.lex.token.kind == LangC_TokenKind_Semicolon)
+		LangC_NextToken(&ctx.lex);
 	first_node = LangC_ParseDecl(&ctx, &last_node, false, true, true, false);
 	
 	while (ctx.lex.token.kind != LangC_TokenKind_Eof)
 	{
+		while (ctx.lex.token.kind == LangC_TokenKind_Semicolon)
+			LangC_NextToken(&ctx.lex);
+		
 		LangC_Node* new_last = NULL;
 		last_node->next = LangC_ParseDecl(&ctx, &new_last, false, true, true, false);
 		last_node = new_last;

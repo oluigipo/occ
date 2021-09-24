@@ -5,7 +5,7 @@
 #define STR2(x) STR(x)
 
 #ifdef MY_MACRO
-#   error MY_MACRO is defined!
+#   warning MY_MACRO is defined!
 #elif defined(MY_MACROFN)
 #   error MY_MACRO isn't defined, but MY_MACROFN is!
 #else

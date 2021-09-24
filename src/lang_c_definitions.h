@@ -43,7 +43,9 @@ enum LangC_TokenKind
 	LangC_TokenKind_While,
 	LangC_TokenKind_Bool,
 	LangC_TokenKind_Complex,
-	LangC_TokenKind__LastKeyword = LangC_TokenKind_Complex,
+	LangC_TokenKind_Attribute,
+	LangC_TokenKind_Declspec,
+	LangC_TokenKind__LastKeyword = LangC_TokenKind_Declspec,
 	
 	// NOTE(ljre): those 3 below shall be in order
 	LangC_TokenKind_IntLiteral,
@@ -152,6 +154,8 @@ internal const char* LangC_token_str_table[LangC_TokenKind__Count] = {
 	[LangC_TokenKind_While] = "while",
 	[LangC_TokenKind_Bool] = "bool",
 	[LangC_TokenKind_Complex] = "complex",
+	[LangC_TokenKind_Attribute] = "__attribute__",
+	[LangC_TokenKind_Declspec] = "__declspec",
 	
 	[LangC_TokenKind_IntLiteral] = "(int literal)",
 	[LangC_TokenKind_LIntLiteral] = "(long literal)",

@@ -62,7 +62,8 @@ PushMemory(uintsize size)
 
 #include "lang_c.c"
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[])
+{
 	global_arena_total_size = Gigabytes(100);
 	global_arena_offset = 0;
 	
@@ -78,7 +79,9 @@ int main(int argc, char* argv[]) {
 	// Testing
 	LangC_Init(argc, argv);
 	
-	LangC_ParseFile("tests/pp-test.c");
+	LangC_ParseFile(OS_ReadWholeFile("tests/test.c"));
+	
+	Print("\nMax used memory: %zu bytes.\n", global_arena_offset);
 	
 	return 0;
 }

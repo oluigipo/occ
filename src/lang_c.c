@@ -1,17 +1,19 @@
 #define LangC_MAX_INCLUDE_DIRS 64
 
-internal char LangC_global_include_dirs[LangC_MAX_INCLUDE_DIRS][MAX_PATH_SIZE];
-internal uintsize LangC_global_include_dirs_count;
+internal char LangC_include_dirs[LangC_MAX_INCLUDE_DIRS][MAX_PATH_SIZE];
+internal uintsize LangC_include_dirs_count;
+internal int32 LangC_error_count = 0;
 
 #include "lang_c_definitions.h"
+#include "lang_c_preprocessor.c"
 #include "lang_c_lexer.c"
 #include "lang_c_parser.c"
 
 internal void
 LangC_Init(int32 argc, char** argv)
 {
-	LangC_global_include_dirs_count = 1;
-	char* basic_path = LangC_global_include_dirs[0];
+	LangC_include_dirs_count = 1;
+	char* basic_path = LangC_include_dirs[0];
 	
 	int32 len = strlen(global_my_path);
 	memcpy(basic_path, global_my_path, len);
