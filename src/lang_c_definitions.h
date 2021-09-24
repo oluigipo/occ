@@ -4,7 +4,6 @@
 enum LangC_TokenKind
 {
 	LangC_TokenKind_Eof = 0,
-	LangC_TokenKind_NewLine, // only used when 'LangC_Lexer.newline_as_token' is true
 	
 	LangC_TokenKind__FirstKeyword,
 	LangC_TokenKind_Auto = LangC_TokenKind__FirstKeyword,
@@ -111,12 +110,16 @@ enum LangC_TokenKind
 	LangC_TokenKind_OrAssign, // |=
 	LangC_TokenKind_XorAssign, // ^=
 	
+	// only used when 'LangC_Lexer.hashtag_and_newline_as_tokens' is true
+	LangC_TokenKind_NewLine,
+	LangC_TokenKind_Hashtag, // #
+	LangC_TokenKind_DoubleHashtag, // ##
+	
 	LangC_TokenKind__Count,
 } typedef LangC_TokenKind;
 
 internal const char* LangC_token_str_table[LangC_TokenKind__Count] = {
 	[LangC_TokenKind_Eof] = "(EOF)",
-	[LangC_TokenKind_NewLine] = "(EOL)",
 	
 	[LangC_TokenKind_Auto] = "auto",
 	[LangC_TokenKind_Break] = "break",
@@ -216,6 +219,10 @@ internal const char* LangC_token_str_table[LangC_TokenKind__Count] = {
 	[LangC_TokenKind_AndAssign] = "&=",
 	[LangC_TokenKind_OrAssign] = "|=",
 	[LangC_TokenKind_XorAssign] = "^=",
+	
+	[LangC_TokenKind_NewLine] = "(EOL)",
+	[LangC_TokenKind_DoubleHashtag] = "##",
+	[LangC_TokenKind_Hashtag] = "#",
 };
 
 struct LangC_OperatorPrecedence typedef LangC_OperatorPrecedence;
@@ -267,5 +274,11 @@ internal LangC_OperatorPrecedence LangC_operators_precedence[LangC_TokenKind__Co
 	[LangC_TokenKind_Div] = { 12, false, },
 	[LangC_TokenKind_Mod] = { 12, false, },
 };
+
+internal bool32
+LangC_IsKeyword(LangC_TokenKind kind)
+{
+	return kind >= LangC_TokenKind__FirstKeyword && kind <= LangC_TokenKind__LastKeyword;
+}
 
 #endif //LANG_C_DEFINITIONS_H

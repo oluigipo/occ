@@ -1876,38 +1876,6 @@ LangC_ParseFile(const char* source)
 	LangC_Node* first_node = NULL;
 	LangC_Node* last_node;
 	
-	/*
-LangC_DefineMacro(&ctx.lex, Str("__STDC__ 1"));
-	LangC_DefineMacro(&ctx.lex, Str("__STDC_HOSTED__ 1"));
-	LangC_DefineMacro(&ctx.lex, Str("__STDC_VERSION__ 199901L"));
-	LangC_DefineMacro(&ctx.lex, Str("__x86_64 1"));
-	LangC_DefineMacro(&ctx.lex, Str("_WIN32 1"));
-	LangC_DefineMacro(&ctx.lex, Str("_WIN64 1"));
-	LangC_DefineMacro(&ctx.lex, Str("__OCC__ 1"));
-	LangC_DefineMacro(&ctx.lex, Str("__int64 long long"));
-	LangC_DefineMacro(&ctx.lex, Str("__int32 int"));
-	LangC_DefineMacro(&ctx.lex, Str("__int16 short"));
-	LangC_DefineMacro(&ctx.lex, Str("__int8 char"));
-	LangC_DefineMacro(&ctx.lex, Str("__inline inline"));
-	LangC_DefineMacro(&ctx.lex, Str("__inline__ inline"));
-	LangC_DefineMacro(&ctx.lex, Str("__forceinline inline"));
-	LangC_DefineMacro(&ctx.lex, Str("__restrict restrict"));
-	LangC_DefineMacro(&ctx.lex, Str("__restrict__ restrict"));
-	LangC_DefineMacro(&ctx.lex, Str("__const const"));
-	LangC_DefineMacro(&ctx.lex, Str("__const__ const"));
-	LangC_DefineMacro(&ctx.lex, Str("__builtin_va_list void*"));
-	LangC_DefineMacro(&ctx.lex, Str("__builtin_va_start(l,p) ((l) = &(p)+1)"));
-	LangC_DefineMacro(&ctx.lex, Str("__builtin_va_end(l) ((l) = NULL)"));
-	LangC_DefineMacro(&ctx.lex, Str("__attribute(...)"));
-	LangC_DefineMacro(&ctx.lex, Str("__declspec(...)"));
-	LangC_DefineMacro(&ctx.lex, Str("__cdecl"));
-	LangC_DefineMacro(&ctx.lex, Str("__stdcall"));
-	LangC_DefineMacro(&ctx.lex, Str("__vectorcall"));
-	LangC_DefineMacro(&ctx.lex, Str("__fastcall"));
-	LangC_DefineMacro(&ctx.lex, Str("_VA_LIST_DEFINED"));
-	LangC_DefineMacro(&ctx.lex, Str("va_list void*"));
-	*/
-	
 	LangC_SetupLexer(&ctx.lex, source);
 	
 #if 1

@@ -16,6 +16,13 @@ struct LangC_Token
 }
 typedef LangC_Token;
 
+struct LangC_TokenList typedef LangC_TokenList;
+struct LangC_TokenList
+{
+	LangC_TokenList* next;
+	LangC_Token token;
+};
+
 struct LangC_LexerFile typedef LangC_LexerFile;
 struct LangC_LexerFile
 {
@@ -30,9 +37,16 @@ struct LangC_Lexer
 	LangC_Token token;
 	LangC_LexerFile* file;
 	
+	LangC_TokenList* waiting_token;
+	
 	const char* head;
 	const char* previous_head;
 	int32 line, col;
+	
+	// When this bool is set, the following happens:
+	//     - newlines and hashtags are not tokens;
+	//     - keywords are going to be LangC_TokenKind_Identifier;
+	bool32 preprocessor;
 }
 typedef LangC_Lexer;
 
@@ -134,6 +148,16 @@ LangC_LexerWarning(LangC_Lexer* lex, const char* fmt, ...)
 }
 
 internal void
+LangC_PushToken(LangC_Lexer* lex, LangC_Token* token)
+{
+	LangC_TokenList* node = PushMemory(sizeof *node);
+	
+	node->next = lex->waiting_token;
+	lex->waiting_token = node;
+	node->token = *token;
+}
+
+internal void
 LangC_UpdateLexerPreviousHead(LangC_Lexer* lex)
 {
 	for (; lex->previous_head < lex->head; ++lex->previous_head)
@@ -155,7 +179,21 @@ LangC_IgnoreWhitespaces(const char** p, bool32 newline)
 		if (!**p)
 			break;
 		
-		if (**p == ' ' || **p == '\t' || **p == '\r' || (newline && **p == '\n'))
+		if (**p == '/' && (*p)[1] == '/')
+		{
+			*p += 2;
+			
+			while (**p && (**p != '\n' || (*p)[-1] == '\\'))
+				++*p;
+		}
+		else if (**p == '/' && (*p)[1] == '*')
+		{
+			*p += 2;
+			
+			while (**p && !((*p)[-2] == '*' && (*p)[-1] != '/'))
+				++*p;
+		}
+		else if (**p == ' ' || **p == '\t' || **p == '\r' || (newline && **p == '\n'))
 		{
 			++*p;
 		}
@@ -281,8 +319,15 @@ LangC_TokenizeStringLiteral(LangC_Lexer* lex)
 internal void
 LangC_NextToken(LangC_Lexer* lex)
 {
+	if (lex->waiting_token)
+	{
+		lex->token = lex->waiting_token->token;
+		lex->waiting_token = lex->waiting_token->next;
+		return;
+	}
+	
 	beginning:;
-	LangC_IgnoreWhitespaces(&lex->head, true);
+	LangC_IgnoreWhitespaces(&lex->head, !lex->preprocessor);
 	
 	lex->token.as_string.data = lex->head;
 	lex->token.line = lex->line;
@@ -295,74 +340,95 @@ LangC_NextToken(LangC_Lexer* lex)
 			lex->token.kind = LangC_TokenKind_Eof;
 		} break;
 		
+		case '\n':
+		{
+			lex->token.kind = LangC_TokenKind_NewLine;
+			++lex->head;
+		} break;
+		
 		case '#':
 		{
-			++lex->head;
-			
-			LangC_IgnoreWhitespaces(&lex->head, false);
-			
-			if (LangC_IsNumeric(lex->head[0], 10))
+			if (lex->preprocessor)
 			{
-				// NOTE(ljre): Parse pre-processor's metadata.
-				//             https://gcc.gnu.org/onlinedocs/gcc-11.1.0/cpp/Preprocessor-Output.html
-				
-				int32 line = strtol(lex->head, (char**)&lex->head, 10);
-				
-				LangC_IgnoreWhitespaces(&lex->head, false);
-				String file = LangC_TokenizeStringLiteral(lex);
-				
-				int32 flags = 0;
-				
-				while (LangC_IgnoreWhitespaces(&lex->head, false),
-					   lex->head[0] && lex->head[0] != '\n')
+				if (lex->head[1] == '#')
 				{
-					if (LangC_IsNumeric(lex->head[0], 10))
-					{
-						flags |= 1 << (lex->head[0] - '0' - 1);
-					}
-					
+					lex->token.kind = LangC_TokenKind_DoubleHashtag;
+					lex->head += 2;
+				}
+				else
+				{
+					lex->token.kind = LangC_TokenKind_Hashtag;
 					++lex->head;
-				}
-				
-				if (lex->head[0] == '\n')
-					++lex->head;
-				
-				lex->previous_head = lex->head;
-				lex->line = line;
-				lex->col = 1;
-				
-				// NOTE(ljre): "This indicates the start of a new file."
-				if (flags & 1 || !lex->file)
-				{
-					LangC_PushLexerFile(lex, file);
-				}
-				
-				// NOTE(ljre): "This indicates returning to a file (after having included another file)."
-				if (flags & 2)
-				{
-					LangC_PopLexerFile(lex);
-				}
-				
-				// NOTE(ljre): "This indicates that the following text comes from a system header file, so
-				//              certain warnings should be suppressed."
-				if (flags & 4)
-				{
-					lex->file->is_system_file = true;
-				}
-				
-				// NOTE(ljre): "This indicates that the following text should be treated as being wrapped
-				//              in an implicit extern "C" block."
-				if (flags & 8)
-				{
-					// TODO(ljre)
 				}
 			}
 			else
 			{
-				while (lex->head[0] && lex->head++[0] != '\n');
+				++lex->head;
+				LangC_IgnoreWhitespaces(&lex->head, false);
+				
+				if (LangC_IsNumeric(lex->head[0], 10))
+				{
+					// NOTE(ljre): Parse pre-processor's metadata.
+					//             https://gcc.gnu.org/onlinedocs/gcc-11.1.0/cpp/Preprocessor-Output.html
+					
+					int32 line = strtol(lex->head, (char**)&lex->head, 10);
+					
+					LangC_IgnoreWhitespaces(&lex->head, false);
+					String file = LangC_TokenizeStringLiteral(lex);
+					
+					int32 flags = 0;
+					
+					while (LangC_IgnoreWhitespaces(&lex->head, false),
+						   lex->head[0] && lex->head[0] != '\n')
+					{
+						if (LangC_IsNumeric(lex->head[0], 10))
+						{
+							flags |= 1 << (lex->head[0] - '0' - 1);
+						}
+						
+						++lex->head;
+					}
+					
+					if (lex->head[0] == '\n')
+						++lex->head;
+					
+					lex->previous_head = lex->head;
+					lex->line = line;
+					lex->col = 1;
+					
+					// NOTE(ljre): "This indicates the start of a new file."
+					if (flags & 1 || !lex->file)
+					{
+						LangC_PushLexerFile(lex, file);
+					}
+					
+					// NOTE(ljre): "This indicates returning to a file (after having included another file)."
+					if (flags & 2)
+					{
+						LangC_PopLexerFile(lex);
+					}
+					
+					// NOTE(ljre): "This indicates that the following text comes from a system header file, so
+					//              certain warnings should be suppressed."
+					if (flags & 4)
+					{
+						lex->file->is_system_file = true;
+					}
+					
+					// NOTE(ljre): "This indicates that the following text should be treated as being wrapped
+					//              in an implicit extern "C" block."
+					if (flags & 8)
+					{
+						// TODO(ljre)
+					}
+				}
+				else
+				{
+					while (lex->head[0] && lex->head++[0] != '\n');
+				}
+				
+				goto beginning;
 			}
-			
-			goto beginning;
 		} break;
 		
 		case '.':
@@ -505,12 +571,15 @@ LangC_NextToken(LangC_Lexer* lex)
 			lex->token.kind = LangC_TokenKind_Identifier;
 			lex->token.value_ident = ident;
 			
-			for (int32 keyword = LangC_TokenKind__FirstKeyword; keyword <= LangC_TokenKind__LastKeyword; ++keyword)
+			if (!lex->preprocessor)
 			{
-				if (MatchCString(LangC_token_str_table[keyword], ident.data, ident.size))
+				for (int32 keyword = LangC_TokenKind__FirstKeyword; keyword <= LangC_TokenKind__LastKeyword; ++keyword)
 				{
-					lex->token.kind = keyword;
-					break;
+					if (MatchCString(LangC_token_str_table[keyword], ident.data, ident.size))
+					{
+						lex->token.kind = keyword;
+						break;
+					}
 				}
 			}
 		} break;
@@ -774,8 +843,7 @@ LangC_NextToken(LangC_Lexer* lex)
 	
 	lex->token.as_string.size = (uintsize)(lex->head - lex->token.as_string.data);
 	
-	// NOTE(ljre): Ignore whitespaces
-	LangC_IgnoreWhitespaces(&lex->head, true);
+	LangC_IgnoreWhitespaces(&lex->head, !lex->preprocessor);
 	LangC_UpdateLexerPreviousHead(lex);
 }
 

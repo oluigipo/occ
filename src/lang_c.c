@@ -5,8 +5,8 @@ internal uintsize LangC_include_dirs_count;
 internal int32 LangC_error_count = 0;
 
 #include "lang_c_definitions.h"
-#include "lang_c_preprocessor.c"
 #include "lang_c_lexer.c"
+#include "lang_c_preprocessor.c"
 #include "lang_c_parser.c"
 
 internal void

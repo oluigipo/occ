@@ -106,6 +106,7 @@ struct StretchyBufferHeader
 #define SB_PushArray(buf,s,data) (SB_ReserveMore(buf, s),\
 memcpy(SB_End(buf), data, s),\
 SB_AddLen(buf, s))
+#define SB_PushArrayConst(buf,data) SB_PushArray(buf,sizeof(data),data)
 
 internal void
 SB__ReserveAtLeast(void** buf, uint32 count, uint32 size)
