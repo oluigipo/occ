@@ -38,13 +38,14 @@ struct LangC_Lexer
 	LangC_LexerFile* file;
 	
 	LangC_TokenList* waiting_token;
+	LangC_TokenList* last_waiting_token;
 	
 	const char* head;
 	const char* previous_head;
 	int32 line, col;
 	
 	// When this bool is set, the following happens:
-	//     - newlines and hashtags are not tokens;
+	//     - newlines and hashtags are tokens;
 	//     - keywords are going to be LangC_TokenKind_Identifier;
 	bool32 preprocessor;
 }
@@ -151,10 +152,17 @@ internal void
 LangC_PushToken(LangC_Lexer* lex, LangC_Token* token)
 {
 	LangC_TokenList* node = PushMemory(sizeof *node);
-	
-	node->next = lex->waiting_token;
-	lex->waiting_token = node;
 	node->token = *token;
+	
+	if (!lex->last_waiting_token)
+	{
+		lex->waiting_token = node;
+		lex->last_waiting_token = node;
+	}
+	else
+	{
+		lex->last_waiting_token = lex->last_waiting_token->next = node;
+	}
 }
 
 internal void

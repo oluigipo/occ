@@ -79,7 +79,7 @@ int main(int argc, char* argv[])
 	// Testing
 	LangC_Init(argc, argv);
 	
-	LangC_ParseFile(LangC_Preprocess(Str("tests/test.c")));
+	LangC_ParseFile(LangC_Preprocess(Str("tests/pp-test.c")));
 	
 	Print("\nMax used memory: %zu bytes.\n", global_arena_offset);
 	

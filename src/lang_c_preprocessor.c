@@ -10,14 +10,114 @@ struct LangC_Macro
 	bool16 expanding;
 };
 
+struct LangC_PPLoadedFile typedef LangC_PPLoadedFile;
+struct LangC_PPLoadedFile
+{
+	LangC_PPLoadedFile* next;
+	uint64 hash;
+	const char* contents;
+	bool32 relative;
+};
+
 struct LangC_Preprocessor
 {
 	char* buf;
 	
 	LangC_Macro* first_macro;
 	LangC_Macro* last_macro;
+	
+	LangC_PPLoadedFile* loaded_files;
 }
 typedef LangC_Preprocessor;
+
+internal void LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC_LexerFile* from);
+
+internal LangC_PPLoadedFile*
+LangC_LoadFileFromDisk(const char path[MAX_PATH_SIZE], uint64 calculated_hash, bool32 relative)
+{
+	uintsize path_len = strlen(path);
+	const char* contents = NULL;
+	
+	if (relative)
+	{
+		contents = OS_ReadWholeFile(path);
+		if (contents)
+			goto success;
+	}
+	
+	relative = false;
+	for (int32 i = 0; i < LangC_include_dirs_count; ++i)
+	{
+		char fullpath[MAX_PATH_SIZE];
+		
+		const char* dir = LangC_include_dirs[i];
+		uintsize len = strlen(dir);
+		
+		memcpy(fullpath, dir, len);
+		memcpy(fullpath + len, path, path_len);
+		fullpath[len + path_len] = 0;
+		
+		contents = OS_ReadWholeFile(path);
+		if (contents)
+			goto success;
+	}
+	
+	return NULL;
+	
+	success:
+	{
+		LangC_PPLoadedFile* result = PushMemory(sizeof *result);
+		
+		result->hash = calculated_hash;
+		result->contents = contents;
+		result->relative = relative;
+		
+		return result;
+	}
+}
+
+internal const char*
+LangC_TryToLoadFile(LangC_Preprocessor* pp, String path, bool32 relative)
+{
+	// TODO(ljre): Resolve full file paths before hashing!
+	
+	uint64 search_hash = SimpleHash(path);
+	
+	// NOTE(ljre): Search for already loaded files.
+	if (pp->loaded_files)
+	{
+		LangC_PPLoadedFile* file = pp->loaded_files;
+		
+		if (file->hash == search_hash && file->relative > relative)
+			return file->contents;
+		
+		while (file->next)
+		{
+			if (file->next->hash == search_hash && file->relative > relative)
+			{
+				return file->next->contents;
+			}
+			
+			file = file->next;
+		}
+		
+		file->next = LangC_LoadFileFromDisk(NullTerminateString(path), search_hash, relative);
+		
+		if (!file->next)
+			return NULL;
+		
+		return file->next->contents;
+	}
+	else
+	{
+		pp->loaded_files = LangC_LoadFileFromDisk(NullTerminateString(path), search_hash, relative);
+		
+		if (!pp->loaded_files)
+			return NULL;
+		
+		return pp->loaded_files->contents;
+	}
+}
 
 internal void
 LangC_IgnoreUntilNewline(LangC_Lexer* lex)
@@ -143,13 +243,32 @@ LangC_FindMacroParameter(LangC_Macro* first_param, String name)
 }
 
 internal void
-LangC_TracePreprocessor(LangC_Preprocessor* pp, LangC_Lexer* lex, const char* flags)
+LangC_TracePreprocessor(LangC_Preprocessor* pp, LangC_Lexer* lex, uint32 flags)
 {
 	char str[2048];
 	int32 len;
+	assert(flags < 16);
+	
+	static const char* flag_table[] = {
+		"1",
+		"2",
+		"1 2",
+		"3",
+		"1 3",
+		"2 3",
+		"1 2 3",
+		"4",
+		"1 4",
+		"2 4",
+		"1 2 4",
+		"3 4",
+		"1 3 4",
+		"2 3 4",
+		"1 2 3 4",
+	};
 	
 	if (flags)
-		len = snprintf(str, sizeof str, "# %i \"%.*s\" %s\n", lex->line, StrFmt(lex->file->path), flags);
+		len = snprintf(str, sizeof str, "# %i \"%.*s\" %s\n", lex->line, StrFmt(lex->file->path), flag_table[flags]);
 	else
 		len = snprintf(str, sizeof str, "# %i \"%.*s\"\n", lex->line, StrFmt(lex->file->path));
 	
@@ -165,7 +284,32 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 	// NOTE(ljre): Define parameters as macros
 	if (macro->is_func_like)
 	{
+		LangC_NextToken(parent_lex); // eat macro name
+		LangC_EatToken(parent_lex, LangC_TokenKind_LeftParen);
 		
+		const char* def_head = macro->def;
+		while (*def_head && *def_head++ != '(');
+		
+		if (*def_head != ')')
+		{
+			do
+			{
+				LangC_IgnoreWhitespaces(&def_head, false);
+				
+				// NOTE(ljre): __VA_ARGS__
+				if (def_head[0] == '.' && def_head[1] == '.' && def_head[2] == '.')
+				{
+					def_head += 3;
+					
+					// TODO
+				}
+			}
+			while (def_head[0] == ',');
+		}
+		
+		// TODO
+		
+		LangC_AssertToken(parent_lex, LangC_TokenKind_RightParen);
 	}
 	
 	// NOTE(ljre): Expand macro
@@ -290,32 +434,73 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 internal void
 LangC_PreprocessIfDef(LangC_Preprocessor* pp, LangC_Lexer* lex)
 {
-	// TODO
+	// TODO(ljre):
 }
 
 internal void
 LangC_PreprocessIf(LangC_Preprocessor* pp, LangC_Lexer* lex)
 {
-	// TODO
+	// TODO(ljre): dear lord
 }
 
 internal void
-LangC_PreprocessDefine(LangC_Preprocessor* pp, LangC_Lexer* lex)
+LangC_PreprocessInclude(LangC_Preprocessor* pp, LangC_Lexer* lex)
 {
-	// TODO
-}
-
-internal void
-LangC_PreprocessUndef(LangC_Preprocessor* pp, LangC_Lexer* lex)
-{
-	// TODO
-}
-
-internal void
-LangC_Preprocess2(LangC_Preprocessor* pp, String path, LangC_LexerFile* from)
-{
-	const char* source = OS_ReadWholeFile(NullTerminateString(path));
+	String path;
+	bool32 relative;
 	
+	if (lex->token.kind == LangC_TokenKind_StringLiteral)
+	{
+		relative = true;
+		path = lex->token.value_str;
+		
+		LangC_IgnoreUntilNewline(lex);
+	}
+	else if (lex->token.kind == LangC_TokenKind_LThan)
+	{
+		relative = false;
+		const char* head = lex->head; // NOTE(ljre): 'lex->head' should be at the beginning of the next token.
+		
+		while (*head && *head != '>' && *head != '\n')
+			++head;
+		
+		if (*head != '>')
+		{
+			LangC_LexerError(lex, "missing '>' at the end of file path.");
+			LangC_IgnoreUntilNewline(lex);
+			return;
+		}
+		
+		path = (String) {
+			.data = lex->head,
+			.size = (uintsize)(head - lex->head),
+		};
+		
+		lex->head = head+1;
+		LangC_IgnoreUntilNewline(lex);
+	}
+	else
+	{
+		LangC_LexerError(lex, "'#include' should have a path to a file sorrounded by \"\" or <>.");
+		LangC_IgnoreUntilNewline(lex);
+		return;
+	}
+	
+	const char* contents = LangC_TryToLoadFile(pp, path, relative);
+	if (contents)
+	{
+		LangC_Preprocess2(pp, path, contents, lex->file);
+		LangC_TracePreprocessor(pp, lex, 2);
+	}
+	else
+	{
+		LangC_LexerError(lex, "could not find file '%.*s' when including.", StrFmt(path));
+	}
+}
+
+internal void
+LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC_LexerFile* from)
+{
 	LangC_Lexer* lex = &(LangC_Lexer) {
 		.preprocessor = true,
 		.file = from,
@@ -325,7 +510,7 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, LangC_LexerFile* from)
 	LangC_PushLexerFile(lex, path);
 	
 	SB_ReserveMore(pp->buf, 2048);
-	LangC_TracePreprocessor(pp, lex, "1");
+	LangC_TracePreprocessor(pp, lex, 1);
 	
 	LangC_NextToken(lex);
 	
@@ -357,6 +542,7 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, LangC_LexerFile* from)
 				if (MatchCString("include", directive.data, directive.size))
 				{
 					LangC_NextToken(lex);
+					LangC_PreprocessInclude(pp, lex);
 				}
 				else if (MatchCString("ifdef", directive.data, directive.size) ||
 						 MatchCString("ifndef", directive.data, directive.size) && (not = true))
@@ -378,17 +564,64 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, LangC_LexerFile* from)
 						line = lex->token.value_int;
 					
 					lex->line = line-1; // NOTE(ljre): :P
-					LangC_TracePreprocessor(pp, lex, "");
+					LangC_TracePreprocessor(pp, lex, 0);
 				}
 				else if (MatchCString("define", directive.data, directive.size))
 				{
+					const char* def = lex->head;
+					
 					LangC_NextToken(lex);
-					LangC_PreprocessDefine(pp, lex);
+					if (LangC_AssertToken(lex, LangC_TokenKind_Identifier))
+					{
+						LangC_IgnoreUntilNewline(lex);
+						const char* end = lex->head;
+						
+						String macro_def = {
+							.size = (uintsize)(end - def),
+							.data = def,
+						};
+						
+						LangC_DefineMacro(pp, macro_def);
+					}
 				}
 				else if (MatchCString("undef", directive.data, directive.size))
 				{
 					LangC_NextToken(lex);
-					LangC_PreprocessUndef(pp, lex);
+					
+					if (LangC_AssertToken(lex, LangC_TokenKind_Identifier))
+					{
+						LangC_UndefineMacro(pp, lex->token.value_ident);
+					}
+				}
+				else if (MatchCString("error", directive.data, directive.size))
+				{
+					const char* begin = lex->head;
+					const char* end = lex->head;
+					
+					while (*end && *end != '\n')
+						++end;
+					
+					uintsize len = end - begin;
+					LangC_LexerError(lex, ": %.*s", len, begin);
+					
+					lex->head = end;
+				}
+				else if (MatchCString("warning", directive.data, directive.size))
+				{
+					const char* begin = lex->head;
+					const char* end = lex->head;
+					
+					while (*end && *end != '\n')
+						++end;
+					
+					uintsize len = end - begin;
+					LangC_LexerWarning(lex, "%.*s", len, begin);
+					
+					lex->head = end;
+				}
+				else
+				{
+					LangC_LexerError(lex, "unknown pre-processor directive '%.*s'.", StrFmt(directive));
 				}
 				
 				LangC_IgnoreUntilNewline(lex);
@@ -412,7 +645,7 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, LangC_LexerFile* from)
 				if (macro)
 				{
 					if (previous_was_newline)
-						LangC_TracePreprocessor(pp, lex, NULL);
+						LangC_TracePreprocessor(pp, lex, 0);
 					
 					LangC_ExpandMacro(pp, macro, lex);
 				}
@@ -444,6 +677,8 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, LangC_LexerFile* from)
 			} break;
 		}
 	}
+	
+	// NOTE(ljre): Done preprocessing this file!
 }
 
 internal const char*
@@ -481,7 +716,9 @@ LangC_Preprocess(String path)
 	LangC_DefineMacro(&pp, Str("_VA_LIST_DEFINED"));
 	LangC_DefineMacro(&pp, Str("va_list void*"));
 	
-	LangC_Preprocess2(&pp, path, NULL);
+	const char* source = LangC_TryToLoadFile(&pp, path, true);
+	
+	LangC_Preprocess2(&pp, path, source, NULL);
 	
 	return pp.buf;
 }
