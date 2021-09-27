@@ -1237,8 +1237,11 @@ LangC_Preprocess(String path)
 	
 	if (source)
 		LangC_Preprocess2(&pp, fullpath, source, NULL);
-	
-	Print("SOURCE:\n%s\n", pp.buf);
+	else
+	{
+		Print("error: could not open input file '%.*s'.\n", StrFmt(path));
+		++LangC_error_count;
+	}
 	
 	return pp.buf;
 }

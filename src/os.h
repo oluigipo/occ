@@ -3,6 +3,7 @@
 
 internal const char* OS_GetMyPath(void);
 internal const char* OS_ReadWholeFile(const char* path);
+internal bool32 OS_WriteWholeFile(const char* path, const void* data, uintsize size);
 internal void OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE]);
 internal void* OS_ReserveMemory(uintsize size);
 internal void* OS_CommitMemory(void* ptr, uintsize size);
@@ -46,6 +47,19 @@ OS_ReadWholeFile(const char* path)
 	
 	fclose(file);
 	return data;
+}
+
+internal bool32
+OS_WriteWholeFile(const char* path, const void* data, uintsize size)
+{
+	FILE* file = fopen(path, "wb");
+	if (!file)
+		return false;
+	
+	bool32 success = (fwrite(data, 1, size, file) == size);
+	fclose(file);
+	
+	return success;
 }
 
 internal void
