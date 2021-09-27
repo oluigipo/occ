@@ -47,9 +47,12 @@ struct LangC_Lexer
 	// When this bool is set, the following happens:
 	//     - newlines and hashtags are tokens;
 	//     - keywords are going to be LangC_TokenKind_Identifier;
-	bool32 preprocessor;
+	bool16 preprocessor;
+	bool16 token_was_pushed;
 }
 typedef LangC_Lexer;
+
+internal void LangC_NextToken(LangC_Lexer* lex);
 
 internal void
 LangC_SetupLexer(LangC_Lexer* lex, const char* source)
@@ -61,14 +64,17 @@ LangC_SetupLexer(LangC_Lexer* lex, const char* source)
 }
 
 internal void
-LangC_PushLexerFile(LangC_Lexer* lex, String path)
+LangC_PushLexerFile(LangC_Lexer* lex, String path, LangC_Lexer* trace_from)
 {
 	LangC_LexerFile* file = PushMemory(sizeof *file);
 	
+	if (!trace_from)
+		trace_from = lex;
+	
 	file->path = path;
-	file->included_line = lex->line;
-	file->included_from = lex->file;
-	file->is_system_file = lex->file ? lex->file->is_system_file : false;
+	file->included_line = trace_from->line;
+	file->included_from = trace_from->file;
+	file->is_system_file = trace_from->file ? trace_from->file->is_system_file : false;
 	lex->file = file;
 }
 
@@ -154,7 +160,7 @@ LangC_PushToken(LangC_Lexer* lex, LangC_Token* token)
 	LangC_TokenList* node = PushMemory(sizeof *node);
 	node->token = *token;
 	
-	if (!lex->last_waiting_token)
+	if (!lex->waiting_token)
 	{
 		lex->waiting_token = node;
 		lex->last_waiting_token = node;
@@ -163,6 +169,16 @@ LangC_PushToken(LangC_Lexer* lex, LangC_Token* token)
 	{
 		lex->last_waiting_token = lex->last_waiting_token->next = node;
 	}
+}
+
+internal LangC_Token
+LangC_PeekIncomingToken(LangC_Lexer* lex)
+{
+	LangC_Lexer tmp = *lex;
+	
+	LangC_NextToken(&tmp);
+	
+	return tmp.token;
 }
 
 internal void
@@ -198,7 +214,7 @@ LangC_IgnoreWhitespaces(const char** p, bool32 newline)
 		{
 			*p += 2;
 			
-			while (**p && !((*p)[-2] == '*' && (*p)[-1] != '/'))
+			while (**p && !((*p)[-2] == '*' && (*p)[-1] == '/'))
 				++*p;
 		}
 		else if (**p == ' ' || **p == '\t' || **p == '\r' || (newline && **p == '\n'))
@@ -331,8 +347,11 @@ LangC_NextToken(LangC_Lexer* lex)
 	{
 		lex->token = lex->waiting_token->token;
 		lex->waiting_token = lex->waiting_token->next;
+		lex->token_was_pushed = true;
 		return;
 	}
+	
+	lex->token_was_pushed = false;
 	
 	beginning:;
 	LangC_IgnoreWhitespaces(&lex->head, !lex->preprocessor);
@@ -407,7 +426,7 @@ LangC_NextToken(LangC_Lexer* lex)
 					// NOTE(ljre): "This indicates the start of a new file."
 					if (flags & 1 || !lex->file)
 					{
-						LangC_PushLexerFile(lex, file);
+						LangC_PushLexerFile(lex, file, NULL);
 					}
 					
 					// NOTE(ljre): "This indicates returning to a file (after having included another file)."
@@ -469,7 +488,7 @@ LangC_NextToken(LangC_Lexer* lex)
 					lex->head += 2;
 					base = 16;
 				}
-				else if (lex->head[1] == 'b')
+				else if (lex->head[1] == 'b' || lex->head[1] == 'B')
 				{
 					lex->head += 2;
 					base = 2;
@@ -552,9 +571,6 @@ LangC_NextToken(LangC_Lexer* lex)
 				
 				lex->token.value_str = LangC_TokenizeStringLiteral(lex);
 				lex->token.kind = LangC_TokenKind_WideStringLiteral;
-				
-				// Add L prefix at the beginning
-				--lex->token.as_string.data;
 			}
 			//else
 			

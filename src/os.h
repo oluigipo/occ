@@ -3,6 +3,7 @@
 
 internal const char* OS_GetMyPath(void);
 internal const char* OS_ReadWholeFile(const char* path);
+internal void OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE]);
 internal void* OS_ReserveMemory(uintsize size);
 internal void* OS_CommitMemory(void* ptr, uintsize size);
 
@@ -45,6 +46,27 @@ OS_ReadWholeFile(const char* path)
 	
 	fclose(file);
 	return data;
+}
+
+internal void
+OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE])
+{
+	wchar_t wpath[32767];
+	wchar_t fullpath[32767];
+	int32 i;
+	
+	i = MultiByteToWideChar(CP_UTF8, 0, path.data, path.size, wpath, ArrayLength(wpath));
+	wpath[i] = 0;
+	
+	GetFullPathNameW(wpath, ArrayLength(fullpath), fullpath, NULL);
+	i = WideCharToMultiByte(CP_UTF8, 0, fullpath, -1, out_buf, MAX_PATH_SIZE, NULL, NULL);
+	out_buf[i] = 0;
+	
+	for (char* it = out_buf; *it; ++it)
+	{
+		if (*it == '\\')
+			*it = '/';
+	}
 }
 
 internal void*
@@ -103,6 +125,12 @@ OS_ReadWholeFile(const char* path)
 	
 	fclose(file);
 	return data;
+}
+
+internal void
+OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE])
+{
+	assert(false);
 }
 
 internal void*

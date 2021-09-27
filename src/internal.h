@@ -38,6 +38,7 @@ struct String
 #define StrInit(str) { .size = sizeof(str), .data = (str) }
 #define StrFmt(str) (int32)(str).size, (str).data
 #define StrNull (String) { 0 }
+#define StrMake(str,len) (String) { .size = (len), .data = (str) }
 
 //~ Utility Macros
 #define ArrayLength(arr) (sizeof(arr) / sizeof*(arr))
