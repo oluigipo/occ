@@ -5,6 +5,7 @@ enum LangC_TokenKind
 {
 	LangC_TokenKind_Eof = 0,
 	
+	//- NOTE(ljre): Keywords
 	LangC_TokenKind__FirstKeyword,
 	LangC_TokenKind_Auto = LangC_TokenKind__FirstKeyword,
 	LangC_TokenKind_Break,
@@ -42,10 +43,18 @@ enum LangC_TokenKind
 	LangC_TokenKind_While,
 	LangC_TokenKind_Bool,
 	LangC_TokenKind_Complex,
-	LangC_TokenKind_Attribute,
-	LangC_TokenKind_Declspec,
-	LangC_TokenKind__LastKeyword = LangC_TokenKind_Declspec,
 	
+	// NOTE(ljre): GCC stuff
+	LangC_TokenKind_GccAttribute, // __attribute __attribute__
+	LangC_TokenKind_GccAsm, // __asm__ asm
+	
+	// NOTE(ljre): MSVC stuff
+	LangC_TokenKind_MsvcDeclspec, // __declspec
+	LangC_TokenKind_MsvcAsm, // __asm
+	
+	LangC_TokenKind__LastKeyword = LangC_TokenKind_MsvcAsm,
+	
+	//- NOTE(ljre): Rest
 	// NOTE(ljre): those 3 below shall be in order
 	LangC_TokenKind_IntLiteral,
 	LangC_TokenKind_LIntLiteral,
@@ -157,8 +166,10 @@ internal const char* LangC_token_str_table[LangC_TokenKind__Count] = {
 	[LangC_TokenKind_While] = "while",
 	[LangC_TokenKind_Bool] = "bool",
 	[LangC_TokenKind_Complex] = "complex",
-	[LangC_TokenKind_Attribute] = "__attribute__",
-	[LangC_TokenKind_Declspec] = "__declspec",
+	[LangC_TokenKind_GccAttribute] = "__attribute__",
+	[LangC_TokenKind_GccAsm] = "__asm__",
+	[LangC_TokenKind_MsvcDeclspec] = "__declspec",
+	[LangC_TokenKind_MsvcAsm] = "__asm",
 	
 	[LangC_TokenKind_IntLiteral] = "(int literal)",
 	[LangC_TokenKind_LIntLiteral] = "(long literal)",

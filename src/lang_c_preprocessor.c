@@ -330,7 +330,7 @@ internal void
 LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* parent_lex, String leading_spaces)
 {
 	// TODO(ljre): Handle native macros
-#if 0
+#if 1
 	if (MatchCString("__LINE__", macro->name.data, macro->name.size))
 	{
 		int32 line = parent_lex->line;
@@ -345,7 +345,7 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 			.value_int = line,
 		};
 		
-		LangC_PushToken(parent_lex, &tok);
+		LangC_PushTokenToFront(parent_lex, &tok);
 		LangC_NextToken(parent_lex);
 		return;
 	}
@@ -367,7 +367,7 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 			.value_str = file,
 		};
 		
-		LangC_PushToken(parent_lex, &tok);
+		LangC_PushTokenToFront(parent_lex, &tok);
 		LangC_NextToken(parent_lex);
 		return;
 	}
@@ -480,7 +480,7 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 	LangC_Lexer* lex = &(LangC_Lexer) {
 		.preprocessor = true,
 		.file = parent_lex->file,
-		.line = parent_lex->line,
+		.line = parent_lex->line
 	};
 	
 	// NOTE(ljre): If the lexer already has waiting tokens, we want to insert right before them.
@@ -618,13 +618,215 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 	macro->expanding = false;
 }
 
+internal int32 LangC_EvalPreprocessorExprBinary(LangC_Preprocessor* pp, LangC_Lexer* lex, int32 level);
+
+internal int32
+LangC_EvalPreprocessorExprFactor(LangC_Preprocessor* pp, LangC_Lexer* lex)
+{
+	beginning:;
+	int32 result = 0;
+	
+	switch (lex->token.kind)
+	{
+		// NOTE(ljre): Unary operators
+		case LangC_TokenKind_Minus:
+		{
+			LangC_NextToken(lex);
+			return -LangC_EvalPreprocessorExprFactor(pp, lex);
+		} break;
+		
+		case LangC_TokenKind_Plus:
+		{
+			LangC_NextToken(lex);
+			goto beginning;
+		} break;
+		
+		case LangC_TokenKind_Not:
+		{
+			LangC_NextToken(lex);
+			return -LangC_EvalPreprocessorExprFactor(pp, lex);
+		} break;
+		
+		case LangC_TokenKind_LNot:
+		{
+			LangC_NextToken(lex);
+			return !LangC_EvalPreprocessorExprFactor(pp, lex);
+		} break;
+		
+		// NOTE(ljre): Factors
+		case LangC_TokenKind_IntLiteral:
+		case LangC_TokenKind_LIntLiteral:
+		case LangC_TokenKind_LLIntLiteral:
+		{
+			result = (int32)lex->token.value_int;
+			LangC_NextToken(lex);
+		} break;
+		
+		case LangC_TokenKind_UintLiteral:
+		case LangC_TokenKind_LUintLiteral:
+		case LangC_TokenKind_LLUintLiteral:
+		{
+			result = (int32)lex->token.value_uint;
+			LangC_NextToken(lex);
+		} break;
+		
+		case LangC_TokenKind_FloatLiteral:
+		{
+			result = (int32)lex->token.value_float;
+			LangC_NextToken(lex);
+		} break;
+		
+		case LangC_TokenKind_DoubleLiteral:
+		{
+			result = (int32)lex->token.value_double;
+			LangC_NextToken(lex);
+		} break;
+		
+		case LangC_TokenKind_WideStringLiteral:
+		case LangC_TokenKind_StringLiteral:
+		{
+			// TODO(ljre): What should happen if it's a string literal?
+			result = (lex->token.value_str.size > 0);
+			LangC_NextToken(lex);
+		} break;
+		
+		case LangC_TokenKind_Identifier:
+		{
+			String name = lex->token.value_ident;
+			
+			if (MatchCString("defined", name.data, name.size))
+			{
+				LangC_NextToken(lex);
+				bool32 has_paren = LangC_TryToEatToken(lex, LangC_TokenKind_LeftParen);
+				
+				if (LangC_AssertToken(lex, LangC_TokenKind_Identifier))
+				{
+					result = (LangC_FindMacro(pp, lex->token.value_ident, 2) != NULL);
+				}
+				
+				if (has_paren)
+					LangC_EatToken(lex, LangC_TokenKind_RightParen);
+			}
+			else
+			{
+				bool32 is_func = (LangC_PeekIncomingToken(lex).kind == LangC_TokenKind_LeftParen);
+				LangC_Macro* macro = LangC_FindMacro(pp, name, is_func);
+				
+				if (macro)
+				{
+					LangC_ExpandMacro(pp, macro, lex, lex->token.leading_spaces);
+					goto beginning;
+				}
+				else
+				{
+					result = 0;
+				}
+			}
+		} break;
+	}
+	
+	return result;
+}
+
+internal int32
+LangC_EvalPreprocessorExprOp(LangC_TokenKind op, int32 left, int32 right)
+{
+	switch (op)
+	{
+		case LangC_TokenKind_Comma: return right;
+		case LangC_TokenKind_Assign: return right;
+		case LangC_TokenKind_PlusAssign:
+		case LangC_TokenKind_Plus: return left + right;
+		case LangC_TokenKind_MinusAssign:
+		case LangC_TokenKind_Minus: return left - right;
+		case LangC_TokenKind_MulAssign:
+		case LangC_TokenKind_Mul: return left * right;
+		case LangC_TokenKind_DivAssign:
+		case LangC_TokenKind_Div:
+		{
+			if (right == 0)
+				return 0;
+			return left / right;
+		};
+		case LangC_TokenKind_ModAssign:
+		case LangC_TokenKind_Mod:
+		{
+			if (right == 0)
+				return 0;
+			return left % right;
+		};
+		case LangC_TokenKind_LeftShiftAssign:
+		case LangC_TokenKind_LeftShift: return left << right;
+		case LangC_TokenKind_RightShiftAssign:
+		case LangC_TokenKind_RightShift: return left >> right;
+		case LangC_TokenKind_AndAssign:
+		case LangC_TokenKind_And: return left & right;
+		case LangC_TokenKind_OrAssign:
+		case LangC_TokenKind_Or: return left | right;
+		case LangC_TokenKind_XorAssign:
+		case LangC_TokenKind_Xor: return left ^ right;
+		
+		case LangC_TokenKind_LOr: return left || right;
+		case LangC_TokenKind_LAnd: return left && right;
+		case LangC_TokenKind_Equals: return left == right;
+		case LangC_TokenKind_NotEquals: return left != right;
+		case LangC_TokenKind_LThan: return left < right;
+		case LangC_TokenKind_LEqual: return left <= right;
+		case LangC_TokenKind_GThan: return left > right;
+		case LangC_TokenKind_GEqual: return left >= right;
+	}
+	
+	return 0;
+}
+
+internal int32
+LangC_EvalPreprocessorExprBinary(LangC_Preprocessor* pp, LangC_Lexer* lex, int32 level)
+{
+	int32 result = LangC_EvalPreprocessorExprFactor(pp, lex);
+	
+	LangC_OperatorPrecedence prec;
+	while (prec = LangC_operators_precedence[lex->token.kind],
+		   prec.level > level)
+	{
+		LangC_TokenKind op = lex->token.kind;
+		LangC_NextToken(lex);
+		int32 right = LangC_EvalPreprocessorExprFactor(pp, lex);
+		
+		LangC_TokenKind lookahead = lex->token.kind;
+		LangC_OperatorPrecedence lookahead_prec = LangC_operators_precedence[lookahead];
+		
+		while (lookahead_prec.level > 0 &&
+			   (lookahead_prec.level > prec.level ||
+				(lookahead_prec.level == prec.level && lookahead_prec.right2left))) {
+			LangC_NextToken(lex);
+			
+			if (lookahead == LangC_TokenKind_QuestionMark) {
+				int32 if_true = LangC_EvalPreprocessorExprBinary(pp, lex, 1);
+				
+				LangC_EatToken(lex, LangC_TokenKind_Colon);
+				int32 if_false = LangC_EvalPreprocessorExprBinary(pp, lex, level + 1);
+				
+				right = right ? if_true : if_false;
+			} else {
+				int32 other = LangC_EvalPreprocessorExprBinary(pp, lex, level + 1);
+				
+				right = LangC_EvalPreprocessorExprOp(lookahead, right, other);
+			}
+			
+			lookahead = lex->token.kind;
+			lookahead_prec = LangC_operators_precedence[lookahead];
+		}
+		
+		result = LangC_EvalPreprocessorExprOp(op, result, right);
+	}
+	
+	return result;
+}
+
 internal int32
 LangC_EvalPreprocessorExpr(LangC_Preprocessor* pp, LangC_Lexer* lex)
 {
-	// TODO
-	LangC_IgnoreUntilNewline(lex);
-	
-	return 0;
+	return LangC_EvalPreprocessorExprBinary(pp, lex, 0);
 }
 
 internal void
@@ -1013,11 +1215,12 @@ LangC_Preprocess(String path)
 	LangC_DefineMacro(&pp, Str("__restrict__ restrict"));
 	LangC_DefineMacro(&pp, Str("__const const"));
 	LangC_DefineMacro(&pp, Str("__const__ const"));
-	LangC_DefineMacro(&pp, Str("__builtin_va_list void*"));
-	LangC_DefineMacro(&pp, Str("__builtin_va_start(l,p) ((l) = &(p)+1)"));
-	LangC_DefineMacro(&pp, Str("__builtin_va_end(l) ((l) = NULL)"));
+	LangC_DefineMacro(&pp, Str("__volatile volatile"));
+	LangC_DefineMacro(&pp, Str("__volatile__ volatile"));
 	LangC_DefineMacro(&pp, Str("__attribute(...)"));
+	LangC_DefineMacro(&pp, Str("__attribute__(...)"));
 	LangC_DefineMacro(&pp, Str("__declspec(...)"));
+	LangC_DefineMacro(&pp, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"));
 	LangC_DefineMacro(&pp, Str("__cdecl"));
 	LangC_DefineMacro(&pp, Str("__stdcall"));
 	LangC_DefineMacro(&pp, Str("__vectorcall"));

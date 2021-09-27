@@ -58,7 +58,9 @@ internal void LangC_NextToken(LangC_Lexer* lex);
 internal void
 LangC_SetupLexer(LangC_Lexer* lex, const char* source)
 {
-	lex->line = lex->col = 1;
+	lex->col = 1;
+	if (lex->line == 0)
+		lex->line = 1;
 	
 	lex->token.kind = LangC_TokenKind_Eof;
 	lex->head = lex->previous_head = source;
@@ -169,6 +171,24 @@ LangC_PushToken(LangC_Lexer* lex, LangC_Token* token)
 	else
 	{
 		lex->last_waiting_token = lex->last_waiting_token->next = node;
+	}
+}
+
+internal void
+LangC_PushTokenToFront(LangC_Lexer* lex, LangC_Token* token)
+{
+	LangC_TokenList* node = PushMemory(sizeof *node);
+	node->token = *token;
+	
+	if (!lex->waiting_token)
+	{
+		lex->waiting_token = node;
+		lex->last_waiting_token = node;
+	}
+	else
+	{
+		node->next = lex->waiting_token;
+		lex->waiting_token = node;
 	}
 }
 
