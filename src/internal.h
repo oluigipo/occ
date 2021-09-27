@@ -184,6 +184,9 @@ MatchCString(const char* a, const char* cmp, int32 cmp_len)
 internal int32
 CompareString(String a, String b)
 {
+	while (a.size > 0 && !a.data[a.size-1]) --a.size;
+	while (b.size > 0 && !b.data[b.size-1]) --b.size;
+	
 	if (a.size != b.size)
 		return (int32)a.size - (int32)b.size;
 	

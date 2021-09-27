@@ -27,7 +27,19 @@ float wtf = 0x8080.0p+3f;
 
 const char* a_string = "pepe, " STR(MY_MACRO) " is " STR2(MY_MACRO);
 
+#define HE HI
+#define LLO _THERE
+#define HELLO "HI THERE"
+#define CAT(a,b) a##b
+#define XCAT(a,b) CAT(a,b)
+#define CALL(fn) fn(HE,LLO)
+int a = CAT(HE, LLO);
+int b = XCAT(HE, LLO);
+int c = CALL(CAT);
+
 #include <stdio.h>
+
+#define LOG(...) printf(__VA_ARGS__)
 
 int main(int argc, char* argv[])
 {
@@ -38,4 +50,7 @@ int main(int argc, char* argv[])
 	a (*pp[2])(void) = {
 		f, v
 	};
+	
+	LOG("address of 'f' is %p\n", pp[0]);
+	LOG("this is line " STR2(__LINE__) "!\n");
 }

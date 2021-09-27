@@ -10,6 +10,13 @@ struct LangC_Macro
 	bool16 expanding;
 };
 
+struct LangC_MacroParameter
+{
+	String name;
+	const char* expands_to;
+}
+typedef LangC_MacroParameter;
+
 struct LangC_PPLoadedFile typedef LangC_PPLoadedFile;
 struct LangC_PPLoadedFile
 {
@@ -273,20 +280,16 @@ LangC_FindMacro(LangC_Preprocessor* pp, String name, int32 type)
 	return NULL;
 }
 
-internal LangC_Macro*
-LangC_FindMacroParameter(LangC_Macro* first_param, String name)
+internal LangC_MacroParameter*
+LangC_FindMacroParameter(LangC_MacroParameter* param_array, int32 param_count, String name)
 {
-	LangC_Macro* it = first_param;
-	
-	while (it)
+	for (int32 i = 0; i < param_count; ++i)
 	{
-		if (CompareString(it->name, name) == 0)
-			break;
-		
-		it = it->next;
+		if (CompareString(param_array[i].name, name) == 0)
+			return &param_array[i];
 	}
 	
-	return it;
+	return NULL;
 }
 
 internal void
@@ -324,17 +327,63 @@ LangC_TracePreprocessor(LangC_Preprocessor* pp, LangC_Lexer* lex, uint32 flags)
 }
 
 internal void
-LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* parent_lex)
+LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* parent_lex, String leading_spaces)
 {
-	// TODO(ljre): Rework macro parameters -- they don't need to be macros, just a simple list is enough!
+	// TODO(ljre): Handle native macros
+#if 0
+	if (MatchCString("__LINE__", macro->name.data, macro->name.size))
+	{
+		int32 line = parent_lex->line;
+		int32 needed = snprintf(NULL, 0, "%i", line) + 1;
+		char* mem = PushMemory(needed);
+		snprintf(mem, needed + 1, "%i", line);
+		
+		LangC_Token tok = {
+			.kind = LangC_TokenKind_IntLiteral,
+			.as_string = StrMake(mem, needed),
+			.leading_spaces = Str(""),
+			.value_int = line,
+		};
+		
+		LangC_PushToken(parent_lex, &tok);
+		LangC_NextToken(parent_lex);
+		return;
+	}
+	else if (MatchCString("__FILE__", macro->name.data, macro->name.size))
+	{
+		String file = parent_lex->file->path;
+		uintsize needed = file.size + 3;
+		char* mem = PushMemory(needed);
+		
+		mem[0] = '"';
+		memcpy(mem + 1, file.data, file.size);
+		mem[file.size + 1] = '"';
+		mem[file.size + 2] = 0;
+		
+		LangC_Token tok = {
+			.kind = LangC_TokenKind_StringLiteral,
+			.as_string = StrMake(mem, needed),
+			.leading_spaces = Str(""),
+			.value_str = file,
+		};
+		
+		LangC_PushToken(parent_lex, &tok);
+		LangC_NextToken(parent_lex);
+		return;
+	}
+#endif
 	
+	// NOTE(ljre): Normal macro expansion.
 	macro->expanding = true;
-	LangC_Macro* saved_last_macro = pp->last_macro;
 	const char* def_head = macro->def;
 	
+	LangC_MacroParameter params[128];
+	int32 param_count = 0;
+	
 	// NOTE(ljre): Ignore macro name
-	while (LangC_IsIdentChar(*def_head))
-		++def_head;
+	//while (LangC_IsIdentChar(*def_head))
+	//++def_head;
+	def_head += macro->name.size;
 	
 	// NOTE(ljre): Define parameters as macros
 	if (macro->is_func_like)
@@ -349,15 +398,18 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 			do
 			{
 				LangC_IgnoreWhitespaces(&def_head, false);
+				LangC_MacroParameter* param = &params[param_count++];
+				assert(param_count <= ArrayLength(params));
 				
-				char* def = NULL;
-				SB_ReserveAtLeast(def, 64);
+				String name;
+				char* buf = NULL;
+				SB_ReserveAtLeast(buf, 64);
 				
 				// NOTE(ljre): __VA_ARGS__
 				if (def_head[0] == '.' && def_head[1] == '.' && def_head[2] == '.')
 				{
 					def_head += 3;
-					SB_PushArrayConst(def, "__VA_ARGS__");
+					name = Str("__VA_ARGS__");
 					
 					int32 nesting = 1;
 					while (parent_lex->token.kind)
@@ -370,10 +422,9 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 						else if (parent_lex->token.kind == LangC_TokenKind_LeftParen)
 							++nesting;
 						
-						// TODO(lrje): Make 4th rule of the expansion order work.
+						SB_PushArray(buf, parent_lex->token.as_string.size, parent_lex->token.as_string.data);
+						SB_PushArray(buf, parent_lex->token.leading_spaces.size, parent_lex->token.leading_spaces.data);
 						
-						SB_Push(def, ' ');
-						SB_PushArray(def, parent_lex->token.as_string.size, parent_lex->token.as_string.data);
 						LangC_NextToken(parent_lex);
 					}
 				}
@@ -384,7 +435,7 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 					while (LangC_IsIdentChar(*def_head))
 						++def_head;
 					
-					SB_PushArray(def, (uintsize)(def_head - name_begin), name_begin);
+					name = StrMake(name_begin, (uintsize)(def_head - name_begin));
 					
 					int32 nesting = 1;
 					while (parent_lex->token.kind && (parent_lex->token.kind != LangC_TokenKind_Comma || nesting > 1))
@@ -397,20 +448,21 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 						else if (parent_lex->token.kind == LangC_TokenKind_LeftParen)
 							++nesting;
 						
-						SB_Push(def, ' ');
-						SB_PushArray(def, parent_lex->token.as_string.size, parent_lex->token.as_string.data);
+						SB_PushArray(buf, parent_lex->token.as_string.size, parent_lex->token.as_string.data);
+						SB_PushArray(buf, parent_lex->token.leading_spaces.size, parent_lex->token.leading_spaces.data);
 						
 						LangC_NextToken(parent_lex);
 					}
 				}
 				
-				SB_Push(def, 0);
+				SB_Push(buf, 0);
 				
-				LangC_DefineMacro(pp, StrMake(def, SB_Len(def)));
+				param->name = name;
+				param->expands_to = buf;
 				
 				LangC_IgnoreWhitespaces(&def_head, false);
 			}
-			while (def_head[0] == ',' && LangC_AssertToken(parent_lex, LangC_TokenKind_Comma));
+			while (def_head[0] == ',' && ++def_head && LangC_EatToken(parent_lex, LangC_TokenKind_Comma));
 		}
 		
 		while (parent_lex->token.kind && parent_lex->token.kind != LangC_TokenKind_RightParen)
@@ -419,6 +471,8 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 		}
 		
 		LangC_AssertToken(parent_lex, LangC_TokenKind_RightParen);
+		leading_spaces = parent_lex->token.leading_spaces;
+		
 		while (*def_head && *def_head++ != ')');
 	}
 	
@@ -426,11 +480,20 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 	LangC_Lexer* lex = &(LangC_Lexer) {
 		.preprocessor = true,
 		.file = parent_lex->file,
+		.line = parent_lex->line,
 	};
+	
+	// NOTE(ljre): If the lexer already has waiting tokens, we want to insert right before them.
+	//             Save and append them to the end after expanding.
+	LangC_TokenList* saved_first_token = parent_lex->waiting_token;
+	LangC_TokenList* saved_last_token = parent_lex->last_waiting_token;
+	
+	parent_lex->waiting_token = NULL;
 	
 	LangC_SetupLexer(lex, def_head);
 	LangC_NextToken(lex);
 	
+	// NOTE(ljre): Expand macro.
 	while (lex->token.kind != LangC_TokenKind_Eof)
 	{
 		switch (lex->token.kind)
@@ -439,31 +502,26 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 			{
 				LangC_NextToken(lex);
 				
-				LangC_Macro* param;
+				LangC_MacroParameter* param;
 				if (!macro->is_func_like ||
 					!LangC_AssertToken(lex, LangC_TokenKind_Identifier) ||
-					!(param = LangC_FindMacroParameter(saved_last_macro->next, lex->token.value_ident)))
+					!(param = LangC_FindMacroParameter(params, param_count, lex->token.value_ident)))
 				{
 					LangC_LexerError(parent_lex, "expected a macro parameter for stringification.");
 				}
 				else
 				{
-					const char* def = param->def;
-					while (LangC_IsIdentChar(*def))
-						++def;
-					
-					LangC_IgnoreWhitespaces(&def, false);
-					
 					char* buf = NULL;
-					uintsize len = strlen(def);
+					uintsize len = strlen(param->expands_to);
 					SB_ReserveAtLeast(buf, len+2);
 					
 					SB_Push(buf, '"');
-					SB_PushArray(buf, len, def);
+					SB_PushArray(buf, len, param->expands_to);
 					SB_Push(buf, '"');
 					
 					LangC_Token tok = {
 						.kind = LangC_TokenKind_StringLiteral,
+						.leading_spaces = lex->token.leading_spaces,
 						.as_string = {
 							.size = SB_Len(buf),
 							.data = buf,
@@ -481,11 +539,13 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 			
 			case LangC_TokenKind_Identifier:
 			{
-				LangC_Macro* param;
+				LangC_MacroParameter* param;
 				if (lex->token.kind == LangC_TokenKind_Identifier &&
-					(param = LangC_FindMacroParameter(saved_last_macro->next, lex->token.value_ident)))
+					!lex->token_was_pushed &&
+					(param = LangC_FindMacroParameter(params, param_count, lex->token.value_ident)))
 				{
-					LangC_ExpandMacro(pp, param, lex);
+					LangC_PushStringOfTokens(lex, param->expands_to);
+					LangC_NextToken(lex);
 					break;
 				}
 			} /* fallthrough */
@@ -493,53 +553,69 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 			default:
 			{
 				LangC_Token tok = lex->token;
-				LangC_NextToken(lex);
+				bool32 from_macro = lex->token_was_pushed;
+				LangC_Macro* to_expand;
 				
-				if (lex->token.kind == LangC_TokenKind_DoubleHashtag)
+				if (LangC_PeekIncomingToken(lex).kind == LangC_TokenKind_DoubleHashtag)
 				{
-					LangC_NextToken(lex);
-					LangC_Macro* param;
+					LangC_NextToken(lex); // NOTE(ljre): Eat left side
+					LangC_NextToken(lex); // NOTE(ljre): Eat ##
+					LangC_MacroParameter* param;
 					
 					if (lex->token.kind == LangC_TokenKind_Identifier &&
-						(param = LangC_FindMacroParameter(saved_last_macro->next, lex->token.value_ident)))
+						(param = LangC_FindMacroParameter(params, param_count, lex->token.value_ident)))
 					{
-						LangC_ExpandMacro(pp, param, lex);
+						LangC_PushStringOfTokens(lex, param->expands_to);
+						LangC_NextToken(lex);
 					}
 					
 					LangC_Token other_tok = lex->token;
+					LangC_NextToken(lex);
 					
-					uintsize len = tok.as_string.size + other_tok.as_string.size;
+					uintsize len = tok.as_string.size + other_tok.as_string.size + 1;
 					char* buf = PushMemory(len);
+					
 					memcpy(buf, tok.as_string.data, tok.as_string.size);
 					memcpy(buf + tok.as_string.size, other_tok.as_string.data, other_tok.as_string.size);
+					buf[tok.as_string.size + other_tok.as_string.size] = 0;
 					
-					String final_tok_str = {
-						.data = buf,
-						.size = len,
-					};
-					
-					LangC_Token final_token = {
-						.kind = LangC_TokenKind_Identifier, // NOTE(ljre): This shouldn't matter!
-						.as_string = final_tok_str,
-						.value_ident = final_tok_str,
-					};
-					
-					LangC_PushToken(parent_lex, &final_token);
+					// TODO(ljre): Check if result of concatenation should be expanded on the 4th step.
+					LangC_PushStringOfTokens(parent_lex, buf);
+				}
+				else if (from_macro &&
+						 tok.kind == LangC_TokenKind_Identifier &&
+						 (to_expand = LangC_FindMacro(pp, tok.value_ident, 0)))
+				{
+					// NOTE(ljre): Tokens originated from parameters shall be expanded first.
+					LangC_ExpandMacro(pp, to_expand, lex, tok.leading_spaces);
 				}
 				else
 				{
+					LangC_NextToken(lex);
 					LangC_PushToken(parent_lex, &tok);
 				}
+				
 			} break;
 		}
 	}
+	
+	if (parent_lex->waiting_token)
+	{
+		parent_lex->last_waiting_token->next = saved_first_token;
+		parent_lex->last_waiting_token->token.leading_spaces = leading_spaces;
+	}
+	else
+	{
+		parent_lex->waiting_token = saved_first_token;
+	}
+	
+	parent_lex->last_waiting_token = saved_last_token;
 	
 	// NOTE(ljre): At this point, the parent_lex is going to have the macro name *or*
 	//             the ending ')' of the parameter list. We can eat a token safely.
 	LangC_NextToken(parent_lex);
 	
 	macro->expanding = false;
-	pp->last_macro = saved_last_macro;
 }
 
 internal int32
@@ -577,14 +653,14 @@ LangC_IgnoreUntilEndOfIf(LangC_Preprocessor* pp, LangC_Lexer* lex, bool32 alread
 							LangC_NextToken(lex);
 							LangC_PreprocessIfDef(pp, lex, not);
 							
-							return;
+							goto out_of_the_loop;
 						}
 						else if (MatchCString("elif", directive.data, directive.size))
 						{
 							LangC_NextToken(lex);
 							LangC_PreprocessIf(pp, lex);
 							
-							return;
+							goto out_of_the_loop;
 						}
 						else if (MatchCString("else", directive.data, directive.size))
 						{
@@ -620,6 +696,9 @@ LangC_IgnoreUntilEndOfIf(LangC_Preprocessor* pp, LangC_Lexer* lex, bool32 alread
 			} break;
 		}
 	}
+	
+	out_of_the_loop:;
+	LangC_TracePreprocessor(pp, lex, 0);
 }
 
 internal void
@@ -857,11 +936,13 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 				
 				LangC_IgnoreUntilNewline(lex);
 				LangC_NextToken(lex);
+				SB_Push(pp->buf, '\n');
 			} break;
 			
 			case LangC_TokenKind_Identifier:
 			{
 				String ident = lex->token.value_ident;
+				String leading_spaces = lex->token.leading_spaces;
 				LangC_Macro* macro;
 				
 				if (LangC_PeekIncomingToken(lex).kind == LangC_TokenKind_LeftParen)
@@ -875,15 +956,12 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 				
 				if (macro)
 				{
-					if (previous_was_newline)
-						LangC_TracePreprocessor(pp, lex, 0);
-					
-					LangC_ExpandMacro(pp, macro, lex);
+					LangC_ExpandMacro(pp, macro, lex, leading_spaces);
 				}
 				else
 				{
 					SB_PushArray(pp->buf, ident.size, ident.data);
-					SB_Push(pp->buf, ' ');
+					SB_PushArray(pp->buf, leading_spaces.size, leading_spaces.data);
 					LangC_NextToken(lex);
 				}
 				
@@ -902,8 +980,8 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 					previous_was_newline = false;
 				}
 				
-				SB_Push(pp->buf, ' ');
 				SB_PushArray(pp->buf, lex->token.as_string.size, lex->token.as_string.data);
+				SB_PushArray(pp->buf, lex->token.leading_spaces.size, lex->token.leading_spaces.data);
 				LangC_NextToken(lex);
 			} break;
 		}
@@ -946,6 +1024,10 @@ LangC_Preprocess(String path)
 	LangC_DefineMacro(&pp, Str("__fastcall"));
 	LangC_DefineMacro(&pp, Str("_VA_LIST_DEFINED"));
 	LangC_DefineMacro(&pp, Str("va_list void*"));
+	
+	// NOTE(ljre): Those macros are handled internally, but a definition is still needed.
+	LangC_DefineMacro(&pp, Str("__LINE__"));
+	LangC_DefineMacro(&pp, Str("__FILE__"));
 	
 	String fullpath;
 	const char* source = LangC_TryToLoadFile(&pp, path, true, StrNull, &fullpath);

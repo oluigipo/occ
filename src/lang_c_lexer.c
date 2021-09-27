@@ -3,6 +3,7 @@ struct LangC_Token
 	int32 line, col;
 	LangC_TokenKind kind;
 	String as_string;
+	String leading_spaces;
 	
 	union
 	{
@@ -168,6 +169,23 @@ LangC_PushToken(LangC_Lexer* lex, LangC_Token* token)
 	else
 	{
 		lex->last_waiting_token = lex->last_waiting_token->next = node;
+	}
+}
+
+internal void
+LangC_PushStringOfTokens(LangC_Lexer* lex, const char* str)
+{
+	LangC_Lexer temp_lex = {
+		.preprocessor = lex->preprocessor,
+	};
+	
+	LangC_SetupLexer(&temp_lex, str);
+	LangC_NextToken(&temp_lex);
+	
+	while (temp_lex.token.kind)
+	{
+		LangC_PushToken(lex, &temp_lex.token);
+		LangC_NextToken(&temp_lex);
 	}
 }
 
@@ -420,7 +438,6 @@ LangC_NextToken(LangC_Lexer* lex)
 						++lex->head;
 					
 					lex->previous_head = lex->head;
-					lex->line = line;
 					lex->col = 1;
 					
 					// NOTE(ljre): "This indicates the start of a new file."
@@ -434,6 +451,8 @@ LangC_NextToken(LangC_Lexer* lex)
 					{
 						LangC_PopLexerFile(lex);
 					}
+					
+					lex->line = line;
 					
 					// NOTE(ljre): "This indicates that the following text comes from a system header file, so
 					//              certain warnings should be suppressed."
@@ -867,7 +886,10 @@ LangC_NextToken(LangC_Lexer* lex)
 	
 	lex->token.as_string.size = (uintsize)(lex->head - lex->token.as_string.data);
 	
+	lex->token.leading_spaces.data = lex->head;
 	LangC_IgnoreWhitespaces(&lex->head, !lex->preprocessor);
+	lex->token.leading_spaces.size = (uintsize)(lex->head - lex->token.leading_spaces.data);
+	
 	LangC_UpdateLexerPreviousHead(lex);
 }
 
