@@ -77,7 +77,7 @@ int main(int argc, char* argv[])
 	global_my_path = OS_GetMyPath();
 	
 	// Testing
-	LangC_Run(argc, (const char**)argv);
+	LangC_Main(argc, (const char**)argv);
 	
 	Print("\nMax used memory: %zu bytes.\n", global_arena_offset);
 	

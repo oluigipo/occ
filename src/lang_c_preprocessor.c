@@ -702,6 +702,7 @@ LangC_EvalPreprocessorExprFactor(LangC_Preprocessor* pp, LangC_Lexer* lex)
 				if (LangC_AssertToken(lex, LangC_TokenKind_Identifier))
 				{
 					result = (LangC_FindMacro(pp, lex->token.value_ident, 2) != NULL);
+					LangC_NextToken(lex);
 				}
 				
 				if (has_paren)

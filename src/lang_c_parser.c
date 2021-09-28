@@ -1137,6 +1137,22 @@ LangC_ParseStmt(LangC_Parser* ctx, LangC_Node** out_last, bool32 allow_decl)
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 		} break;
 		
+		case LangC_TokenKind_MsvcAsm:
+		case LangC_TokenKind_GccAsm:
+		{
+			// TODO(ljre): Inline assembly
+			last = result = LangC_CreateNode(ctx, LangC_NodeKind_EmptyStmt);
+			
+			LangC_NextToken(&ctx->lex);
+			LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Volatile);
+			LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftParen);
+			
+			while (ctx->lex.token.kind != LangC_TokenKind_RightParen)
+				LangC_NextToken(&ctx->lex);
+			
+			LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
+		} break;
+		
 		default:
 		{
 			if (allow_decl && LangC_IsBeginningOfDeclOrType(ctx))

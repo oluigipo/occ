@@ -30,7 +30,7 @@ LangC_PrintHelp(void)
 }
 
 internal void
-LangC_Run(int32 argc, const char** argv)
+LangC_Main(int32 argc, const char** argv)
 {
 	// NOTE(ljre): Setup system include directory
 	{
