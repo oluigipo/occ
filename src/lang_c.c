@@ -1,3 +1,32 @@
+/*
+*
+* TODO:
+*    - Parsing standard C99 (halfway through);
+*    - Type-checking;
+*    - Codegen with Succ3s's backend;
+*    - Flag (--help);
+*    - Flag (-I): Add include directory;
+*    - Flag (-D): Define a macro;
+*    - Flag (-U): Undefine a macro;
+*    - Flag (-v): Print to stdout commands the compiler is executing;
+*    - Warnings pipeline: Generate, filter, and print if no errors occured;
+*    - Flags parser;
+*    - Code analyzer: Generate useful warnings;
+*    - Trace() macro so we can use Tracy :);
+*    - Flag (-W): Warnings flags;
+*    - Flag (-w): Suppress all warnings;
+*
+* IDEAS:
+*    - Flag (-Edecl): Output declarations to output file;
+*    - Flag (-+): Simple C++ features to build C-like C++ projects:
+*        - Typedef structs, enums, and unions by default;
+*        - Default values for function parameters;
+*        - Function Overloading;
+*        - extern "C";
+*        - {} literals;
+*
+*/
+
 #define LangC_MAX_INCLUDE_DIRS 64
 
 internal char LangC_include_dirs[LangC_MAX_INCLUDE_DIRS][MAX_PATH_SIZE];
@@ -23,8 +52,8 @@ LangC_PrintHelp(void)
 		  "usage: occ [FILE | FLAG] ...\n"
 		  "\n"
 		  "flags:\n"
-		  "\t[ -oFILE  ]\n"
-		  "\t[ -o FILE ] Changes the output name (defaults to \"a.out\").\n"
+		  "\t[ -o<file>  ]\n"
+		  "\t[ -o <file> ] Changes the output file (defaults to \"a.out\").\n"
 		  "\t[ -E ] Runs the preprocessor on the single input file.\n"
 		  "\n");
 }

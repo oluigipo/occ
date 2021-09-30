@@ -1037,7 +1037,7 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 					LangC_PreprocessInclude(pp, lex);
 				}
 				else if (MatchCString("ifdef", directive.data, directive.size) ||
-						 MatchCString("ifndef", directive.data, directive.size) && (not = true))
+						 (not = MatchCString("ifndef", directive.data, directive.size)))
 				{
 					LangC_NextToken(lex);
 					LangC_PreprocessIfDef(pp, lex, not);
