@@ -102,7 +102,7 @@ OS_CommitMemory(void* ptr, uintsize size)
 #include <unistd.h>         // readlink
 #include <linux/limits.h>   // PATH_MAX
 
-internal const char*
+internal String
 OS_GetMyPath(void)
 {
 	char link[PATH_MAX + 1];
@@ -119,7 +119,7 @@ OS_GetMyPath(void)
 		result = "/usr/";
 	}
 	
-	return result;
+	return StrFrom(result);
 }
 
 internal const char*

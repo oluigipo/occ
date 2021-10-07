@@ -30,9 +30,9 @@ PrintVarargs(const char* fmt, va_list args)
 }
 
 internal void
-Panic(const char* fmt)
+Panic(const char* str)
 {
-	fputs(fmt, stderr);
+	fputs(str, stderr);
 	exit(-1);
 }
 
