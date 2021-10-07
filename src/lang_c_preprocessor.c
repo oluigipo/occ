@@ -172,12 +172,15 @@ internal void
 LangC_IgnoreUntilNewline(LangC_Lexer* lex)
 {
 	//while (lex->token.kind && lex->token.kind != LangC_TokenKind_NewLine)
-	//    LangC_NextToken(lex);
+	//LangC_NextToken(lex);
 	
-	while (lex->head[0] && (lex->head[0] != '\n' || lex->head[-1] == '\\'))
-		++lex->head;
-	
-	LangC_NextToken(lex);
+	if (lex->token.kind && lex->token.kind != LangC_TokenKind_NewLine)
+	{
+		while (lex->head[0] && (lex->head[0] != '\n' || lex->head[-1] == '\\'))
+			++lex->head;
+		
+		LangC_NextToken(lex);
+	}
 }
 
 internal void
@@ -868,23 +871,21 @@ LangC_IgnoreUntilEndOfIf(LangC_Preprocessor* pp, LangC_Lexer* lex, bool32 alread
 							nesting = 0;
 						}
 					}
-					else
+					
+					if (MatchCString("ifdef", directive.data, directive.size) ||
+						MatchCString("ifndef", directive.data, directive.size) ||
+						MatchCString("if", directive.data, directive.size))
 					{
-						if (MatchCString("ifdef", directive.data, directive.size) ||
-							MatchCString("ifndef", directive.data, directive.size) ||
-							MatchCString("if", directive.data, directive.size))
+						++nesting;
+					}
+					else if (MatchCString("endif", directive.data, directive.size))
+					{
+						--nesting;
+						
+						if (nesting <= 0)
 						{
-							++nesting;
-						}
-						else if (MatchCString("endif", directive.data, directive.size))
-						{
-							--nesting;
-							
-							if (nesting <= 0)
-							{
-								LangC_IgnoreUntilNewline(lex);
-								break;
-							}
+							LangC_IgnoreUntilNewline(lex);
+							break;
 						}
 					}
 				}
@@ -927,7 +928,6 @@ LangC_PreprocessIf(LangC_Preprocessor* pp, LangC_Lexer* lex)
 	
 	if (result == 0)
 	{
-		LangC_IgnoreUntilNewline(lex);
 		LangC_IgnoreUntilEndOfIf(pp, lex, false);
 	}
 }

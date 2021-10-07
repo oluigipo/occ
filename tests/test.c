@@ -12,6 +12,7 @@
 
 
 
+
 const char* name = "pepe";
 void* hello(void)
 {
@@ -42,11 +43,39 @@ int c = "HI THERE";
 
 
 
+# 7 "B:/occ/include/stddef.h"
 
 
-# 28 "B:/occ/include/stddef.h"
+# 11 "B:/occ/include/stddef.h"
+
+
+
+
+
+
+typedef unsigned long long size_t;
+typedef signed long long ptrdiff_t;
+
+# 24 "B:/occ/include/stddef.h"
+
+
+typedef unsigned short wchar_t;
+
 
 # 5 "B:/occ/include/stdio.h" 2
+
+# 1 "B:/occ/include/stdarg.h" 1
+
+
+
+
+
+
+
+
+
+
+# 6 "B:/occ/include/stdio.h" 2
 
 
 typedef struct _FILE FILE;
@@ -97,13 +126,13 @@ int scanf(const char* restrict format, ...);
 int snprintf(char* restrict s, size_t n, const char* restrict format, ...);
 int sprintf(char* restrict s, const char* restrict format, ...);
 int sscanf(const char* restrict s, const char* restrict format, ...);
-int vfprintf(FILE* restrict stream, const char* restrict format, va_list arg);
-int vfscanf(FILE* restrict stream, const char* restrict format, va_list arg);
-int vprintf(const char* restrict format, va_list arg);
-int vscanf(const char* restrict format, va_list arg);
-int vsprintf(char* restrict s, size_t n, const char* restrict format, va_list arg);
-int vsprintf(char* restrict s, const char* restrict format, va_list arg);
-int vsscanf(const char* restrict s, const char* restrict format, va_list arg);
+int vfprintf(FILE* restrict stream, const char* restrict format, void* arg);
+int vfscanf(FILE* restrict stream, const char* restrict format, void* arg);
+int vprintf(const char* restrict format, void* arg);
+int vscanf(const char* restrict format, void* arg);
+int vsprintf(char* restrict s, size_t n, const char* restrict format, void* arg);
+int vsprintf(char* restrict s, const char* restrict format, void* arg);
+int vsscanf(const char* restrict s, const char* restrict format, void* arg);
 
 int fgetc(FILE *stream);
 char* fgets(char* restrict s, int n, FILE* restrict stream);
@@ -133,6 +162,7 @@ void perror(const char* s);
 
 
 # 41 "B:/occ/tests/pp-test.c" 2
+
 
 
 

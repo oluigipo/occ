@@ -1,7 +1,7 @@
 #ifndef __STDDEF_H
 #define __STDDEF_H
 
-#if !defined(_WIN64) || !defined(_WIN32) || !defined(__linux__)
+#if !defined(_WIN64) && !defined(_WIN32) && !defined(__linux__)
 #   error This header only supports WindowsNT and Linux.
 #endif
 
