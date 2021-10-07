@@ -1239,19 +1239,19 @@ LangC_ParseRestOfDecl(LangC_Parser* ctx, LangC_Node* base, LangC_Node* decl, boo
 			{
 				LangC_NextToken(&ctx->lex);
 				
-				head->type->flags |= LangC_Node_Const;
+				head->flags |= LangC_Node_Const;
 			} continue;
 			
 			case LangC_TokenKind_Restrict:
 			{
 				LangC_NextToken(&ctx->lex);
 				
-				if (head->type->kind != LangC_NodeKind_PointerType)
+				if (head->kind != LangC_NodeKind_PointerType)
 				{
 					LangC_LexerError(&ctx->lex, "invalid use of 'restrict' with a non-pointer type.");
 				}
 				
-				head->type->flags |= LangC_Node_Restrict;
+				head->flags |= LangC_Node_Restrict;
 			} continue;
 			
 			case LangC_TokenKind_Register:
@@ -1259,7 +1259,7 @@ LangC_ParseRestOfDecl(LangC_Parser* ctx, LangC_Node* base, LangC_Node* decl, boo
 				LangC_NextToken(&ctx->lex);
 				LangC_LexerWarning(&ctx->lex, "'register' is straight up ignored here.");
 				
-				head->type->flags |= LangC_Node_Register;
+				head->flags |= LangC_Node_Register;
 			} continue;
 		}
 		

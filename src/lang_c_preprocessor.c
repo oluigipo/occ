@@ -329,8 +329,7 @@ LangC_TracePreprocessor(LangC_Preprocessor* pp, LangC_Lexer* lex, uint32 flags)
 internal void
 LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* parent_lex, String leading_spaces)
 {
-	// TODO(ljre): Handle native macros
-#if 1
+	// NOTE(ljre): Handle special macros
 	if (MatchCString("__LINE__", macro->name.data, macro->name.size))
 	{
 		int32 line = parent_lex->line;
@@ -371,7 +370,6 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 		LangC_NextToken(parent_lex);
 		return;
 	}
-#endif
 	
 	// NOTE(ljre): Normal macro expansion.
 	macro->expanding = true;
@@ -1173,14 +1171,12 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 			
 			default:
 			{
+				previous_was_newline = false;
+				
 				if (false)
 				{
 					case LangC_TokenKind_NewLine:
 					previous_was_newline = true;
-				}
-				else
-				{
-					previous_was_newline = false;
 				}
 				
 				SB_PushArray(pp->buf, lex->token.as_string.size, lex->token.as_string.data);
@@ -1222,12 +1218,11 @@ LangC_Preprocess(String path)
 	LangC_DefineMacro(&pp, Str("__attribute__(...)"));
 	LangC_DefineMacro(&pp, Str("__declspec(...)"));
 	LangC_DefineMacro(&pp, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"));
+	LangC_DefineMacro(&pp, Str("__builtin_va_list void*"));
 	LangC_DefineMacro(&pp, Str("__cdecl"));
 	LangC_DefineMacro(&pp, Str("__stdcall"));
 	LangC_DefineMacro(&pp, Str("__vectorcall"));
 	LangC_DefineMacro(&pp, Str("__fastcall"));
-	LangC_DefineMacro(&pp, Str("_VA_LIST_DEFINED"));
-	LangC_DefineMacro(&pp, Str("va_list void*"));
 	
 	// NOTE(ljre): Those macros are handled internally, but a definition is still needed.
 	LangC_DefineMacro(&pp, Str("__LINE__"));

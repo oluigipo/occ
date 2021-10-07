@@ -39,6 +39,8 @@ struct String
 #define StrFmt(str) (int32)(str).size, (str).data
 #define StrNull (String) { 0 }
 #define StrMake(str,len) (String) { .size = (len), .data = (str) }
+#define StrMacro_(x) #x
+#define StrMacro(x) StrMacro_(x)
 
 //~ Utility Macros
 #define ArrayLength(arr) (sizeof(arr) / sizeof*(arr))
@@ -50,6 +52,7 @@ struct String
 #define Max(a,b) ((a) > (b) ? (a) : (b))
 #define Min(a,b) ((a) < (b) ? (a) : (b))
 #define MAX_PATH_SIZE Kilobytes(1)
+#define Unreachable() do { Panic("Unreachable code was reached, at '" __FILE__ "' line " StrMacro(__LINE__) ".") } while (0)
 
 //~ Utility Functions
 internal uint64
