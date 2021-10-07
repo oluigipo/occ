@@ -1,7 +1,7 @@
 #ifndef OS_H
 #define OS_H
 
-internal const char* OS_GetMyPath(void);
+internal String OS_GetMyPath(void);
 internal const char* OS_ReadWholeFile(const char* path);
 internal bool32 OS_WriteWholeFile(const char* path, const void* data, uintsize size);
 internal void OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE]);
@@ -15,7 +15,7 @@ internal void* OS_CommitMemory(void* ptr, uintsize size);
 #include <windows.h>
 #include <stdio.h>
 
-internal const char*
+internal String
 OS_GetMyPath(void)
 {
 	char* path = PushMemory(32767);
@@ -27,7 +27,7 @@ OS_GetMyPath(void)
 			path[i] = '/';
 	}
 	
-	return path;
+	return StrMake(path, len + 1);
 }
 
 internal const char*

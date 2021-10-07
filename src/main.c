@@ -12,7 +12,7 @@ internal uint8* global_arena_memory; // NOTE(ljre): not 'void*' so we can do ari
 internal uintsize global_arena_total_size;
 internal uintsize global_arena_commited_size;
 internal uintsize global_arena_offset;
-internal const char* global_my_path;
+internal String global_my_path;
 
 internal void
 Print(const char* fmt, ...)
@@ -64,6 +64,7 @@ PushMemory(uintsize size)
 
 int main(int argc, char* argv[])
 {
+	// NOTE(ljre): Setup global arena
 	global_arena_total_size = Gigabytes(100);
 	global_arena_offset = 0;
 	
@@ -77,11 +78,11 @@ int main(int argc, char* argv[])
 	global_my_path = OS_GetMyPath();
 	
 	// Testing
-	LangC_Main(argc, (const char**)argv);
+	int32 result = LangC_Main(argc, (const char**)argv);
 	
 	Print("\nMax used memory: %zu bytes.\n", global_arena_offset);
 	
-	return 0;
+	return result;
 }
 
 // NOTE(ljre): Let it stay here so we can avoid weird OS's headers macros and declarations

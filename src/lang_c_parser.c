@@ -163,6 +163,7 @@ struct LangC_Node
 	uint64 flags;
 	
 	String name;
+	String leading_spaces;
 	LangC_Node* type;
 	LangC_Node* attributes;
 	
@@ -260,6 +261,7 @@ LangC_UpdateNode(LangC_Parser* ctx, LangC_NodeKind kind, LangC_Node* result)
 	result->line = ctx->lex.token.line;
 	result->col = ctx->lex.token.col;
 	result->lexfile = ctx->lex.file;
+	result->leading_spaces = ctx->lex.token.leading_spaces;
 }
 
 internal inline LangC_Node*

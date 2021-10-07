@@ -127,16 +127,16 @@ LangC_TryToLoadFile(LangC_Preprocessor* pp, String path, bool32 relative, String
 		}
 	}
 	
-	for (int32 i = 0; i < LangC_include_dirs_count; ++i)
+	for (int32 i = 0; i < LangC_options.include_dirs_count; ++i)
 	{
-		const char* include_dir = LangC_include_dirs[i];
-		uintsize len = strlen(include_dir);
+		String include_dir = LangC_options.include_dirs[i];
+		include_dir = IgnoreNullTerminator(include_dir);
 		
-		memcpy(fullpath, include_dir, len);
-		memcpy(fullpath + len, path.data, path.size);
+		memcpy(fullpath, include_dir.data, include_dir.size);
+		memcpy(fullpath + include_dir.size, path.data, path.size);
 		
 		String p = {
-			.size = len + path.size,
+			.size = include_dir.size + path.size,
 			.data = fullpath,
 		};
 		
