@@ -1120,7 +1120,7 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 						++end;
 					
 					uintsize len = end - begin;
-					LangC_LexerWarning(lex, "%.*s", len, begin);
+					LangC_LexerWarning(lex, LangC_Warning_UserWarning, "%.*s", len, begin);
 					
 					lex->head = end;
 				}

@@ -7,6 +7,7 @@ internal bool32 OS_WriteWholeFile(const char* path, const void* data, uintsize s
 internal void OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE]);
 internal void* OS_ReserveMemory(uintsize size);
 internal void* OS_CommitMemory(void* ptr, uintsize size);
+internal void OS_FreeMemory(void* ptr, uintsize size);
 
 #endif //OS_H
 
@@ -93,6 +94,12 @@ internal void*
 OS_CommitMemory(void* ptr, uintsize size)
 {
 	return VirtualAlloc(ptr, size, MEM_COMMIT, PAGE_READWRITE);
+}
+
+internal void
+OS_FreeMemory(void* ptr, uintsize size /* ignored */)
+{
+	VirtualFree(ptr, 0, MEM_RELEASE);
 }
 
 #elif defined(__linux__) //_WIN32

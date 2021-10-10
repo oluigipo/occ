@@ -1,17 +1,16 @@
-#include "internal.h"
-#include "os.h"
-
+#include <stdint.h>
+#include <stddef.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
+
+#include "internal.h"
+#include "os.h"
 
 #define COMMIT_PAGE Megabytes(32)
 
-internal uint8* global_arena_memory; // NOTE(ljre): not 'void*' so we can do arithmetic
-internal uintsize global_arena_total_size;
-internal uintsize global_arena_commited_size;
-internal uintsize global_arena_offset;
+internal Arena* global_arena;
 internal String global_my_path;
 
 internal void
@@ -39,25 +38,7 @@ Panic(const char* str)
 internal void*
 PushMemory(uintsize size)
 {
-	size = AlignUp(size, 7u);
-	
-	while (global_arena_offset + size > global_arena_commited_size)
-	{
-		if (global_arena_commited_size >= global_arena_total_size ||
-			!OS_CommitMemory(global_arena_memory + global_arena_commited_size, COMMIT_PAGE))
-		{
-			Panic("OCC FATAL ERROR: Out of memory!\n");
-		}
-		
-		global_arena_commited_size += COMMIT_PAGE;
-	}
-	
-	void* result = global_arena_memory + global_arena_offset;
-	global_arena_offset += size;
-	
-	memset(result, 0, size);
-	
-	return result;
+	return Arena_Push(global_arena, size);
 }
 
 #include "lang_c.c"
@@ -65,22 +46,19 @@ PushMemory(uintsize size)
 int main(int argc, char* argv[])
 {
 	// NOTE(ljre): Setup global arena
-	global_arena_total_size = Gigabytes(100);
-	global_arena_offset = 0;
+	uintsize desired_size = Gigabytes(100);
 	
 	do
-		global_arena_memory = OS_ReserveMemory(global_arena_total_size);
-	while (!global_arena_memory && COMMIT_PAGE <= (global_arena_total_size >>= 1));
+		global_arena = Arena_Create(desired_size);
+	while (!global_arena && Arena_PAGE_SIZE <= (desired_size >>= 1));
 	
-	if (!global_arena_memory)
+	if (!global_arena)
 		Panic("OCC FATAL ERROR: Could not reserve at least 32MiB.\n");
 	
 	global_my_path = OS_GetMyPath();
 	
 	// Testing
 	int32 result = LangC_Main(argc, (const char**)argv);
-	
-	Print("\nMax used memory: %zu bytes.\n", global_arena_offset);
 	
 	return result;
 }

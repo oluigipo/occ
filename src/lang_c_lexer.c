@@ -1,58 +1,3 @@
-struct LangC_Token
-{
-	int32 line, col;
-	LangC_TokenKind kind;
-	String as_string;
-	String leading_spaces;
-	
-	union
-	{
-		int64 value_int;
-		uint64 value_uint;
-		String value_str;
-		String value_ident;
-		float value_float;
-		double value_double;
-	};
-}
-typedef LangC_Token;
-
-struct LangC_TokenList typedef LangC_TokenList;
-struct LangC_TokenList
-{
-	LangC_TokenList* next;
-	LangC_Token token;
-};
-
-struct LangC_LexerFile typedef LangC_LexerFile;
-struct LangC_LexerFile
-{
-	String path;
-	int32 included_line;
-	bool32 is_system_file;
-	LangC_LexerFile* included_from;
-};
-
-struct LangC_Lexer
-{
-	LangC_Token token;
-	LangC_LexerFile* file;
-	
-	LangC_TokenList* waiting_token;
-	LangC_TokenList* last_waiting_token;
-	
-	const char* head;
-	const char* previous_head;
-	int32 line, col;
-	
-	// When this bool is set, the following happens:
-	//     - newlines and hashtags are tokens;
-	//     - keywords are going to be LangC_TokenKind_Identifier;
-	bool16 preprocessor;
-	bool16 token_was_pushed;
-}
-typedef LangC_Lexer;
-
 internal void LangC_NextToken(LangC_Lexer* lex);
 
 internal void
@@ -139,22 +84,35 @@ LangC_LexerError(LangC_Lexer* lex, const char* fmt, ...)
 }
 
 internal void
-LangC_LexerWarning(LangC_Lexer* lex, const char* fmt, ...)
+LangC_PrintIncludeStackToBuf(LangC_LexerFile* file, int32 line, char** pbuf)
+{
+	if (file->included_from)
+		LangC_PrintIncludeStackToBuf(file->included_from, file->included_line, pbuf);
+	
+	bprintf(pbuf, "%.*s(%i): in included file\n", StrFmt(file->path));
+}
+
+internal void
+LangC_LexerWarning(LangC_Lexer* lex, LangC_Warning warning, const char* fmt, ...)
 {
 	LangC_LexerFile* file = lex->file;
+	char* buf = NULL;
+	SB_ReserveAtLeast(buf, 128);
 	
-	Print("\n");
+	SB_Push(buf, '\n');
 	if (file->included_from)
-		LangC_PrintIncludeStack(file->included_from, file->included_line);
+		LangC_PrintIncludeStackToBuf(file->included_from, file->included_line, &buf);
 	
-	Print("%.*s(%i:%i): warning: ", StrFmt(file->path), lex->line, lex->col);
+	bprintf(&buf, "%.*s(%i:%i): warning: ", StrFmt(file->path), lex->line, lex->col);
 	
 	va_list args;
 	va_start(args, fmt);
-	PrintVarargs(fmt, args);
+	vbprintf(&buf, fmt, args);
 	va_end(args);
 	
-	Print("\n");
+	SB_Push(buf, 0);
+	
+	LangC_PushWarning(warning, buf);
 }
 
 internal void

@@ -30,28 +30,13 @@
 *
 */
 
-#define LangC_MAX_INCLUDE_DIRS 64
-
-enum LangC_InvokationMode
-{
-	LangC_InvokationMode_BuildToExecutable,
-	LangC_InvokationMode_RunPreprocessor,
-}
-typedef LangC_InvokationMode;
-
-struct LangC_CompilerOptions
-{
-	String include_dirs[LangC_MAX_INCLUDE_DIRS];
-	int32 include_dirs_count;
-	LangC_InvokationMode mode;
-	StringList* input_files;
-	String output_file;
-}
-typedef LangC_CompilerOptions;
+#include "lang_c_definitions.h"
 
 // NOTE(ljre): LangC_options should never be modified after the compiler driver finished running.
 internal LangC_CompilerOptions LangC_options = { 0 };
 internal int32 LangC_error_count = 0;
+internal LangC_QueuedWarning* LangC_queued_warning = &(LangC_QueuedWarning) { 0 };
+internal LangC_QueuedWarning* LangC_last_queued_warning = NULL;
 
 internal void
 LangC_AddInputFile(StringList** last, String str)
@@ -68,10 +53,34 @@ LangC_AddInputFile(StringList** last, String str)
 	(*last)->value = str;
 }
 
-#include "lang_c_definitions.h"
+internal void
+LangC_PushWarning(LangC_Warning warning, const char* message)
+{
+	LangC_last_queued_warning = LangC_last_queued_warning->next = PushMemory(sizeof(LangC_QueuedWarning));
+	LangC_last_queued_warning->warning = warning;
+	LangC_last_queued_warning->to_print = message;
+}
+
+internal void
+LangC_FlushWarnings(void)
+{
+	LangC_QueuedWarning* warning = LangC_queued_warning->next;
+	
+	while (warning)
+	{
+		Print("%s\n", warning->to_print);
+		warning = warning->next;
+	}
+	
+	LangC_queued_warning->next = NULL;
+	LangC_last_queued_warning = LangC_queued_warning;
+}
+
 #include "lang_c_lexer.c"
 #include "lang_c_preprocessor.c"
 #include "lang_c_parser.c"
+#include "lang_c_type.c"
+#include "lang_c_analysis.c"
 
 #include "lang_c_driver.c"
 
@@ -79,9 +88,15 @@ internal int32
 LangC_Main(int32 argc, const char** argv)
 {
 	int32 result = 0;
+	LangC_FlushWarnings();
 	
 	if (!LangC_DefaultDriver(argc, argv))
 		return 1;
+	
+	LangC_Context ctx = {
+		.options = &LangC_options,
+		.nodes_arena = Arena_Create(Gigabytes(2)),
+	};
 	
 	switch (LangC_options.mode)
 	{
@@ -93,8 +108,9 @@ LangC_Main(int32 argc, const char** argv)
 				if (!src)
 					break;
 				
-				LangC_ParseFile(src);
+				LangC_ParseFile(&ctx, src);
 				
+				LangC_FlushWarnings();
 				// TODO
 			}
 		} break;
@@ -102,6 +118,8 @@ LangC_Main(int32 argc, const char** argv)
 		case LangC_InvokationMode_RunPreprocessor:
 		{
 			const char* src = LangC_Preprocess(LangC_options.input_files->value);
+			LangC_FlushWarnings();
+			
 			if (!src)
 				break;
 			

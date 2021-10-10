@@ -118,10 +118,10 @@ enum LangC_TokenKind
 	LangC_TokenKind_AndAssign, // &=
 	LangC_TokenKind_OrAssign, // |=
 	LangC_TokenKind_XorAssign, // ^=
-	
-	// only used when 'LangC_Lexer.hashtag_and_newline_as_tokens' is true
-	LangC_TokenKind_NewLine,
 	LangC_TokenKind_Hashtag, // #
+	
+	// only used when 'LangC_Lexer.preprocessor' is true
+	LangC_TokenKind_NewLine,
 	LangC_TokenKind_DoubleHashtag, // ##
 	
 	LangC_TokenKind__Count,
@@ -240,8 +240,8 @@ struct LangC_OperatorPrecedence typedef LangC_OperatorPrecedence;
 struct LangC_OperatorPrecedence
 {
 	// from lower to higher
-	int16 level; // if <= 0, it's not a binary operator
-	bool16 right2left;
+	int8 level; // if <= 0, it's not a binary operator
+	bool8 right2left;
 };
 
 internal LangC_OperatorPrecedence LangC_operators_precedence[LangC_TokenKind__Count] = {
@@ -285,11 +285,350 @@ internal LangC_OperatorPrecedence LangC_operators_precedence[LangC_TokenKind__Co
 	[LangC_TokenKind_Div] = { 12, false, },
 	[LangC_TokenKind_Mod] = { 12, false, },
 };
-
-internal bool32
-LangC_IsKeyword(LangC_TokenKind kind)
+struct LangC_Token
 {
-	return kind >= LangC_TokenKind__FirstKeyword && kind <= LangC_TokenKind__LastKeyword;
+	int32 line, col;
+	LangC_TokenKind kind;
+	String as_string;
+	String leading_spaces;
+	
+	union
+	{
+		int64 value_int;
+		uint64 value_uint;
+		String value_str;
+		String value_ident;
+		float value_float;
+		double value_double;
+	};
 }
+typedef LangC_Token;
+
+struct LangC_TokenList typedef LangC_TokenList;
+struct LangC_TokenList
+{
+	LangC_TokenList* next;
+	LangC_Token token;
+};
+
+struct LangC_LexerFile typedef LangC_LexerFile;
+struct LangC_LexerFile
+{
+	String path;
+	int32 included_line;
+	bool32 is_system_file;
+	LangC_LexerFile* included_from;
+};
+
+struct LangC_Lexer
+{
+	LangC_Token token;
+	LangC_LexerFile* file;
+	
+	LangC_TokenList* waiting_token;
+	LangC_TokenList* last_waiting_token;
+	
+	const char* head;
+	const char* previous_head;
+	int32 line, col;
+	
+	// When this bool is set, the following happens:
+	//     - newlines and hashtags are tokens;
+	//     - keywords are going to be LangC_TokenKind_Identifier;
+	bool16 preprocessor;
+	bool16 token_was_pushed;
+}
+typedef LangC_Lexer;
+
+enum LangC_NodeKind
+{
+	LangC_NodeKind_Null = 0, // special
+	LangC_NodeKind_BaseType, // flags = LangC_Node_BaseType_*
+	LangC_NodeKind_FunctionType, // flags = LangC_Node_FunctionType_*
+	LangC_NodeKind_PointerType, // flags = 
+	LangC_NodeKind_ArrayType, // flags = 
+	LangC_NodeKind_Ident,
+	LangC_NodeKind_Decl,
+	LangC_NodeKind_EmptyStmt,
+	LangC_NodeKind_ExprStmt,
+	LangC_NodeKind_IfStmt,
+	LangC_NodeKind_DoWhileStmt,
+	LangC_NodeKind_WhileStmt,
+	LangC_NodeKind_ForStmt,
+	LangC_NodeKind_SwitchStmt,
+	LangC_NodeKind_ReturnStmt,
+	LangC_NodeKind_Expr,
+	LangC_NodeKind_IntConstant,
+	LangC_NodeKind_LIntConstant,
+	LangC_NodeKind_LLIntConstant,
+	LangC_NodeKind_UintConstant,
+	LangC_NodeKind_LUintConstant,
+	LangC_NodeKind_LLUintConstant,
+	LangC_NodeKind_FloatConstant,
+	LangC_NodeKind_DoubleConstant,
+	LangC_NodeKind_StringConstant,
+	LangC_NodeKind_WideStringConstant,
+	LangC_NodeKind_InitializerEntry,
+	LangC_NodeKind_EnumEntry,
+	LangC_NodeKind_Label,
+	LangC_NodeKind_Attribute,
+}
+typedef LangC_NodeKind;
+
+// Flags for any kind of node
+enum
+{
+	LangC_Node_Poisoned = 1 << 31,
+	LangC_Node_Const = 1 << 30,
+	LangC_Node_Volatile = 1 << 29,
+	LangC_Node_Register = 1 << 28,
+	LangC_Node_Restrict = 1 << 27,
+	LangC_Node_Static = 1 << 26,
+	LangC_Node_Extern = 1 << 25,
+	LangC_Node_Auto = 1 << 24,
+	LangC_Node_Typedef = 1 << 23,
+	LangC_Node_Inline = 1 << 22,
+	
+	LangC_Node_LowerBits = (1 << 22) - 1,
+};
+
+enum
+{
+	LangC_Node_FunctionType_VarArgs = 1,
+};
+
+enum
+{
+	LangC_Node_Attribute_Packed = 1,
+};
+
+enum
+{
+	LangC_Node_BaseType_Char = 1,
+	LangC_Node_BaseType_Int = 1 << 1,
+	LangC_Node_BaseType_Float = 1 << 2,
+	LangC_Node_BaseType_Double = 1 << 3,
+	LangC_Node_BaseType_Typename = 1 << 4,
+	LangC_Node_BaseType_Struct = 1 << 5,
+	LangC_Node_BaseType_Union = 1 << 6,
+	LangC_Node_BaseType_Enum = 1 << 7,
+	LangC_Node_BaseType_Void = 1 << 8,
+	LangC_Node_BaseType_Bool = 1 << 9,
+	
+	LangC_Node_BaseType_Signed = 1 << 10,
+	LangC_Node_BaseType_Unsigned = 1 << 11,
+	LangC_Node_BaseType_Long = 1 << 12,
+	LangC_Node_BaseType_Short = 1 << 13,
+	LangC_Node_BaseType_Complex = 1 << 14,
+	
+	// combination of Short and Long
+	LangC_Node_BaseType_LongLong = LangC_Node_BaseType_Long | LangC_Node_BaseType_Short,
+};
+
+enum
+{
+	// unary
+	LangC_Node_Expr__FirstUnary,
+	LangC_Node_Expr_Negative = LangC_Node_Expr__FirstUnary, // -expr
+	LangC_Node_Expr_Not, // ~expr
+	LangC_Node_Expr_LogicalNot, // !expr
+	LangC_Node_Expr_Deref, // *expr
+	LangC_Node_Expr_Ref, // &expr
+	LangC_Node_Expr_PrefixInc, // ++expr
+	LangC_Node_Expr_PrefixDec, // --expr
+	LangC_Node_Expr_PostfixInc, // expr++
+	LangC_Node_Expr_PostfixDec, // expr--
+	LangC_Node_Expr_Sizeof, // sizeof expr // sizeof (type)
+	
+	// binary
+	LangC_Node_Expr__FirstBinary,
+	LangC_Node_Expr_Add = LangC_Node_Expr__FirstBinary, // left + right
+	LangC_Node_Expr_Sub, // left - right
+	LangC_Node_Expr_Mul, // left * right
+	LangC_Node_Expr_Div, // left / right
+	LangC_Node_Expr_Mod, // left % right
+	LangC_Node_Expr_LThan, // left < right
+	LangC_Node_Expr_GThan, // left > right
+	LangC_Node_Expr_LEqual, // left <= right
+	LangC_Node_Expr_GEqual, // left >= right
+	LangC_Node_Expr_Equals, // left == right
+	LangC_Node_Expr_NotEquals, // left != right
+	LangC_Node_Expr_LeftShift, // left << right
+	LangC_Node_Expr_RightShift, // left >> right
+	LangC_Node_Expr_And, // left & right
+	LangC_Node_Expr_Or, // left | right
+	LangC_Node_Expr_Xor, // left ^ right
+	LangC_Node_Expr_LogicalAnd, // left && right
+	LangC_Node_Expr_LogicalOr, // left || right
+	LangC_Node_Expr_Assign, // left = right
+	LangC_Node_Expr_AssignAdd, // left += right
+	LangC_Node_Expr_AssignSub, // left -= right
+	LangC_Node_Expr_AssignMul, // left *= right
+	LangC_Node_Expr_AssignDiv, // left /= right
+	LangC_Node_Expr_AssignMod, // left %= right
+	LangC_Node_Expr_AssignLeftShift, // left <<= right
+	LangC_Node_Expr_AssignRightShift, // left >>= right
+	LangC_Node_Expr_AssignAnd, // left &= right
+	LangC_Node_Expr_AssignOr, // left |= right
+	LangC_Node_Expr_AssignXor, // left ^= right
+	LangC_Node_Expr_Comma, // left, right
+	
+	// NOTE(ljre): maybe???? cool GCC extension
+	//LangC_Node_Expr_Optional, // left ?: right
+	
+	// special
+	LangC_Node_Expr__FirstSpecial,
+	LangC_Node_Expr_Call = LangC_Node_Expr__FirstSpecial, // left(right, right->next, ...)
+	LangC_Node_Expr_Index, // left[right]
+	LangC_Node_Expr_Cast, // (type)expr
+	LangC_Node_Expr_Ternary, // condition ? branch1 : branch2
+	LangC_Node_Expr_CompoundLiteral, // (type) { init, init->next, ... }
+	LangC_Node_Expr_Initializer, // { init, init->next, ... }
+	LangC_Node_Expr_Access, // expr.name
+	LangC_Node_Expr_DerefAccess, // expr->name
+};
+
+enum
+{
+	LangC_Node_InitializerEntry_JustValue = 0,
+	LangC_Node_InitializerEntry_ArrayIndex,
+	LangC_Node_InitializerEntry_Field,
+};
+
+struct LangC_Node typedef LangC_Node;
+struct LangC_Node
+{
+	LangC_NodeKind kind;
+	LangC_Node* next;
+	int32 line, col;
+	LangC_LexerFile* lexfile;
+	uint64 flags;
+	
+	String name;
+	String leading_spaces;
+	LangC_Node* type;
+	LangC_Node* attributes;
+	
+	// for (init; condition; iter) branch1
+	// if (condition) branch1 else branch2
+	// left = right
+	// left[right]
+	// left(right, right->next, ...)
+	// *expr
+	// expr++
+	// condition ? branch1 : branch2
+	// (type)expr
+	// expr;
+	// { stmt stmt->next ... }
+	// type name[type->expr];
+	// type name = expr;
+	// type name(type->params, type->params->next, ...) body
+	// sizeof expr
+	// struct name body
+	// enum { body->name = body->expr, body->next->name, ... }
+	// name: stmt
+	// (type) init
+	// { .left[middle] = right, .name, expr, [middle] = right, }
+	LangC_Node* condition;
+	LangC_Node* init;
+	LangC_Node* iter;
+	union
+	{
+		struct
+		{
+			LangC_Node* expr;
+			LangC_Node* stmt;
+		};
+		
+		struct
+		{
+			LangC_Node* branch1;
+			LangC_Node* branch2;
+			LangC_Node* branch3;
+		};
+		
+		struct
+		{
+			LangC_Node* left;
+			LangC_Node* right;
+			LangC_Node* middle;
+		};
+		
+		struct
+		{
+			LangC_Node* params;
+			LangC_Node* body;
+		};
+	};
+	
+	union
+	{
+		int64 value_int;
+		uint64 value_uint;
+		String value_str;
+		float value_float;
+		double value_double;
+	};
+};
+
+struct LangC_TypeNode typedef LangC_TypeNode;
+struct LangC_TypeNode
+{
+	LangC_TypeNode* next;
+	
+	uint64 flags; // LangC_Node_BaseType_(Union|Struct|Enum)
+	uint64 name_hash;
+	String name;
+	LangC_Node* decl;
+};
+
+enum LangC_Warning
+{
+	LangC_Warning_Null = 0,
+	LangC_Warning_ImplicitInt, // implicit type "int" in declarations
+	LangC_Warning_RegisterIgnored, // "register" keyword ignored for now
+	LangC_Warning_ImplicitLengthOf1, // when a global array has no length, it has a length of 1
+	LangC_Warning_UserWarning, // #warning directive
+}
+typedef LangC_Warning;
+
+#define LangC_MAX_INCLUDE_DIRS 64
+
+enum LangC_InvokationMode
+{
+	LangC_InvokationMode_BuildToExecutable,
+	LangC_InvokationMode_RunPreprocessor,
+}
+typedef LangC_InvokationMode;
+
+struct LangC_CompilerOptions
+{
+	String include_dirs[LangC_MAX_INCLUDE_DIRS];
+	int32 include_dirs_count;
+	LangC_InvokationMode mode;
+	StringList* input_files;
+	String output_file;
+}
+typedef LangC_CompilerOptions;
+
+struct LangC_QueuedWarning typedef LangC_QueuedWarning;
+struct LangC_QueuedWarning
+{
+	LangC_QueuedWarning* next;
+	const char* to_print;
+	LangC_Warning warning;
+};
+
+struct LangC_Context
+{
+	LangC_CompilerOptions* options;
+	LangC_Lexer lex;
+	
+	Arena* nodes_arena;
+	LangC_TypeNode* first_typenode;
+	LangC_TypeNode* last_typenode;
+	LangC_Node* ast;
+}
+typedef LangC_Context;
 
 #endif //LANG_C_DEFINITIONS_H
