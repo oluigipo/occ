@@ -29,6 +29,7 @@ struct LangC_PPLoadedFile
 struct LangC_Preprocessor
 {
 	char* buf;
+	LangC_CompilerOptions* options;
 	
 	LangC_Macro* first_macro;
 	LangC_Macro* last_macro;
@@ -127,9 +128,9 @@ LangC_TryToLoadFile(LangC_Preprocessor* pp, String path, bool32 relative, String
 		}
 	}
 	
-	for (int32 i = 0; i < LangC_options.include_dirs_count; ++i)
+	for (int32 i = 0; i < pp->options->include_dirs_count; ++i)
 	{
-		String include_dir = LangC_options.include_dirs[i];
+		String include_dir = pp->options->include_dirs[i];
 		include_dir = IgnoreNullTerminator(include_dir);
 		
 		memcpy(fullpath, include_dir.data, include_dir.size);
@@ -1190,9 +1191,9 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 }
 
 internal const char*
-LangC_Preprocess(String path)
+LangC_Preprocess(String path, LangC_CompilerOptions* options)
 {
-	LangC_Preprocessor pp = { 0 };
+	LangC_Preprocessor pp = { 0, .options = options };
 	
 	LangC_DefineMacro(&pp, Str("__STDC__ 1"));
 	LangC_DefineMacro(&pp, Str("__STDC_HOSTED__ 1"));

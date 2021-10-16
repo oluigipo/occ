@@ -1,3 +1,88 @@
+internal inline bool32
+LangC_BaseTypeFlagsHasType(uint64 flags)
+{
+	return 0 != (flags & (LangC_Node_BaseType_Char |
+						  LangC_Node_BaseType_Int |
+						  LangC_Node_BaseType_Float |
+						  LangC_Node_BaseType_Double |
+						  LangC_Node_BaseType_Void |
+						  LangC_Node_BaseType_Typename |
+						  LangC_Node_BaseType_Struct |
+						  LangC_Node_BaseType_Enum |
+						  LangC_Node_BaseType_Union));
+}
+
+// NOTE(ljre): If 'decl_or_base' is not a declaration, it shall be a base type of a struct, union, or enum.
+internal LangC_TypeNode*
+LangC_DefineTypeNode(LangC_Context* ctx, LangC_Node* decl)
+{
+	assert(decl);
+	
+	LangC_TypeNode* type = ctx->last_typenode;
+	if (!type)
+	{
+		if (!ctx->first_typenode)
+		{
+			ctx->first_typenode = Arena_Push(ctx->stage_arena, sizeof *ctx->first_typenode);
+		}
+		
+		type = ctx->last_typenode = ctx->first_typenode;
+		type->saved_last = NULL;
+		type->previous = NULL;
+	}
+	else if (!type->next)
+	{
+		type->next = Arena_Push(ctx->stage_arena, sizeof *type->next);
+		type->next->saved_last = type->saved_last;
+		type->next->previous = type;
+		
+		type = ctx->last_typenode = type->next;
+	}
+	
+	type->name = decl->name;
+	type->name_hash = SimpleHash(type->name);
+	
+	return type;
+}
+
+internal void
+LangC_PushTypeNodeScope(LangC_Context* ctx)
+{
+	if (ctx->last_typenode)
+	{
+		ctx->last_typenode->saved_last = ctx->last_typenode;
+	}
+}
+
+internal void
+LangC_PopTypeNodeScope(LangC_Context* ctx)
+{
+	if (ctx->last_typenode)
+	{
+		ctx->last_typenode = ctx->last_typenode->saved_last;
+		ctx->last_typenode->saved_last = (ctx->last_typenode->previous) ? ctx->last_typenode->previous->saved_last : NULL;
+	}
+}
+
+internal bool32
+LangC_TypeNodeExists(LangC_Context* ctx, String name)
+{
+	uint64 search_hash = SimpleHash(name);
+	
+	LangC_TypeNode* type = ctx->last_typenode;
+	if (type)
+	{
+		do
+		{
+			if (type->name_hash == search_hash)
+				return true;
+		}
+		while (type != ctx->first_typenode && (type = type->previous));
+	}
+	
+	return false;
+}
+
 internal inline void
 LangC_UpdateNode(LangC_Context* ctx, LangC_NodeKind kind, LangC_Node* result)
 {
@@ -14,7 +99,7 @@ LangC_UpdateNode(LangC_Context* ctx, LangC_NodeKind kind, LangC_Node* result)
 internal inline LangC_Node*
 LangC_CreateNode(LangC_Context* ctx, LangC_NodeKind kind)
 {
-	LangC_Node* result = Arena_Push(ctx->nodes_arena, sizeof *result);
+	LangC_Node* result = Arena_Push(ctx->persistent_arena, sizeof *result);
 	
 	LangC_UpdateNode(ctx, kind, result);
 	
@@ -63,47 +148,6 @@ LangC_NodeWarning(LangC_Node* node, LangC_Warning warning, const char* fmt, ...)
 	LangC_PushWarning(warning, buf);
 }
 
-internal inline bool32
-LangC_BaseTypeFlagsHasType(uint64 flags)
-{
-	return 0 != (flags & (LangC_Node_BaseType_Char |
-						  LangC_Node_BaseType_Int |
-						  LangC_Node_BaseType_Float |
-						  LangC_Node_BaseType_Double |
-						  LangC_Node_BaseType_Void |
-						  LangC_Node_BaseType_Typename |
-						  LangC_Node_BaseType_Struct |
-						  LangC_Node_BaseType_Enum |
-						  LangC_Node_BaseType_Union));
-}
-
-internal void
-LangC_DefineType(LangC_Context* ctx, LangC_Node* decl)
-{
-	assert(decl);
-	assert(decl->kind == LangC_NodeKind_Decl);
-	
-	LangC_TypeNode* type = ctx->last_typenode;
-	if (!type)
-	{
-		if (!ctx->first_typenode)
-		{
-			ctx->first_typenode = Arena_Push(ctx->nodes_arena, sizeof *ctx->first_typenode);
-		}
-		
-		type = ctx->last_typenode = ctx->first_typenode;
-	}
-	else if (!type->next)
-	{
-		type = ctx->last_typenode = type->next = Arena_Push(ctx->nodes_arena, sizeof *type->next);
-	}
-	
-	type->flags = decl->flags;
-	type->name = decl->name;
-	type->name_hash = SimpleHash(type->name);
-	type->decl = decl;
-}
-
 internal LangC_Node* LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl);
 internal LangC_Node* LangC_ParseBlock(LangC_Context* ctx, LangC_Node** out_last);
 internal LangC_Node* LangC_ParseExpr(LangC_Context* ctx, int32 level, bool32 allow_init);
@@ -118,20 +162,7 @@ LangC_IsBeginningOfDeclOrType(LangC_Context* ctx)
 		case LangC_TokenKind_Identifier:
 		{
 			String ident = ctx->lex.token.value_ident;
-			uint64 search_hash = SimpleHash(ident);
-			
-			LangC_TypeNode* type = ctx->first_typenode;
-			if (type)
-			{
-				do
-				{
-					if (type->name_hash == search_hash)
-						return true;
-				}
-				while (type != ctx->last_typenode && (type = type->next));
-			}
-			
-			return false;
+			return LangC_TypeNodeExists(ctx, ident);
 		}
 		
 		case LangC_TokenKind_Int:
@@ -941,6 +972,7 @@ LangC_ParseBlock(LangC_Context* ctx, LangC_Node** out_last)
 	}
 	else
 	{
+		LangC_PushTypeNodeScope(ctx);
 		result = LangC_ParseStmt(ctx, &last, true);
 		
 		while (!LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_RightCurl))
@@ -950,6 +982,8 @@ LangC_ParseBlock(LangC_Context* ctx, LangC_Node** out_last)
 			last->next = new_node;
 			last = new_last;
 		}
+		
+		LangC_PopTypeNodeScope(ctx);
 	}
 	
 	if (out_last)
@@ -1576,7 +1610,7 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, bool32 type_only, boo
 	decl->type = type;
 	
 	if (decl->flags & LangC_Node_Typedef)
-		LangC_DefineType(ctx, decl);
+		LangC_DefineTypeNode(ctx, decl);
 	
 	if (ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
 	{
@@ -1612,7 +1646,7 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, bool32 type_only, boo
 				
 				if (decl->flags & LangC_Node_Typedef)
 				{
-					LangC_DefineType(ctx, last);
+					LangC_DefineTypeNode(ctx, last);
 				}
 				else if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Assign))
 				{

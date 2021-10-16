@@ -20,30 +20,37 @@
 *    - Flag (-w): Suppress all warnings;
 *
 * IDEAS:
-*    - Flag (-Edecl): Output declarations to output file;
+*    - Flag (-Edecl): Output only declarations to output file;
+*    - Flag (-Emacro): Output macro defs and undefs;
 *    - Flag (-+): Simple C++ features to build C-like C++ projects:
 *        - Typedef structs, enums, and unions by default;
 *        - Default values for function parameters;
 *        - Function Overloading;
 *        - extern "C";
 *        - {} literals;
+*    - Extensions:
+*        - void* + T*: add both operands and return a value of type T*;
+*        - defer: scoped defer;
+*        - Extend compound literals for function objects;
+*            Example: fptr = (int(int a, int b)) { return a + b; };
+*        - (GNU) Elvis operator (a ?: b);
+*        
 *
 */
 
 #include "lang_c_definitions.h"
 
 // NOTE(ljre): LangC_options should never be modified after the compiler driver finished running.
-internal LangC_CompilerOptions LangC_options = { 0 };
 internal int32 LangC_error_count = 0;
 internal LangC_QueuedWarning* LangC_queued_warning = &(LangC_QueuedWarning) { 0 };
 internal LangC_QueuedWarning* LangC_last_queued_warning = NULL;
 
 internal void
-LangC_AddInputFile(StringList** last, String str)
+LangC_AddInputFile(StringList** first, StringList** last, String str)
 {
 	if (!*last)
 	{
-		LangC_options.input_files = *last = PushMemory(sizeof **last);
+		*first = *last = PushMemory(sizeof **last);
 	}
 	else
 	{
@@ -76,11 +83,12 @@ LangC_FlushWarnings(void)
 	LangC_last_queued_warning = LangC_queued_warning;
 }
 
+// NOTE(ljre): The order of the includes here matters.
 #include "lang_c_lexer.c"
 #include "lang_c_preprocessor.c"
 #include "lang_c_parser.c"
-#include "lang_c_type.c"
 #include "lang_c_analysis.c"
+#include "lang_c_resolution.c"
 
 #include "lang_c_driver.c"
 
@@ -88,52 +96,11 @@ internal int32
 LangC_Main(int32 argc, const char** argv)
 {
 	int32 result = 0;
-	LangC_FlushWarnings();
+	LangC_FlushWarnings(); // init
 	
-	if (!LangC_DefaultDriver(argc, argv))
-		return 1;
+	// TODO(ljre): cl.exe compiler driver just for testing.
 	
-	LangC_Context ctx = {
-		.options = &LangC_options,
-		.nodes_arena = Arena_Create(Gigabytes(2)),
-	};
-	
-	switch (LangC_options.mode)
-	{
-		case LangC_InvokationMode_BuildToExecutable:
-		{
-			for (StringList* it = LangC_options.input_files; it; it = it->next)
-			{
-				const char* src = LangC_Preprocess(it->value);
-				if (!src)
-					break;
-				
-				LangC_ParseFile(&ctx, src);
-				
-				LangC_FlushWarnings();
-				// TODO
-			}
-		} break;
-		
-		case LangC_InvokationMode_RunPreprocessor:
-		{
-			const char* src = LangC_Preprocess(LangC_options.input_files->value);
-			LangC_FlushWarnings();
-			
-			if (!src)
-				break;
-			
-			if (LangC_options.output_file.size == 0)
-			{
-				Print("%.*s", src, SB_Len(src));
-			}
-			else if (!OS_WriteWholeFile(NullTerminateString(LangC_options.output_file), src, SB_Len(src)))
-			{
-				Print("error: could not open output file.\n");
-				result = 1;
-			}
-		} break;
-	}
+	result = LangC_DefaultDriver(argc, argv);
 	
 	return result;
 }

@@ -43,7 +43,7 @@ struct alignas(1) BackFormat_PeSymbolTable
 			uint8 zeroes[4];
 			uint32 offset;
 		};
-	}\
+	}//
 	name;
 	
 	uint32 value;

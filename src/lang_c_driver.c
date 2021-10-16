@@ -1,3 +1,5 @@
+// NOTE(ljre): This is the default compiler driver.
+
 internal void
 LangC_DefaultDriver_PrintHelp(void)
 {
@@ -11,12 +13,17 @@ LangC_DefaultDriver_PrintHelp(void)
 		  "\n");
 }
 
-internal bool32
+internal int32
 LangC_DefaultDriver(int32 argc, const char** argv)
 {
-	bool32 result = true;
+	bool32 result = 0;
 	
-	// NOTE(ljre): Setup system include directory
+	LangC_CompilerOptions options = {
+		.mode = LangC_InvokationMode_BuildToExecutable,
+		.output_file = Str("a.out"),
+	};
+	
+	//~ NOTE(ljre): Setup system include directory
 	{
 		static const char include[] = "include/";
 		
@@ -29,7 +36,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 		
 		if (last_slash_index != -1)
 		{
-			LangC_options.include_dirs_count = 1;
+			options.include_dirs_count = 1;
 			
 			uintsize len = last_slash_index+1 + sizeof include;
 			char* path = PushMemory(len + 1);
@@ -38,19 +45,17 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 			memcpy(path + last_slash_index+1, include, sizeof include);
 			path[len] = 0;
 			
-			LangC_options.include_dirs[0] = StrMake(path, len + 1);
+			options.include_dirs[0] = StrMake(path, len + 1);
 		}
 	}
 	
-	// NOTE(ljre): Parse parameters
+	//~ NOTE(ljre): Parse parameters
 	if (argc < 2)
 	{
 		LangC_DefaultDriver_PrintHelp();
-		return false;
+		return 1;
 	}
 	
-	LangC_options.mode = LangC_InvokationMode_BuildToExecutable;
-	LangC_options.output_file = Str("a.out");
 	StringList* last_input_file = NULL;
 	
 	for (const char** arg = argv + 1; *arg; ++arg)
@@ -62,40 +67,90 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 			if (MatchCString(flag, "o", 1))
 			{
 				if (flag[1])
-					LangC_options.output_file = StrFrom(flag + 1);
+					options.output_file = StrFrom(flag + 1);
 				else if (arg[1])
 				{
 					const char* name = arg[1];
 					++arg;
-					LangC_options.output_file = StrFrom(name);
+					options.output_file = StrFrom(name);
 				}
 				else
 				{
-					result = false;
+					result = 1;
 					Print("error: expected file name after '-o' flag.\n");
 				}
 			}
 			else if (MatchCString(flag, "E", 1))
 			{
-				LangC_options.mode = LangC_InvokationMode_RunPreprocessor;
+				options.mode = LangC_InvokationMode_RunPreprocessor;
 			}
-			else if (MatchCString(flag, "-help", 5))
+			else if (MatchCString(flag, "-help", 5) || MatchCString(flag, "--help", 6))
 			{
 				LangC_DefaultDriver_PrintHelp();
-				return false;
+				return 1;
 			}
 		}
 		else
 		{
-			LangC_AddInputFile(&last_input_file, StrFrom(arg[0]));
+			LangC_AddInputFile(&options.input_files, &last_input_file, StrFrom(arg[0]));
 		}
 	}
 	
 	if (!last_input_file)
 	{
 		Print("error: no input files\n");
-		result = false;
+		result = 1;
 	}
+	
+	//~ NOTE(ljre): Build
+	LangC_Context ctx = {
+		.options = &options,
+		.persistent_arena = Arena_Create(Gigabytes(64)),
+		.stage_arena = Arena_Create(Gigabytes(2)),
+	};
+	
+	switch (options.mode)
+	{
+		case LangC_InvokationMode_BuildToExecutable:
+		{
+			for (StringList* it = options.input_files; it; it = it->next)
+			{
+				const char* src = LangC_Preprocess(it->value, &options);
+				if (!src)
+					break;
+				
+				bool32 ok = true;
+				
+				ok = ok && LangC_ParseFile(&ctx, src);
+				ok = ok && LangC_ResolveAst(&ctx);
+				
+				LangC_FlushWarnings();
+				// TODO
+			}
+		} break;
+		
+		case LangC_InvokationMode_RunPreprocessor:
+		{
+			const char* src = LangC_Preprocess(options.input_files->value, &options);
+			LangC_FlushWarnings();
+			
+			if (!src)
+				break;
+			
+			if (options.output_file.size == 0)
+			{
+				Print("%.*s", src, SB_Len(src));
+			}
+			else if (!OS_WriteWholeFile(NullTerminateString(options.output_file), src, SB_Len(src)))
+			{
+				Print("error: could not open output file.\n");
+				result = 1;
+			}
+		} break;
+	}
+	
+	Arena_Destroy(ctx.stage_arena);
+	Arena_Destroy(ctx.persistent_arena);
 	
 	return result;
 }
