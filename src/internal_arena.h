@@ -16,6 +16,7 @@ struct Arena
 internal Arena*
 Arena_Create(uintsize size)
 {
+	Assert(size > 0);
 	size = AlignUp(size, Arena_PAGE_SIZE-1);
 	
 	Arena* arena = OS_ReserveMemory(size + sizeof *arena);
@@ -36,7 +37,7 @@ internal void
 Arena_Commit(Arena* arena)
 {
 	if (arena->commited + Arena_PAGE_SIZE > arena->reserved)
-		assert(false);
+		Unreachable();
 	
 	OS_CommitMemory(arena->memory + arena->commited, Arena_PAGE_SIZE);
 	arena->commited += Arena_PAGE_SIZE;
@@ -62,6 +63,51 @@ internal void*
 Arena_Push(Arena* arena, uintsize size)
 {
 	return Arena_PushAligned(arena, size, 8);
+}
+
+internal void
+Arena_Clear(Arena* arena)
+{
+	arena->offset = 0;
+}
+
+internal void*
+Arena_End(Arena* arena)
+{
+	return arena->memory + arena->offset;
+}
+
+internal void*
+Arena_PushMemory(Arena* arena, uintsize size, const void* data)
+{
+	return memcpy(Arena_PushAligned(arena, size, 1), data, size);
+}
+
+internal uintsize
+Arena_VPrintf(Arena* arena, const char* fmt, va_list args)
+{
+	va_list args_copy;
+	va_copy(args_copy, args);
+	
+	uintsize len = vsnprintf(NULL, 0, fmt, args_copy);
+	char* buf = Arena_PushAligned(arena, len + 1, 1);
+	vsnprintf(buf, len + 1, fmt, args);
+	arena->offset -= 1;
+	
+	va_end(args_copy);
+	
+	return len;
+}
+
+internal uintsize
+Arena_Printf(Arena* arena, const char* fmt, ...)
+{
+	va_list list;
+	va_start(list, fmt);
+	uintsize len = Arena_VPrintf(arena, fmt, list);
+	va_end(list);
+	
+	return len;
 }
 
 internal void

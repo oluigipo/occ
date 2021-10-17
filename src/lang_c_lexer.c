@@ -1,7 +1,7 @@
 internal void LangC_NextToken(LangC_Lexer* lex);
 
 internal void
-LangC_SetupLexer(LangC_Lexer* lex, const char* source)
+LangC_SetupLexer(LangC_Lexer* lex, const char* source, Arena* arena)
 {
 	lex->col = 1;
 	if (lex->line == 0)
@@ -9,12 +9,13 @@ LangC_SetupLexer(LangC_Lexer* lex, const char* source)
 	
 	lex->token.kind = LangC_TokenKind_Eof;
 	lex->head = lex->previous_head = source;
+	lex->arena = arena;
 }
 
 internal void
 LangC_PushLexerFile(LangC_Lexer* lex, String path, LangC_Lexer* trace_from)
 {
-	LangC_LexerFile* file = PushMemory(sizeof *file);
+	LangC_LexerFile* file = Arena_Push(lex->arena, sizeof *file);
 	
 	if (!trace_from)
 		trace_from = lex;
@@ -84,33 +85,32 @@ LangC_LexerError(LangC_Lexer* lex, const char* fmt, ...)
 }
 
 internal void
-LangC_PrintIncludeStackToBuf(LangC_LexerFile* file, int32 line, char** pbuf)
+LangC_PrintIncludeStackToArena(LangC_LexerFile* file, int32 line, Arena* arena)
 {
 	if (file->included_from)
-		LangC_PrintIncludeStackToBuf(file->included_from, file->included_line, pbuf);
+		LangC_PrintIncludeStackToArena(file->included_from, file->included_line, arena);
 	
-	bprintf(pbuf, "%.*s(%i): in included file\n", StrFmt(file->path));
+	Arena_Printf(arena, "%.*s(%i): in included file\n", StrFmt(file->path));
 }
 
 internal void
 LangC_LexerWarning(LangC_Lexer* lex, LangC_Warning warning, const char* fmt, ...)
 {
 	LangC_LexerFile* file = lex->file;
-	char* buf = NULL;
-	SB_ReserveAtLeast(buf, 128);
+	char* buf = Arena_End(global_arena);
 	
-	SB_Push(buf, '\n');
+	Arena_PushMemory(global_arena, 1, "\n");
 	if (file->included_from)
-		LangC_PrintIncludeStackToBuf(file->included_from, file->included_line, &buf);
+		LangC_PrintIncludeStackToArena(file->included_from, file->included_line, global_arena);
 	
-	bprintf(&buf, "%.*s(%i:%i): warning: ", StrFmt(file->path), lex->line, lex->col);
+	Arena_Printf(global_arena, "%.*s(%i:%i): warning: ", StrFmt(file->path), lex->line, lex->col);
 	
 	va_list args;
 	va_start(args, fmt);
-	vbprintf(&buf, fmt, args);
+	Arena_VPrintf(global_arena, fmt, args);
 	va_end(args);
 	
-	SB_Push(buf, 0);
+	Arena_PushMemory(global_arena, 1, "");
 	
 	LangC_PushWarning(warning, buf);
 }
@@ -118,7 +118,7 @@ LangC_LexerWarning(LangC_Lexer* lex, LangC_Warning warning, const char* fmt, ...
 internal void
 LangC_PushToken(LangC_Lexer* lex, LangC_Token* token)
 {
-	LangC_TokenList* node = PushMemory(sizeof *node);
+	LangC_TokenList* node = Arena_Push(lex->arena, sizeof *node);
 	node->token = *token;
 	
 	if (!lex->waiting_token)
@@ -135,7 +135,7 @@ LangC_PushToken(LangC_Lexer* lex, LangC_Token* token)
 internal void
 LangC_PushTokenToFront(LangC_Lexer* lex, LangC_Token* token)
 {
-	LangC_TokenList* node = PushMemory(sizeof *node);
+	LangC_TokenList* node = Arena_Push(lex->arena, sizeof *node);
 	node->token = *token;
 	
 	if (!lex->waiting_token)
@@ -157,7 +157,7 @@ LangC_PushStringOfTokens(LangC_Lexer* lex, const char* str)
 		.preprocessor = lex->preprocessor,
 	};
 	
-	LangC_SetupLexer(&temp_lex, str);
+	LangC_SetupLexer(&temp_lex, str, lex->arena);
 	LangC_NextToken(&temp_lex);
 	
 	while (temp_lex.token.kind)

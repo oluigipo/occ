@@ -34,6 +34,8 @@
 *        - Extend compound literals for function objects;
 *            Example: fptr = (int(int a, int b)) { return a + b; };
 *        - (GNU) Elvis operator (a ?: b);
+*        - __builtin_assume(expr);
+*        - __debugbreak();
 *        
 *
 */
@@ -48,6 +50,9 @@ internal LangC_QueuedWarning* LangC_last_queued_warning = NULL;
 internal void
 LangC_AddInputFile(StringList** first, StringList** last, String str)
 {
+	Assert(first);
+	Assert(last);
+	
 	if (!*last)
 	{
 		*first = *last = PushMemory(sizeof **last);
@@ -87,8 +92,8 @@ LangC_FlushWarnings(void)
 #include "lang_c_lexer.c"
 #include "lang_c_preprocessor.c"
 #include "lang_c_parser.c"
-#include "lang_c_analysis.c"
 #include "lang_c_resolution.c"
+#include "lang_c_gen.c"
 
 #include "lang_c_driver.c"
 

@@ -16,7 +16,7 @@ LangC_BaseTypeFlagsHasType(uint64 flags)
 internal LangC_TypeNode*
 LangC_DefineTypeNode(LangC_Context* ctx, LangC_Node* decl)
 {
-	assert(decl);
+	Assert(decl);
 	
 	LangC_TypeNode* type = ctx->last_typenode;
 	if (!type)
@@ -86,7 +86,7 @@ LangC_TypeNodeExists(LangC_Context* ctx, String name)
 internal inline void
 LangC_UpdateNode(LangC_Context* ctx, LangC_NodeKind kind, LangC_Node* result)
 {
-	assert(result);
+	Assert(result);
 	
 	if (kind)
 		result->kind = kind;
@@ -113,10 +113,12 @@ LangC_NodeError(LangC_Node* node, const char* fmt, ...)
 	
 	node->flags |= LangC_Node_Poisoned;
 	LangC_LexerFile* lexfile = node->lexfile;
+	
+	Print("\n");
 	if (lexfile->included_from)
 		LangC_PrintIncludeStack(lexfile->included_from, lexfile->included_line);
 	
-	Print("%s(%i:%i): error: ", lexfile->path, node->line, node->col);
+	Print("%.*s(%i:%i): error: ", StrFmt(lexfile->path), node->line, node->col);
 	
 	va_list args;
 	va_start(args, fmt);
@@ -129,21 +131,20 @@ internal void
 LangC_NodeWarning(LangC_Node* node, LangC_Warning warning, const char* fmt, ...)
 {
 	LangC_LexerFile* lexfile = node->lexfile;
-	char* buf = NULL;
-	SB_ReserveAtLeast(buf, 128);
+	char* buf = Arena_End(global_arena);
 	
-	SB_Push(buf, '\n');
+	Arena_PushMemory(global_arena, 1, "\n");
 	if (lexfile->included_from)
-		LangC_PrintIncludeStackToBuf(lexfile->included_from, lexfile->included_line, &buf);
+		LangC_PrintIncludeStackToArena(lexfile->included_from, lexfile->included_line, global_arena);
 	
-	bprintf(&buf, "%s(%i:%i): warning: ", node->lexfile->path, node->line, node->col);
+	Arena_Printf(global_arena, "%.*s(%i:%i): warning: ", StrFmt(node->lexfile->path), node->line, node->col);
 	
 	va_list args;
 	va_start(args, fmt);
-	vbprintf(&buf, fmt, args);
+	Arena_VPrintf(global_arena, fmt, args);
 	va_end(args);
 	
-	SB_Push(buf, 0);
+	Arena_PushMemory(global_arena, 1, "");
 	
 	LangC_PushWarning(warning, buf);
 }
@@ -326,20 +327,20 @@ internal String
 LangC_PrepareStringLiteral(LangC_Context* ctx, bool32* is_wide)
 {
 	String str;
-	char* buffer = NULL;
+	char* buffer = Arena_End(ctx->persistent_arena);
 	*is_wide = false;
 	
 	do
 	{
 		str = ctx->lex.token.value_str;
-		SB_PushArray(buffer, str.size, str.data);
+		Arena_PushMemory(ctx->persistent_arena, StrFmt(str));
 		LangC_NextToken(&ctx->lex);
 	}
 	while (ctx->lex.token.kind == LangC_TokenKind_StringLiteral ||
 		   (ctx->lex.token.kind == LangC_TokenKind_WideStringLiteral && (*is_wide = true)));
 	
 	str.data = buffer;
-	str.size = SB_Len(buffer);
+	str.size = (char*)Arena_End(ctx->persistent_arena) - buffer;
 	
 	return str;
 }
@@ -807,7 +808,7 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 	{
 		case LangC_TokenKind_LeftCurl:
 		{
-			result = LangC_ParseBlock(ctx, &last);
+			result = LangC_ParseBlock(ctx, NULL);
 		} break;
 		
 		case LangC_TokenKind_If:
@@ -913,6 +914,32 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 		} break;
 		
+		case LangC_TokenKind_Case:
+		{
+			result = LangC_CreateNode(ctx, LangC_NodeKind_CaseLabel);
+			
+			LangC_NextToken(&ctx->lex);
+			result->expr = LangC_ParseExpr(ctx, 0, false);
+			
+			LangC_EatToken(&ctx->lex, LangC_TokenKind_Colon);
+			result->stmt = LangC_ParseStmt(ctx, NULL, false);
+		} break;
+		
+		case LangC_TokenKind_Goto:
+		{
+			last = result = LangC_CreateNode(ctx, LangC_NodeKind_GotoStmt);
+			
+			LangC_NextToken(&ctx->lex);
+			if (LangC_AssertToken(&ctx->lex, LangC_TokenKind_Identifier))
+			{
+				result->name = ctx->lex.token.value_ident;
+				
+				LangC_NextToken(&ctx->lex);
+			}
+			
+			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
+		} break;
+		
 		case LangC_TokenKind_MsvcAsm:
 		case LangC_TokenKind_GccAsm:
 		{
@@ -962,18 +989,20 @@ internal LangC_Node*
 LangC_ParseBlock(LangC_Context* ctx, LangC_Node** out_last)
 {
 	LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftCurl);
-	LangC_Node* result;
+	LangC_Node* result = LangC_CreateNode(ctx, LangC_NodeKind_CompoundStmt);
 	LangC_Node* last = NULL;
 	
 	if (ctx->lex.token.kind == LangC_TokenKind_RightCurl)
 	{
-		last = result = LangC_CreateNode(ctx, LangC_NodeKind_EmptyStmt);
+		// NOTE(ljre): Not needed
+		//result->stmt = LangC_CreateNode(ctx, LangC_NodeKind_EmptyStmt);
+		
 		LangC_EatToken(&ctx->lex, LangC_TokenKind_RightCurl);
 	}
 	else
 	{
 		LangC_PushTypeNodeScope(ctx);
-		result = LangC_ParseStmt(ctx, &last, true);
+		result->stmt = LangC_ParseStmt(ctx, &last, true);
 		
 		while (!LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_RightCurl))
 		{
@@ -987,7 +1016,7 @@ LangC_ParseBlock(LangC_Context* ctx, LangC_Node** out_last)
 	}
 	
 	if (out_last)
-		*out_last = last;
+		*out_last = result;
 	
 	return result;
 }
@@ -1670,7 +1699,7 @@ LangC_ParseFile(LangC_Context* ctx, const char* source)
 	LangC_Node* first_node = NULL;
 	LangC_Node* last_node;
 	
-	LangC_SetupLexer(&ctx->lex, source);
+	LangC_SetupLexer(&ctx->lex, source, ctx->persistent_arena);
 	
 #if 1
 	LangC_NextToken(&ctx->lex);

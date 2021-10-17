@@ -32,6 +32,7 @@ internal void
 Panic(const char* str)
 {
 	fputs(str, stderr);
+	DebugBreak_();
 	exit(-1);
 }
 
@@ -45,16 +46,8 @@ PushMemory(uintsize size)
 
 int main(int argc, char* argv[])
 {
-	// NOTE(ljre): Setup global arena
-	uintsize desired_size = Gigabytes(100);
-	
-	do
-		global_arena = Arena_Create(desired_size);
-	while (!global_arena && Arena_PAGE_SIZE <= (desired_size >>= 1));
-	
-	if (!global_arena)
-		Panic("OCC FATAL ERROR: Could not reserve at least 32MiB.\n");
-	
+	// NOTE(ljre): Setup basic stuff
+	global_arena = Arena_Create(Gigabytes(4));
 	global_my_path = OS_GetMyPath();
 	
 	// Testing

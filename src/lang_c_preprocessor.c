@@ -28,7 +28,8 @@ struct LangC_PPLoadedFile
 
 struct LangC_Preprocessor
 {
-	char* buf;
+	Arena* buf;
+	Arena* scratch_arena;
 	LangC_CompilerOptions* options;
 	
 	LangC_Macro* first_macro;
@@ -57,11 +58,11 @@ LangC_LoadFileFromDisk(LangC_Preprocessor* pp, const char path[MAX_PATH_SIZE], u
 			while (file->next)
 				file = file->next;
 			
-			file = file->next = PushMemory(sizeof *file);
+			file = file->next = Arena_Push(pp->scratch_arena, sizeof *file);
 		}
 		else
 		{
-			file = pp->loaded_files = PushMemory(sizeof *file);
+			file = pp->loaded_files = Arena_Push(pp->scratch_arena, sizeof *file);
 		}
 		
 		file->hash = calculated_hash;
@@ -75,7 +76,7 @@ LangC_LoadFileFromDisk(LangC_Preprocessor* pp, const char path[MAX_PATH_SIZE], u
 internal const char*
 LangC_TryToLoadFile(LangC_Preprocessor* pp, String path, bool32 relative, String including_from, String* out_fullpath)
 {
-	char fullpath[MAX_PATH_SIZE];
+	char fullpath[Kilobytes(16)];
 	
 	if (relative)
 	{
@@ -120,7 +121,7 @@ LangC_TryToLoadFile(LangC_Preprocessor* pp, String path, bool32 relative, String
 		if (contents)
 		{
 			len = strlen(fullpath) + 1;
-			char* mem = PushMemory(len);
+			char* mem = Arena_Push(pp->scratch_arena, len);
 			memcpy(mem, fullpath, len);
 			
 			*out_fullpath = StrMake(mem, len);
@@ -158,7 +159,7 @@ LangC_TryToLoadFile(LangC_Preprocessor* pp, String path, bool32 relative, String
 		if (contents)
 		{
 			uintsize len = strlen(fullpath) + 1;
-			char* mem = PushMemory(len);
+			char* mem = Arena_Push(pp->scratch_arena, len);
 			memcpy(mem, fullpath, len);
 			
 			*out_fullpath = StrMake(mem, len);
@@ -205,14 +206,14 @@ LangC_DefineMacro(LangC_Preprocessor* pp, String definition)
 	if (!pp->last_macro)
 	{
 		if (!pp->first_macro)
-			pp->first_macro = PushMemory(sizeof *pp->first_macro);
+			pp->first_macro = Arena_Push(pp->scratch_arena, sizeof *pp->first_macro);
 		
 		pp->last_macro = pp->first_macro;
 	}
 	else
 	{
 		if (!pp->last_macro->next)
-			pp->last_macro->next = PushMemory(sizeof *pp->last_macro->next);
+			pp->last_macro->next = Arena_Push(pp->scratch_arena, sizeof *pp->last_macro->next);
 		
 		pp->last_macro->next->previous = pp->last_macro;
 		pp->last_macro = pp->last_macro->next;
@@ -301,7 +302,7 @@ LangC_TracePreprocessor(LangC_Preprocessor* pp, LangC_Lexer* lex, uint32 flags)
 {
 	char str[2048];
 	int32 len;
-	assert(flags < 16);
+	Assert(flags < 16);
 	
 	static const char* flag_table[] = {
 		NULL,
@@ -327,7 +328,7 @@ LangC_TracePreprocessor(LangC_Preprocessor* pp, LangC_Lexer* lex, uint32 flags)
 	else
 		len = snprintf(str, sizeof str, "# %i \"%.*s\"\n", lex->line, StrFmt(lex->file->path));
 	
-	SB_PushArray(pp->buf, len, str);
+	Arena_PushMemory(pp->buf, len, str);
 }
 
 internal void
@@ -338,7 +339,7 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 	{
 		int32 line = parent_lex->line;
 		int32 needed = snprintf(NULL, 0, "%i", line) + 1;
-		char* mem = PushMemory(needed);
+		char* mem = Arena_Push(pp->scratch_arena, needed);
 		snprintf(mem, needed + 1, "%i", line);
 		
 		LangC_Token tok = {
@@ -356,7 +357,7 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 	{
 		String file = parent_lex->file->path;
 		uintsize needed = file.size + 3;
-		char* mem = PushMemory(needed);
+		char* mem = Arena_Push(pp->scratch_arena, needed);
 		
 		mem[0] = '"';
 		memcpy(mem + 1, file.data, file.size);
@@ -401,11 +402,10 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 			{
 				LangC_IgnoreWhitespaces(&def_head, false);
 				LangC_MacroParameter* param = &params[param_count++];
-				assert(param_count <= ArrayLength(params));
+				Assert(param_count <= ArrayLength(params));
 				
 				String name;
-				char* buf = NULL;
-				SB_ReserveAtLeast(buf, 64);
+				char* buf = Arena_End(pp->scratch_arena);
 				
 				// NOTE(ljre): __VA_ARGS__
 				if (def_head[0] == '.' && def_head[1] == '.' && def_head[2] == '.')
@@ -424,8 +424,8 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 						else if (parent_lex->token.kind == LangC_TokenKind_LeftParen)
 							++nesting;
 						
-						SB_PushArray(buf, parent_lex->token.as_string.size, parent_lex->token.as_string.data);
-						SB_PushArray(buf, parent_lex->token.leading_spaces.size, parent_lex->token.leading_spaces.data);
+						Arena_PushMemory(pp->scratch_arena, StrFmt(parent_lex->token.as_string));
+						Arena_PushMemory(pp->scratch_arena, StrFmt(parent_lex->token.leading_spaces));
 						
 						LangC_NextToken(parent_lex);
 					}
@@ -450,14 +450,14 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 						else if (parent_lex->token.kind == LangC_TokenKind_LeftParen)
 							++nesting;
 						
-						SB_PushArray(buf, parent_lex->token.as_string.size, parent_lex->token.as_string.data);
-						SB_PushArray(buf, parent_lex->token.leading_spaces.size, parent_lex->token.leading_spaces.data);
+						Arena_PushMemory(pp->scratch_arena, StrFmt(parent_lex->token.as_string));
+						Arena_PushMemory(pp->scratch_arena, StrFmt(parent_lex->token.leading_spaces));
 						
 						LangC_NextToken(parent_lex);
 					}
 				}
 				
-				SB_Push(buf, 0);
+				Arena_PushMemory(pp->scratch_arena, 1, "");
 				
 				param->name = name;
 				param->expands_to = buf;
@@ -492,7 +492,7 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 	
 	parent_lex->waiting_token = NULL;
 	
-	LangC_SetupLexer(lex, def_head);
+	LangC_SetupLexer(lex, def_head, parent_lex->arena);
 	LangC_NextToken(lex);
 	
 	// NOTE(ljre): Expand macro.
@@ -513,19 +513,18 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 				}
 				else
 				{
-					char* buf = NULL;
 					uintsize len = strlen(param->expands_to);
-					SB_ReserveAtLeast(buf, len+2);
+					char* buf = Arena_PushAligned(pp->scratch_arena, len+2, 1);
 					
-					SB_Push(buf, '"');
-					SB_PushArray(buf, len, param->expands_to);
-					SB_Push(buf, '"');
+					buf[0] = '"';
+					memcpy(buf + 1, param->expands_to, len);
+					buf[len + 1] = '"';
 					
 					LangC_Token tok = {
 						.kind = LangC_TokenKind_StringLiteral,
 						.leading_spaces = lex->token.leading_spaces,
 						.as_string = {
-							.size = SB_Len(buf),
+							.size = len + 2,
 							.data = buf,
 						},
 						.value_str = {
@@ -575,7 +574,7 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 					LangC_NextToken(lex);
 					
 					uintsize len = tok.as_string.size + other_tok.as_string.size + 1;
-					char* buf = PushMemory(len);
+					char* buf = Arena_Push(pp->scratch_arena, len);
 					
 					memcpy(buf, tok.as_string.data, tok.as_string.size);
 					memcpy(buf + tok.as_string.size, other_tok.as_string.data, other_tok.as_string.size);
@@ -997,10 +996,9 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 		.file = from ? from->file : NULL,
 	};
 	
-	LangC_SetupLexer(lex, source);
+	LangC_SetupLexer(lex, source, pp->scratch_arena);
 	LangC_PushLexerFile(lex, path, from);
 	
-	SB_ReserveMore(pp->buf, 2048);
 	LangC_TracePreprocessor(pp, lex, 1);
 	
 	LangC_NextToken(lex);
@@ -1138,7 +1136,7 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 				
 				LangC_IgnoreUntilNewline(lex);
 				LangC_NextToken(lex);
-				SB_Push(pp->buf, '\n');
+				Arena_PushMemory(pp->buf, 1, "\n");
 			} break;
 			
 			case LangC_TokenKind_Identifier:
@@ -1162,8 +1160,8 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 				}
 				else
 				{
-					SB_PushArray(pp->buf, ident.size, ident.data);
-					SB_PushArray(pp->buf, leading_spaces.size, leading_spaces.data);
+					Arena_PushMemory(pp->buf, ident.size, ident.data);
+					Arena_PushMemory(pp->buf, leading_spaces.size, leading_spaces.data);
 					LangC_NextToken(lex);
 				}
 				
@@ -1180,8 +1178,8 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 					previous_was_newline = true;
 				}
 				
-				SB_PushArray(pp->buf, lex->token.as_string.size, lex->token.as_string.data);
-				SB_PushArray(pp->buf, lex->token.leading_spaces.size, lex->token.leading_spaces.data);
+				Arena_PushMemory(pp->buf, StrFmt(lex->token.as_string));
+				Arena_PushMemory(pp->buf, StrFmt(lex->token.leading_spaces));
 				LangC_NextToken(lex);
 			} break;
 		}
@@ -1191,9 +1189,15 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 }
 
 internal const char*
-LangC_Preprocess(String path, LangC_CompilerOptions* options)
+LangC_Preprocess(String path, LangC_CompilerOptions* options, Arena* scratch_arena)
 {
-	LangC_Preprocessor pp = { 0, .options = options };
+	LangC_Preprocessor pp = {
+		.options = options,
+		.scratch_arena = scratch_arena,
+	};
+	
+	// NOTE(ljre): Yeah, projects that generate TUs bigger than 2GiBs after pp are going to fail :P
+	pp.buf = Arena_Create(Gigabytes(2));
 	
 	LangC_DefineMacro(&pp, Str("__STDC__ 1"));
 	LangC_DefineMacro(&pp, Str("__STDC_HOSTED__ 1"));
@@ -1240,5 +1244,5 @@ LangC_Preprocess(String path, LangC_CompilerOptions* options)
 		++LangC_error_count;
 	}
 	
-	return pp.buf;
+	return (const char*)pp.buf->memory;
 }

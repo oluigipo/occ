@@ -53,23 +53,55 @@ typedef String;
 //~ Utility Macros
 #define ArrayLength(arr) (sizeof(arr) / sizeof*(arr))
 #define AlignUp(val,mask) ((val)+(mask) & ~(mask))
-#define Kilobytes(n) ((uintsize)n*1024)
+#define Kilobytes(n) ((uintsize)(n)*1024)
 #define Megabytes(n) (Kilobytes(n)*1024)
 #define Gigabytes(n) (Megabytes(n)*1024)
 #define internal static
 #define Max(a,b) ((a) > (b) ? (a) : (b))
 #define Min(a,b) ((a) < (b) ? (a) : (b))
-#define MAX_PATH_SIZE Kilobytes(1)
-#define Unreachable() do { Panic("Unreachable code was reached, at '" __FILE__ "' line " StrMacro(__LINE__) ".") } while (0)
+
+// NOTE(ljre): Unreachable may be used in release builds.
+#define Unreachable() do { Panic("\nUnreachable code was reached, at '" __FILE__ "' line " StrMacro(__LINE__) ".\n"); } while (0)
+
+// NOTE(ljre): Compiler specifics
+#ifdef _MSC_VER
+#   define Assume(x) __assume(x)
+#   define DebugBreak_() __debugbreak()
+#   define Likely(x) (x)
+#   define Unlikely(x) (x)
+#elif defined __clang__
+#   define Assume(x) __builtin_assume(x)
+#   define DebugBreak_() __debugbreak()
+#   define Likely(x) __builtin_expect(!!(x), 1)
+#   define Unlikely(x) __builtin_expect((x), 0)
+#elif defined __GNUC__
+#   define Assume(x) do { if (!(x)) __builtin_unreachable(); } while (0)
+#   define DebugBreak_() __builtin_debugtrap()
+#   define Likely(x) __builtin_expect(!!(x), 1)
+#   define Unlikely(x) __builtin_expect((x), 0)
+#else
+#   define Assume(x) ((void)0)
+#   define DebugBreak_() ((void)0)
+#   define Likely(x) (x)
+#   define Unlikely(x) (x)
+#endif
+
+// NOTE(ljre): Assert
+#ifdef NDEBUG
+#   define Assert(x) Assume(x)
+#else
+#   define Assert(x) do { if (!(x)) { DebugBreak_(); Print("\n########## ASSERTION FAILURE\nFile: " __FILE__ "\nLine: " StrMacro(__LINE__) "\nExpression: " #x "\n"); } } while (0)
+#endif
 
 internal void* PushMemory(uintsize size);
-
-#include <assert.h>
+internal void Print(const char* fmt, ...);
+internal void PrintVarargs(const char* fmt, va_list args);
+internal void Panic(const char* str);
 
 #include "os.h"
 
 #include "internal_arena.h"
-#include "internal_sb.h"
+//#include "internal_sb.h"
 #include "internal_utils.h"
 
 #endif //INTERNAL_H

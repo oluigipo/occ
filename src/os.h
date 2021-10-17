@@ -1,6 +1,12 @@
 #ifndef OS_H
 #define OS_H
 
+#if defined(_WIN32)
+#   define MAX_PATH_SIZE 32767
+#elif defined(__linux__)
+#   define MAX_PATH_SIZE (PATH_MAX+1)
+#endif
+
 internal String OS_GetMyPath(void);
 internal const char* OS_ReadWholeFile(const char* path);
 internal bool32 OS_WriteWholeFile(const char* path, const void* data, uintsize size);
@@ -19,9 +25,9 @@ internal void OS_FreeMemory(void* ptr, uintsize size);
 internal String
 OS_GetMyPath(void)
 {
-	char* path = PushMemory(32767);
+	char* path = PushMemory(MAX_PATH_SIZE);
 	
-	DWORD len = GetModuleFileNameA(NULL, path, 32767);
+	DWORD len = GetModuleFileNameA(NULL, path, MAX_PATH_SIZE);
 	for (DWORD i = 0; i < len; ++i)
 	{
 		if (path[i] == '\\')
@@ -112,7 +118,7 @@ OS_FreeMemory(void* ptr, uintsize size /* ignored */)
 internal String
 OS_GetMyPath(void)
 {
-	char link[PATH_MAX + 1];
+	char link[MAX_PATH_SIZE];
 	ssize_t count = readlink("/proc/self/exe", link, PATH_MAX);
 	
 	const char* result;
@@ -151,7 +157,7 @@ OS_ReadWholeFile(const char* path)
 internal void
 OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE])
 {
-	assert(false);
+	Assert(false);
 }
 
 internal void*

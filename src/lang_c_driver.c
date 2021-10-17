@@ -102,6 +102,8 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 		result = 1;
 	}
 	
+	Assert(options.input_files);
+	
 	//~ NOTE(ljre): Build
 	LangC_Context ctx = {
 		.options = &options,
@@ -115,23 +117,25 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 		{
 			for (StringList* it = options.input_files; it; it = it->next)
 			{
-				const char* src = LangC_Preprocess(it->value, &options);
+				const char* src = LangC_Preprocess(it->value, &options, ctx.stage_arena);
 				if (!src)
 					break;
 				
 				bool32 ok = true;
 				
-				ok = ok && LangC_ParseFile(&ctx, src);
-				ok = ok && LangC_ResolveAst(&ctx);
+				ok = ok && LangC_ParseFile(&ctx, src) && (Arena_Clear(ctx.stage_arena), 1);
+				ok = ok && LangC_ResolveAst(&ctx) && (Arena_Clear(ctx.stage_arena), 1);
 				
 				LangC_FlushWarnings();
+				
+				ok = ok && LangC_GenerateCode(&ctx) && (Arena_Clear(ctx.stage_arena), 1);
 				// TODO
 			}
 		} break;
 		
 		case LangC_InvokationMode_RunPreprocessor:
 		{
-			const char* src = LangC_Preprocess(options.input_files->value, &options);
+			const char* src = LangC_Preprocess(options.input_files->value, &options, ctx.stage_arena);
 			LangC_FlushWarnings();
 			
 			if (!src)
@@ -139,9 +143,9 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 			
 			if (options.output_file.size == 0)
 			{
-				Print("%.*s", src, SB_Len(src));
+				Print("%s", src);
 			}
-			else if (!OS_WriteWholeFile(NullTerminateString(options.output_file), src, SB_Len(src)))
+			else if (!OS_WriteWholeFile(NullTerminateString(options.output_file), src, strlen(src)))
 			{
 				Print("error: could not open output file.\n");
 				result = 1;
