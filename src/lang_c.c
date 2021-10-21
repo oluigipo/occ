@@ -1,6 +1,9 @@
 /*
 *
 * TODO:
+*    - Check for BOM at the beginning of the file;
+*    - Validate UTF-8 Codepoints;
+*    - Add more identifier-valid codepoints according to ISO 9899:1999;
 *    - Parsing standard C99 (halfway through);
 *    - Type-checking;
 *    - Code analysis for warnings:
@@ -18,6 +21,7 @@
 *    - Trace() macro so we can use Tracy :);
 *    - Flag (-W): Warnings flags;
 *    - Flag (-w): Suppress all warnings;
+*    - Redo 'LangC_Node';
 *
 * IDEAS:
 *    - Flag (-Edecl): Output only declarations to output file;
@@ -36,7 +40,11 @@
 *        - (GNU) Elvis operator (a ?: b);
 *        - __builtin_assume(expr);
 *        - __debugbreak();
-*        
+*        - Default values for function parameters;
+*        - #once directive (http://www.open-std.org/jtc1/sc22/wg14/www/docs/n2742.htm);
+*        - Optional configuration file (.ini) in the same folder as the compiler:
+*            - Defines some paths the compiler needs for includes, etc.;
+*            - Defines other programs's paths, such as linker, etc.;
 *
 */
 

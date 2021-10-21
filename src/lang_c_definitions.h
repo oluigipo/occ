@@ -338,6 +338,7 @@ struct LangC_Lexer
 	//     - newlines and hashtags are tokens;
 	//     - keywords are going to be LangC_TokenKind_Identifier;
 	bool16 preprocessor;
+	
 	bool16 token_was_pushed;
 }
 typedef LangC_Lexer;
@@ -352,7 +353,6 @@ enum LangC_NodeKind
 	LangC_NodeKind_Ident,
 	LangC_NodeKind_Decl,
 	LangC_NodeKind_EmptyStmt,
-	LangC_NodeKind_ExprStmt,
 	LangC_NodeKind_IfStmt,
 	LangC_NodeKind_DoWhileStmt,
 	LangC_NodeKind_WhileStmt,
@@ -579,14 +579,14 @@ struct LangC_Node
 	LangC_Node* type;
 	LangC_Node* attributes;
 	
-	// for (init; condition; iter) branch1
-	// if (condition) branch1 else branch2
+	// for (init; expr; iter) stmt
+	// if (expr) stmt else stmt2
 	// left = right
 	// left[right]
 	// left(right, right->next, ...)
 	// *expr
 	// expr++
-	// condition ? branch1 : branch2
+	// left ? middle : right
 	// (type)expr
 	// expr;
 	// { stmt stmt->next ... }
@@ -600,29 +600,22 @@ struct LangC_Node
 	// case expr: stmt
 	// (type) init
 	// { .left[middle] = right, .name, expr, [middle] = right, }
-	LangC_Node* condition;
 	LangC_Node* init;
 	LangC_Node* iter;
 	union
 	{
 		struct
 		{
-			LangC_Node* expr;
 			LangC_Node* stmt;
-		};
-		
-		struct
-		{
-			LangC_Node* branch1;
-			LangC_Node* branch2;
-			LangC_Node* branch3;
+			LangC_Node* stmt2;
+			LangC_Node* expr;
 		};
 		
 		struct
 		{
 			LangC_Node* left;
-			LangC_Node* right;
 			LangC_Node* middle;
+			LangC_Node* right;
 		};
 		
 		struct

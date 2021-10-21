@@ -606,8 +606,11 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 	if (dont_parse_postfix)
 		return result;
 	
-	for (;;)
+	bool32 need_to_change_result;
+	for (;; need_to_change_result ? (result = head) : 0)
 	{
+		need_to_change_result = (result == head);
+		
 		switch (ctx->lex.token.kind)
 		{
 			case LangC_TokenKind_Inc:
@@ -759,11 +762,11 @@ LangC_ParseExpr(LangC_Context* ctx, int32 level, bool32 allow_init)
 			
 			if (lookahead == LangC_TokenKind_QuestionMark) {
 				tmp->flags = LangC_Node_Expr_Ternary;
-				tmp->condition = right;
-				tmp->branch1 = LangC_ParseExpr(ctx, 1, false);
+				tmp->left = right;
+				tmp->middle = LangC_ParseExpr(ctx, 1, false);
 				
 				LangC_EatToken(&ctx->lex, LangC_TokenKind_Colon);
-				tmp->branch2 = LangC_ParseExpr(ctx, level + 1, false);
+				tmp->right = LangC_ParseExpr(ctx, level + 1, false);
 			} else {
 				tmp->flags = LangC_token_to_op[lookahead];
 				tmp->left = right;
@@ -780,11 +783,11 @@ LangC_ParseExpr(LangC_Context* ctx, int32 level, bool32 allow_init)
 		
 		if (op == LangC_Node_Expr_Ternary)
 		{
-			tmp->condition = result;
-			tmp->branch1 = right;
+			tmp->left = result;
+			tmp->middle = right;
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_Colon);
-			tmp->branch2 = LangC_ParseExpr(ctx, prec.level, false);
+			tmp->right = LangC_ParseExpr(ctx, prec.level, false);
 		}
 		else
 		{
@@ -817,14 +820,14 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 			
 			LangC_NextToken(&ctx->lex);
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftParen);
-			result->condition = LangC_ParseExpr(ctx, 0, false);
+			result->expr = LangC_ParseExpr(ctx, 0, false);
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
-			result->branch1 = LangC_ParseStmt(ctx, NULL, false);
+			result->stmt = LangC_ParseStmt(ctx, NULL, false);
 			
 			if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Else))
 			{
-				result->branch2 = LangC_ParseStmt(ctx, NULL, false);
+				result->stmt2 = LangC_ParseStmt(ctx, NULL, false);
 			}
 		} break;
 		
@@ -834,7 +837,7 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 			
 			LangC_NextToken(&ctx->lex);
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftParen);
-			result->condition = LangC_ParseExpr(ctx, 0, false);
+			result->expr = LangC_ParseExpr(ctx, 0, false);
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
 			result->stmt = LangC_ParseStmt(ctx, NULL, false);
@@ -852,12 +855,7 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 			if (ctx->lex.token.kind != LangC_TokenKind_Semicolon)
 			{
-				result->condition = LangC_ParseExpr(ctx, 0, false);
-			}
-			else
-			{
-				result->condition = LangC_CreateNode(ctx, LangC_NodeKind_IntConstant);
-				result->condition->value_int = 1;
+				result->expr = LangC_ParseExpr(ctx, 0, false);
 			}
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
@@ -879,7 +877,7 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_While);
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftParen);
-			result->condition = LangC_ParseExpr(ctx, 0, false);
+			result->expr = LangC_ParseExpr(ctx, 0, false);
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);

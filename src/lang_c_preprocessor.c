@@ -23,7 +23,8 @@ struct LangC_PPLoadedFile
 	LangC_PPLoadedFile* next;
 	uint64 hash;
 	const char* contents;
-	bool32 relative;
+	bool8 relative;
+	bool8 pragma_onced;
 };
 
 struct LangC_Preprocessor
@@ -76,7 +77,7 @@ LangC_LoadFileFromDisk(LangC_Preprocessor* pp, const char path[MAX_PATH_SIZE], u
 internal const char*
 LangC_TryToLoadFile(LangC_Preprocessor* pp, String path, bool32 relative, String including_from, String* out_fullpath)
 {
-	char fullpath[Kilobytes(16)];
+	char fullpath[MAX_PATH_SIZE];
 	
 	if (relative)
 	{
@@ -112,7 +113,12 @@ LangC_TryToLoadFile(LangC_Preprocessor* pp, String path, bool32 relative, String
 		while (file)
 		{
 			if (file->hash == search_hash && file->relative)
+			{
+				if (file->pragma_onced)
+					return NULL;
+				
 				return file->contents;
+			}
 			
 			file = file->next;
 		}
@@ -150,7 +156,12 @@ LangC_TryToLoadFile(LangC_Preprocessor* pp, String path, bool32 relative, String
 		while (file)
 		{
 			if (file->hash == search_hash && !file->relative)
+			{
+				if (file->pragma_onced)
+					return NULL;
+				
 				return file->contents;
+			}
 			
 			file = file->next;
 		}
@@ -168,6 +179,27 @@ LangC_TryToLoadFile(LangC_Preprocessor* pp, String path, bool32 relative, String
 	}
 	
 	return NULL;
+}
+
+internal void
+LangC_PragmaOncePPFile(LangC_Preprocessor* pp, String fullpath)
+{
+	LangC_PPLoadedFile* file = pp->loaded_files;
+	uint64 search_hash = SimpleHash(fullpath);
+	
+	while (file)
+	{
+		if (file->hash == search_hash)
+		{
+			if (file->pragma_onced)
+				Unreachable();
+			
+			file->pragma_onced = true;
+			break;
+		}
+		
+		file = file->next;
+	}
 }
 
 internal void
@@ -257,6 +289,8 @@ LangC_UndefineMacro(LangC_Preprocessor* pp, String name)
 internal LangC_Macro*
 LangC_FindMacro(LangC_Preprocessor* pp, String name, int32 type)
 {
+	Assert(type >= 0 && type <= 3);
+	
 	if (type == 3)
 	{
 		LangC_Macro* result = LangC_FindMacro(pp, name, 1);
@@ -989,6 +1023,29 @@ LangC_PreprocessInclude(LangC_Preprocessor* pp, LangC_Lexer* lex)
 }
 
 internal void
+LangC_GeneratePlainPragma(LangC_Preprocessor* pp, const char* begin, const char* end)
+{
+	Arena_Printf(pp->buf, "_Pragma(\"");
+	const char* p = begin;
+	
+	for (; p != end; ++p)
+	{
+		if (*p == '"')
+		{
+			Arena_Printf(pp->buf, "%.*s\\\"", p - begin, begin);
+			begin = p + 1;
+		}
+		else if (*p == '\\')
+		{
+			Arena_Printf(pp->buf, "%.*s\\\\", p - begin, begin);
+			begin = p + 1;
+		}
+	}
+	
+	Arena_Printf(pp->buf, "%.*s\")", p - begin, begin);
+}
+
+internal void
 LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC_Lexer* from)
 {
 	LangC_Lexer* lex = &(LangC_Lexer) {
@@ -1125,9 +1182,24 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 				}
 				else if (MatchCString("pragma", directive.data, directive.size))
 				{
+					const char* begin = lex->head;
+					const char* end = lex->head;
+					
+					while (*end && *end != '\n')
+						++end;
+					
 					LangC_NextToken(lex);
 					
-					// TODO(ljre)
+					if (lex->token.kind == LangC_TokenKind_Identifier &&
+						MatchCString("once", lex->token.value_ident.data, lex->token.value_ident.size))
+					{
+						LangC_PragmaOncePPFile(pp, path);
+					}
+					else
+					{
+						lex->head = end;
+						LangC_GeneratePlainPragma(pp, begin, end);
+					}
 				}
 				else
 				{

@@ -101,7 +101,6 @@ internal void Panic(const char* str);
 #include "os.h"
 
 #include "internal_arena.h"
-//#include "internal_sb.h"
 #include "internal_utils.h"
 
 #endif //INTERNAL_H

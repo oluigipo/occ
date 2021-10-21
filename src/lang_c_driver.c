@@ -7,6 +7,8 @@ LangC_DefaultDriver_PrintHelp(void)
 		  "usage: occ [FILE | FLAG] ...\n"
 		  "\n"
 		  "flags:\n"
+		  "\t[ -help ]\n"
+		  "\t[ --help ] Shows this help text and returns 1.\n"
 		  "\t[ -o<file>  ]\n"
 		  "\t[ -o <file> ] Changes the output file (defaults to \"a.out\").\n"
 		  "\t[ -E ] Runs the preprocessor on the single input file.\n"

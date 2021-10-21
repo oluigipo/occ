@@ -1,5 +1,7 @@
 // NOTE(ljre): This file contains code for symbol and type resolution.
 
+internal LangC_SymbolStack* LangC_ResolveBlock(LangC_Context* ctx, LangC_Node* block);
+
 internal LangC_SymbolStack*
 LangC_PushSymbolStack(LangC_Context* ctx)
 {
@@ -99,7 +101,7 @@ LangC_CreateSymbol(LangC_Context* ctx, String name, LangC_SymbolKind kind, LangC
 //             Returns 0 if both are the same type, 1 if 'left' is compatible with 'right', and -1 if
 //             they are incompatible.
 //
-//             Important: if 'right' isn't compatible with 'left' just because 'left' is compatible with 'right'.
+//             Important: 'right' isn't compatible with 'left' just because 'left' is compatible with 'right'.
 internal int32
 LangC_MatchTypes(LangC_Context* ctx, LangC_Node* left, LangC_Node* right)
 {
@@ -111,6 +113,36 @@ LangC_MatchTypes(LangC_Context* ctx, LangC_Node* left, LangC_Node* right)
 internal bool32
 LangC_IsExprLValue(LangC_Context* ctx, LangC_Node* expr)
 {
+	if (expr->kind == LangC_NodeKind_Expr)
+	{
+		switch (expr->flags & LangC_Node_LowerBits)
+		{
+			case LangC_Node_Expr_Deref:
+			case LangC_Node_Expr_Assign:
+			case LangC_Node_Expr_AssignAdd:
+			case LangC_Node_Expr_AssignSub:
+			case LangC_Node_Expr_AssignMul:
+			case LangC_Node_Expr_AssignDiv:
+			case LangC_Node_Expr_AssignMod:
+			case LangC_Node_Expr_AssignLeftShift:
+			case LangC_Node_Expr_AssignRightShift:
+			case LangC_Node_Expr_AssignAnd:
+			case LangC_Node_Expr_AssignOr:
+			case LangC_Node_Expr_AssignXor:
+			case LangC_Node_Expr_Index:
+			case LangC_Node_Expr_CompoundLiteral:
+			case LangC_Node_Expr_Access:
+			case LangC_Node_Expr_DerefAccess:
+			{
+				return true;
+			}
+		}
+	}
+	else if (expr->kind == LangC_NodeKind_Ident)
+	{
+		return true;
+	}
+	
 	return false;
 }
 
@@ -135,8 +167,18 @@ LangC_ResolveStmt(LangC_Context* ctx, LangC_Node* stmt)
 	{
 		case LangC_NodeKind_EmptyStmt: break;
 		
+		case LangC_NodeKind_IntConstant:
+		case LangC_NodeKind_LIntConstant:
+		case LangC_NodeKind_LLIntConstant:
+		case LangC_NodeKind_UintConstant:
+		case LangC_NodeKind_LUintConstant:
+		case LangC_NodeKind_LLUintConstant:
+		case LangC_NodeKind_FloatConstant:
+		case LangC_NodeKind_DoubleConstant:
+		case LangC_NodeKind_StringConstant:
+		case LangC_NodeKind_WideStringConstant:
 		case LangC_NodeKind_ReturnStmt:
-		case LangC_NodeKind_ExprStmt:
+		case LangC_NodeKind_Expr:
 		{
 			LangC_ResolveExpr(ctx, stmt->expr);
 		} break;
@@ -154,30 +196,26 @@ LangC_ResolveStmt(LangC_Context* ctx, LangC_Node* stmt)
 			if (stmt->iter)
 				LangC_ResolveExpr(ctx, stmt->iter);
 		} /* fallthrough */
+		
+		case LangC_NodeKind_SwitchStmt:
 		case LangC_NodeKind_DoWhileStmt:
 		case LangC_NodeKind_WhileStmt:
 		case LangC_NodeKind_IfStmt:
 		{
-			LangC_ResolveExpr(ctx, stmt->condition);
-			if (LangC_MatchTypes(ctx, stmt->condition->type, LangC_INT) < 0)
-			{
-				LangC_NodeError(stmt->condition, "condition should be of numeric type.");
-			}
+			// NOTE(ljre): If 'stmt->expr' is null, then the code gen shall generate an 1 constant
+			if (stmt->expr)
+				LangC_ResolveExpr(ctx, stmt->expr);
 			
-			LangC_ResolveStmt(ctx, stmt->branch1);
-			if (stmt->branch2)
-				LangC_ResolveStmt(ctx, stmt->branch2);
-		} break;
-		
-		case LangC_NodeKind_SwitchStmt:
-		{
-			LangC_ResolveExpr(ctx, stmt->expr);
 			if (LangC_MatchTypes(ctx, stmt->expr->type, LangC_INT) < 0)
 			{
-				LangC_NodeError(stmt->condition, "condition should be of numeric type.");
+				LangC_NodeError(stmt->expr, (stmt->kind == LangC_NodeKind_SwitchStmt) ?
+								"switch expression should be of numeric type." :
+								"condition should be of numeric type.");
 			}
 			
 			LangC_ResolveStmt(ctx, stmt->stmt);
+			if (stmt->stmt2)
+				LangC_ResolveStmt(ctx, stmt->stmt2);
 		} break;
 		
 		case LangC_NodeKind_Label:
@@ -192,7 +230,7 @@ LangC_ResolveStmt(LangC_Context* ctx, LangC_Node* stmt)
 			LangC_ResolveExpr(ctx, stmt->expr);
 			if (LangC_MatchTypes(ctx, stmt->expr->type, LangC_INT) < 0)
 			{
-				LangC_NodeError(stmt->condition, "condition should be of numeric type.");
+				LangC_NodeError(stmt->expr, "case expression should be of integer type.");
 			}
 			
 			LangC_ResolveStmt(ctx, stmt->stmt);
@@ -200,7 +238,10 @@ LangC_ResolveStmt(LangC_Context* ctx, LangC_Node* stmt)
 			// TODO(ljre): Find the host switch statement
 		} break;
 		
-		// TODO(ljre): Other statements
+		case LangC_NodeKind_CompoundStmt:
+		{
+			LangC_ResolveBlock(ctx, stmt->stmt);
+		} break;
 		
 		default: Unreachable(); break;
 	}
