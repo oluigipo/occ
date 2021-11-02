@@ -119,35 +119,36 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 		{
 			for (StringList* it = options.input_files; it; it = it->next)
 			{
-				const char* src = LangC_Preprocess(it->value, &options, ctx.stage_arena);
-				if (!src)
-					break;
-				
 				bool32 ok = true;
 				
-				ok = ok && LangC_ParseFile(&ctx, src) && (Arena_Clear(ctx.stage_arena), 1);
-				ok = ok && LangC_ResolveAst(&ctx) && (Arena_Clear(ctx.stage_arena), 1);
+				ok = ok && LangC_Preprocess(&ctx, it->value);
+				LangC_FlushWarnings(&ctx);
+				Arena_Clear(ctx.stage_arena);
 				
-				LangC_FlushWarnings();
+				ok = ok && LangC_ParseFile(&ctx); Arena_Clear(ctx.stage_arena);
+				ok = ok && LangC_ResolveAst(&ctx); Arena_Clear(ctx.stage_arena);
 				
-				ok = ok && LangC_GenerateCode(&ctx) && (Arena_Clear(ctx.stage_arena), 1);
+				LangC_FlushWarnings(&ctx);
+				
+				ok = ok && LangC_GenerateCode(&ctx), Arena_Clear(ctx.stage_arena);
 				// TODO
 			}
 		} break;
 		
 		case LangC_InvokationMode_RunPreprocessor:
 		{
-			const char* src = LangC_Preprocess(options.input_files->value, &options, ctx.stage_arena);
-			LangC_FlushWarnings();
+			LangC_Preprocess(&ctx, options.input_files->value);
+			LangC_FlushWarnings(&ctx);
+			Arena_Clear(ctx.stage_arena);
 			
-			if (!src)
+			if (!ctx.pre_source)
 				break;
 			
 			if (options.output_file.size == 0)
 			{
-				Print("%s", src);
+				Print("%s", ctx.pre_source);
 			}
-			else if (!OS_WriteWholeFile(NullTerminateString(options.output_file), src, strlen(src)))
+			else if (!OS_WriteWholeFile(NullTerminateString(options.output_file), ctx.pre_source, strlen(ctx.pre_source)))
 			{
 				Print("error: could not open output file.\n");
 				result = 1;

@@ -16,8 +16,8 @@ struct Arena
 internal Arena*
 Arena_Create(uintsize size)
 {
-	Assert(size > 0);
 	size = AlignUp(size, Arena_PAGE_SIZE-1);
+	Assert(size > 0);
 	
 	Arena* arena = OS_ReserveMemory(size + sizeof *arena);
 	if (arena)

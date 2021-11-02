@@ -1,53 +1,12 @@
-struct LangC_Macro typedef LangC_Macro;
-struct LangC_Macro
-{
-	LangC_Macro* next;
-	LangC_Macro* previous;
-	
-	const char* def;
-	String name;
-	bool16 is_func_like;
-	bool16 expanding;
-};
-
-struct LangC_MacroParameter
-{
-	String name;
-	const char* expands_to;
-}
-typedef LangC_MacroParameter;
-
-struct LangC_PPLoadedFile typedef LangC_PPLoadedFile;
-struct LangC_PPLoadedFile
-{
-	LangC_PPLoadedFile* next;
-	uint64 hash;
-	const char* contents;
-	bool8 relative;
-	bool8 pragma_onced;
-};
-
-struct LangC_Preprocessor
-{
-	Arena* buf;
-	Arena* scratch_arena;
-	LangC_CompilerOptions* options;
-	
-	LangC_Macro* first_macro;
-	LangC_Macro* last_macro;
-	
-	LangC_PPLoadedFile* loaded_files;
-}
-typedef LangC_Preprocessor;
-
-internal void LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC_Lexer* from);
-internal void LangC_PreprocessIfDef(LangC_Preprocessor* pp, LangC_Lexer* lex, bool32 not);
-internal void LangC_PreprocessIf(LangC_Preprocessor* pp, LangC_Lexer* lex);
+internal void LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lexer* from);
+internal void LangC_PreprocessIfDef(LangC_Context* ctx, LangC_Lexer* lex, bool32 not);
+internal void LangC_PreprocessIf(LangC_Context* ctx, LangC_Lexer* lex);
 
 internal const char*
-LangC_LoadFileFromDisk(LangC_Preprocessor* pp, const char path[MAX_PATH_SIZE], uint64 calculated_hash, bool32 relative)
+LangC_LoadFileFromDisk(LangC_Context* ctx, const char path[MAX_PATH_SIZE], uint64 calculated_hash, bool32 relative)
 {
 	const char* contents = OS_ReadWholeFile(path);
+	LangC_Preprocessor* const pp = &ctx->pp;
 	
 	if (contents)
 	{
@@ -59,11 +18,11 @@ LangC_LoadFileFromDisk(LangC_Preprocessor* pp, const char path[MAX_PATH_SIZE], u
 			while (file->next)
 				file = file->next;
 			
-			file = file->next = Arena_Push(pp->scratch_arena, sizeof *file);
+			file = file->next = Arena_Push(ctx->stage_arena, sizeof *file);
 		}
 		else
 		{
-			file = pp->loaded_files = Arena_Push(pp->scratch_arena, sizeof *file);
+			file = pp->loaded_files = Arena_Push(ctx->stage_arena, sizeof *file);
 		}
 		
 		file->hash = calculated_hash;
@@ -75,9 +34,10 @@ LangC_LoadFileFromDisk(LangC_Preprocessor* pp, const char path[MAX_PATH_SIZE], u
 }
 
 internal const char*
-LangC_TryToLoadFile(LangC_Preprocessor* pp, String path, bool32 relative, String including_from, String* out_fullpath)
+LangC_TryToLoadFile(LangC_Context* ctx, String path, bool32 relative, String including_from, String* out_fullpath)
 {
 	char fullpath[MAX_PATH_SIZE];
+	LangC_Preprocessor* const pp = &ctx->pp;
 	
 	if (relative)
 	{
@@ -123,11 +83,11 @@ LangC_TryToLoadFile(LangC_Preprocessor* pp, String path, bool32 relative, String
 			file = file->next;
 		}
 		
-		const char* contents = LangC_LoadFileFromDisk(pp, fullpath, search_hash, true);
+		const char* contents = LangC_LoadFileFromDisk(ctx, fullpath, search_hash, true);
 		if (contents)
 		{
 			len = strlen(fullpath) + 1;
-			char* mem = Arena_Push(pp->scratch_arena, len);
+			char* mem = Arena_Push(ctx->stage_arena, len);
 			memcpy(mem, fullpath, len);
 			
 			*out_fullpath = StrMake(mem, len);
@@ -166,11 +126,11 @@ LangC_TryToLoadFile(LangC_Preprocessor* pp, String path, bool32 relative, String
 			file = file->next;
 		}
 		
-		const char* contents = LangC_LoadFileFromDisk(pp, fullpath, search_hash, true);
+		const char* contents = LangC_LoadFileFromDisk(ctx, fullpath, search_hash, true);
 		if (contents)
 		{
 			uintsize len = strlen(fullpath) + 1;
-			char* mem = Arena_Push(pp->scratch_arena, len);
+			char* mem = Arena_Push(ctx->stage_arena, len);
 			memcpy(mem, fullpath, len);
 			
 			*out_fullpath = StrMake(mem, len);
@@ -182,8 +142,9 @@ LangC_TryToLoadFile(LangC_Preprocessor* pp, String path, bool32 relative, String
 }
 
 internal void
-LangC_PragmaOncePPFile(LangC_Preprocessor* pp, String fullpath)
+LangC_PragmaOncePPFile(LangC_Context* ctx, String fullpath)
 {
+	LangC_Preprocessor* const pp = &ctx->pp;
 	LangC_PPLoadedFile* file = pp->loaded_files;
 	uint64 search_hash = SimpleHash(fullpath);
 	
@@ -218,8 +179,9 @@ LangC_IgnoreUntilNewline(LangC_Lexer* lex)
 }
 
 internal void
-LangC_DefineMacro(LangC_Preprocessor* pp, String definition)
+LangC_DefineMacro(LangC_Context* ctx, String definition)
 {
+	LangC_Preprocessor* const pp = &ctx->pp;
 	const char* def = NullTerminateString(definition);
 	
 	const char* ident_begin = def;
@@ -238,14 +200,14 @@ LangC_DefineMacro(LangC_Preprocessor* pp, String definition)
 	if (!pp->last_macro)
 	{
 		if (!pp->first_macro)
-			pp->first_macro = Arena_Push(pp->scratch_arena, sizeof *pp->first_macro);
+			pp->first_macro = Arena_Push(ctx->stage_arena, sizeof *pp->first_macro);
 		
 		pp->last_macro = pp->first_macro;
 	}
 	else
 	{
 		if (!pp->last_macro->next)
-			pp->last_macro->next = Arena_Push(pp->scratch_arena, sizeof *pp->last_macro->next);
+			pp->last_macro->next = Arena_Push(ctx->stage_arena, sizeof *pp->last_macro->next);
 		
 		pp->last_macro->next->previous = pp->last_macro;
 		pp->last_macro = pp->last_macro->next;
@@ -257,8 +219,10 @@ LangC_DefineMacro(LangC_Preprocessor* pp, String definition)
 }
 
 internal void
-LangC_UndefineMacro(LangC_Preprocessor* pp, String name)
+LangC_UndefineMacro(LangC_Context* ctx, String name)
 {
+	LangC_Preprocessor* const pp = &ctx->pp;
+	
 	if (!pp->first_macro)
 		return;
 	
@@ -287,16 +251,17 @@ LangC_UndefineMacro(LangC_Preprocessor* pp, String name)
 //             if type is 3, then it will return a function-like macro with this name, otherwise
 //                                a object-like macro is still ok.
 internal LangC_Macro*
-LangC_FindMacro(LangC_Preprocessor* pp, String name, int32 type)
+LangC_FindMacro(LangC_Context* ctx, String name, int32 type)
 {
 	Assert(type >= 0 && type <= 3);
+	LangC_Preprocessor* pp = &ctx->pp;
 	
 	if (type == 3)
 	{
-		LangC_Macro* result = LangC_FindMacro(pp, name, 1);
+		LangC_Macro* result = LangC_FindMacro(ctx, name, 1);
 		
 		if (!result)
-			result = LangC_FindMacro(pp, name, 0);
+			result = LangC_FindMacro(ctx, name, 0);
 		
 		return result;
 	}
@@ -332,7 +297,7 @@ LangC_FindMacroParameter(LangC_MacroParameter* param_array, int32 param_count, S
 }
 
 internal void
-LangC_TracePreprocessor(LangC_Preprocessor* pp, LangC_Lexer* lex, uint32 flags)
+LangC_TracePreprocessor(LangC_Context* ctx, LangC_Lexer* lex, uint32 flags)
 {
 	char str[2048];
 	int32 len;
@@ -362,19 +327,18 @@ LangC_TracePreprocessor(LangC_Preprocessor* pp, LangC_Lexer* lex, uint32 flags)
 	else
 		len = snprintf(str, sizeof str, "# %i \"%.*s\"\n", lex->line, StrFmt(lex->file->path));
 	
-	Arena_PushMemory(pp->buf, len, str);
+	Arena_PushMemory(ctx->persistent_arena, len, str);
 }
 
 internal void
-LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* parent_lex, String leading_spaces)
+LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_lex, String leading_spaces)
 {
 	// NOTE(ljre): Handle special macros
 	if (MatchCString("__LINE__", macro->name.data, macro->name.size))
 	{
 		int32 line = parent_lex->line;
-		int32 needed = snprintf(NULL, 0, "%i", line) + 1;
-		char* mem = Arena_Push(pp->scratch_arena, needed);
-		snprintf(mem, needed + 1, "%i", line);
+		char* mem = Arena_End(ctx->stage_arena);
+		uintsize needed = Arena_Printf(ctx->stage_arena, "%i", line);
 		
 		LangC_Token tok = {
 			.kind = LangC_TokenKind_IntLiteral,
@@ -390,13 +354,8 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 	else if (MatchCString("__FILE__", macro->name.data, macro->name.size))
 	{
 		String file = parent_lex->file->path;
-		uintsize needed = file.size + 3;
-		char* mem = Arena_Push(pp->scratch_arena, needed);
-		
-		mem[0] = '"';
-		memcpy(mem + 1, file.data, file.size);
-		mem[file.size + 1] = '"';
-		mem[file.size + 2] = 0;
+		char* mem = Arena_End(ctx->stage_arena);
+		uintsize needed = Arena_Printf(ctx->stage_arena, "\"%.*s\"", StrFmt(file));
 		
 		LangC_Token tok = {
 			.kind = LangC_TokenKind_StringLiteral,
@@ -439,7 +398,7 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 				Assert(param_count <= ArrayLength(params));
 				
 				String name;
-				char* buf = Arena_End(pp->scratch_arena);
+				char* buf = Arena_End(ctx->stage_arena);
 				
 				// NOTE(ljre): __VA_ARGS__
 				if (def_head[0] == '.' && def_head[1] == '.' && def_head[2] == '.')
@@ -458,8 +417,8 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 						else if (parent_lex->token.kind == LangC_TokenKind_LeftParen)
 							++nesting;
 						
-						Arena_PushMemory(pp->scratch_arena, StrFmt(parent_lex->token.as_string));
-						Arena_PushMemory(pp->scratch_arena, StrFmt(parent_lex->token.leading_spaces));
+						Arena_PushMemory(ctx->stage_arena, StrFmt(parent_lex->token.as_string));
+						Arena_PushMemory(ctx->stage_arena, StrFmt(parent_lex->token.leading_spaces));
 						
 						LangC_NextToken(parent_lex);
 					}
@@ -484,14 +443,14 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 						else if (parent_lex->token.kind == LangC_TokenKind_LeftParen)
 							++nesting;
 						
-						Arena_PushMemory(pp->scratch_arena, StrFmt(parent_lex->token.as_string));
-						Arena_PushMemory(pp->scratch_arena, StrFmt(parent_lex->token.leading_spaces));
+						Arena_PushMemory(ctx->stage_arena, StrFmt(parent_lex->token.as_string));
+						Arena_PushMemory(ctx->stage_arena, StrFmt(parent_lex->token.leading_spaces));
 						
 						LangC_NextToken(parent_lex);
 					}
 				}
 				
-				Arena_PushMemory(pp->scratch_arena, 1, "");
+				Arena_PushMemory(ctx->stage_arena, 1, "");
 				
 				param->name = name;
 				param->expands_to = buf;
@@ -516,7 +475,8 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 	LangC_Lexer* lex = &(LangC_Lexer) {
 		.preprocessor = true,
 		.file = parent_lex->file,
-		.line = parent_lex->line
+		.line = parent_lex->line,
+		.ctx = ctx,
 	};
 	
 	// NOTE(ljre): If the lexer already has waiting tokens, we want to insert right before them.
@@ -548,7 +508,7 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 				else
 				{
 					uintsize len = strlen(param->expands_to);
-					char* buf = Arena_PushAligned(pp->scratch_arena, len+2, 1);
+					char* buf = Arena_PushAligned(ctx->stage_arena, len+2, 1);
 					
 					buf[0] = '"';
 					memcpy(buf + 1, param->expands_to, len);
@@ -608,7 +568,7 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 					LangC_NextToken(lex);
 					
 					uintsize len = tok.as_string.size + other_tok.as_string.size + 1;
-					char* buf = Arena_Push(pp->scratch_arena, len);
+					char* buf = Arena_Push(ctx->stage_arena, len);
 					
 					memcpy(buf, tok.as_string.data, tok.as_string.size);
 					memcpy(buf + tok.as_string.size, other_tok.as_string.data, other_tok.as_string.size);
@@ -619,10 +579,10 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 				}
 				else if (from_macro &&
 						 tok.kind == LangC_TokenKind_Identifier &&
-						 (to_expand = LangC_FindMacro(pp, tok.value_ident, 0)))
+						 (to_expand = LangC_FindMacro(ctx, tok.value_ident, 0)))
 				{
 					// NOTE(ljre): Tokens originated from parameters shall be expanded first.
-					LangC_ExpandMacro(pp, to_expand, lex, tok.leading_spaces);
+					LangC_ExpandMacro(ctx, to_expand, lex, tok.leading_spaces);
 				}
 				else
 				{
@@ -653,10 +613,10 @@ LangC_ExpandMacro(LangC_Preprocessor* pp, LangC_Macro* macro, LangC_Lexer* paren
 	macro->expanding = false;
 }
 
-internal int32 LangC_EvalPreprocessorExprBinary(LangC_Preprocessor* pp, LangC_Lexer* lex, int32 level);
+internal int32 LangC_EvalPreprocessorExprBinary(LangC_Context* ctx, LangC_Lexer* lex, int32 level);
 
 internal int32
-LangC_EvalPreprocessorExprFactor(LangC_Preprocessor* pp, LangC_Lexer* lex)
+LangC_EvalPreprocessorExprFactor(LangC_Context* ctx, LangC_Lexer* lex)
 {
 	beginning:;
 	int32 result = 0;
@@ -667,7 +627,7 @@ LangC_EvalPreprocessorExprFactor(LangC_Preprocessor* pp, LangC_Lexer* lex)
 		case LangC_TokenKind_Minus:
 		{
 			LangC_NextToken(lex);
-			return -LangC_EvalPreprocessorExprFactor(pp, lex);
+			return -LangC_EvalPreprocessorExprFactor(ctx, lex);
 		} break;
 		
 		case LangC_TokenKind_Plus:
@@ -679,13 +639,13 @@ LangC_EvalPreprocessorExprFactor(LangC_Preprocessor* pp, LangC_Lexer* lex)
 		case LangC_TokenKind_Not:
 		{
 			LangC_NextToken(lex);
-			return -LangC_EvalPreprocessorExprFactor(pp, lex);
+			return -LangC_EvalPreprocessorExprFactor(ctx, lex);
 		} break;
 		
 		case LangC_TokenKind_LNot:
 		{
 			LangC_NextToken(lex);
-			return !LangC_EvalPreprocessorExprFactor(pp, lex);
+			return !LangC_EvalPreprocessorExprFactor(ctx, lex);
 		} break;
 		
 		// NOTE(ljre): Factors
@@ -736,7 +696,7 @@ LangC_EvalPreprocessorExprFactor(LangC_Preprocessor* pp, LangC_Lexer* lex)
 				
 				if (LangC_AssertToken(lex, LangC_TokenKind_Identifier))
 				{
-					result = (LangC_FindMacro(pp, lex->token.value_ident, 2) != NULL);
+					result = (LangC_FindMacro(ctx, lex->token.value_ident, 2) != NULL);
 					LangC_NextToken(lex);
 				}
 				
@@ -746,11 +706,11 @@ LangC_EvalPreprocessorExprFactor(LangC_Preprocessor* pp, LangC_Lexer* lex)
 			else
 			{
 				bool32 is_func = (LangC_PeekIncomingToken(lex).kind == LangC_TokenKind_LeftParen);
-				LangC_Macro* macro = LangC_FindMacro(pp, name, is_func);
+				LangC_Macro* macro = LangC_FindMacro(ctx, name, is_func);
 				
 				if (macro)
 				{
-					LangC_ExpandMacro(pp, macro, lex, lex->token.leading_spaces);
+					LangC_ExpandMacro(ctx, macro, lex, lex->token.leading_spaces);
 					goto beginning;
 				}
 				else
@@ -816,9 +776,9 @@ LangC_EvalPreprocessorExprOp(LangC_TokenKind op, int32 left, int32 right)
 }
 
 internal int32
-LangC_EvalPreprocessorExprBinary(LangC_Preprocessor* pp, LangC_Lexer* lex, int32 level)
+LangC_EvalPreprocessorExprBinary(LangC_Context* ctx, LangC_Lexer* lex, int32 level)
 {
-	int32 result = LangC_EvalPreprocessorExprFactor(pp, lex);
+	int32 result = LangC_EvalPreprocessorExprFactor(ctx, lex);
 	
 	LangC_OperatorPrecedence prec;
 	while (prec = LangC_operators_precedence[lex->token.kind],
@@ -826,7 +786,7 @@ LangC_EvalPreprocessorExprBinary(LangC_Preprocessor* pp, LangC_Lexer* lex, int32
 	{
 		LangC_TokenKind op = lex->token.kind;
 		LangC_NextToken(lex);
-		int32 right = LangC_EvalPreprocessorExprFactor(pp, lex);
+		int32 right = LangC_EvalPreprocessorExprFactor(ctx, lex);
 		
 		LangC_TokenKind lookahead = lex->token.kind;
 		LangC_OperatorPrecedence lookahead_prec = LangC_operators_precedence[lookahead];
@@ -837,14 +797,14 @@ LangC_EvalPreprocessorExprBinary(LangC_Preprocessor* pp, LangC_Lexer* lex, int32
 			LangC_NextToken(lex);
 			
 			if (lookahead == LangC_TokenKind_QuestionMark) {
-				int32 if_true = LangC_EvalPreprocessorExprBinary(pp, lex, 1);
+				int32 if_true = LangC_EvalPreprocessorExprBinary(ctx, lex, 1);
 				
 				LangC_EatToken(lex, LangC_TokenKind_Colon);
-				int32 if_false = LangC_EvalPreprocessorExprBinary(pp, lex, level + 1);
+				int32 if_false = LangC_EvalPreprocessorExprBinary(ctx, lex, level + 1);
 				
 				right = right ? if_true : if_false;
 			} else {
-				int32 other = LangC_EvalPreprocessorExprBinary(pp, lex, level + 1);
+				int32 other = LangC_EvalPreprocessorExprBinary(ctx, lex, level + 1);
 				
 				right = LangC_EvalPreprocessorExprOp(lookahead, right, other);
 			}
@@ -860,13 +820,13 @@ LangC_EvalPreprocessorExprBinary(LangC_Preprocessor* pp, LangC_Lexer* lex, int32
 }
 
 internal int32
-LangC_EvalPreprocessorExpr(LangC_Preprocessor* pp, LangC_Lexer* lex)
+LangC_EvalPreprocessorExpr(LangC_Context* ctx, LangC_Lexer* lex)
 {
-	return LangC_EvalPreprocessorExprBinary(pp, lex, 0);
+	return LangC_EvalPreprocessorExprBinary(ctx, lex, 0);
 }
 
 internal void
-LangC_IgnoreUntilEndOfIf(LangC_Preprocessor* pp, LangC_Lexer* lex, bool32 already_matched)
+LangC_IgnoreUntilEndOfIf(LangC_Context* ctx, LangC_Lexer* lex, bool32 already_matched)
 {
 	int32 nesting = 1;
 	
@@ -889,14 +849,14 @@ LangC_IgnoreUntilEndOfIf(LangC_Preprocessor* pp, LangC_Lexer* lex, bool32 alread
 							(MatchCString("elifndef", directive.data, directive.size) && (not = true)))
 						{
 							LangC_NextToken(lex);
-							LangC_PreprocessIfDef(pp, lex, not);
+							LangC_PreprocessIfDef(ctx, lex, not);
 							
 							goto out_of_the_loop;
 						}
 						else if (MatchCString("elif", directive.data, directive.size))
 						{
 							LangC_NextToken(lex);
-							LangC_PreprocessIf(pp, lex);
+							LangC_PreprocessIf(ctx, lex);
 							
 							goto out_of_the_loop;
 						}
@@ -934,40 +894,40 @@ LangC_IgnoreUntilEndOfIf(LangC_Preprocessor* pp, LangC_Lexer* lex, bool32 alread
 	}
 	
 	out_of_the_loop:;
-	LangC_TracePreprocessor(pp, lex, 0);
+	LangC_TracePreprocessor(ctx, lex, 0);
 }
 
 internal void
-LangC_PreprocessIfDef(LangC_Preprocessor* pp, LangC_Lexer* lex, bool32 not)
+LangC_PreprocessIfDef(LangC_Context* ctx, LangC_Lexer* lex, bool32 not)
 {
 	bool32 result = false;
 	
 	if (LangC_AssertToken(lex, LangC_TokenKind_Identifier))
 	{
 		String name = lex->token.value_ident;
-		result = (LangC_FindMacro(pp, name, 2) != NULL) ^ not;
+		result = (LangC_FindMacro(ctx, name, 2) != NULL) ^ not;
 	}
 	
 	if (!result)
 	{
 		LangC_IgnoreUntilNewline(lex);
-		LangC_IgnoreUntilEndOfIf(pp, lex, false);
+		LangC_IgnoreUntilEndOfIf(ctx, lex, false);
 	}
 }
 
 internal void
-LangC_PreprocessIf(LangC_Preprocessor* pp, LangC_Lexer* lex)
+LangC_PreprocessIf(LangC_Context* ctx, LangC_Lexer* lex)
 {
-	int32 result = LangC_EvalPreprocessorExpr(pp, lex);
+	int32 result = LangC_EvalPreprocessorExpr(ctx, lex);
 	
 	if (result == 0)
 	{
-		LangC_IgnoreUntilEndOfIf(pp, lex, false);
+		LangC_IgnoreUntilEndOfIf(ctx, lex, false);
 	}
 }
 
 internal void
-LangC_PreprocessInclude(LangC_Preprocessor* pp, LangC_Lexer* lex)
+LangC_PreprocessInclude(LangC_Context* ctx, LangC_Lexer* lex)
 {
 	String path;
 	bool32 relative;
@@ -1010,11 +970,11 @@ LangC_PreprocessInclude(LangC_Preprocessor* pp, LangC_Lexer* lex)
 	}
 	
 	String fullpath;
-	const char* contents = LangC_TryToLoadFile(pp, path, relative, lex->file->path, &fullpath);
+	const char* contents = LangC_TryToLoadFile(ctx, path, relative, lex->file->path, &fullpath);
 	if (contents)
 	{
-		LangC_Preprocess2(pp, fullpath, contents, lex);
-		LangC_TracePreprocessor(pp, lex, 2);
+		LangC_Preprocess2(ctx, fullpath, contents, lex);
+		LangC_TracePreprocessor(ctx, lex, 2);
 	}
 	else
 	{
@@ -1023,40 +983,41 @@ LangC_PreprocessInclude(LangC_Preprocessor* pp, LangC_Lexer* lex)
 }
 
 internal void
-LangC_GeneratePlainPragma(LangC_Preprocessor* pp, const char* begin, const char* end)
+LangC_GeneratePlainPragma(LangC_Context* ctx, const char* begin, const char* end)
 {
-	Arena_Printf(pp->buf, "_Pragma(\"");
+	Arena_Printf(ctx->persistent_arena, "_Pragma(\"");
 	const char* p = begin;
 	
 	for (; p != end; ++p)
 	{
 		if (*p == '"')
 		{
-			Arena_Printf(pp->buf, "%.*s\\\"", p - begin, begin);
+			Arena_Printf(ctx->persistent_arena, "%.*s\\\"", p - begin, begin);
 			begin = p + 1;
 		}
 		else if (*p == '\\')
 		{
-			Arena_Printf(pp->buf, "%.*s\\\\", p - begin, begin);
+			Arena_Printf(ctx->persistent_arena, "%.*s\\\\", p - begin, begin);
 			begin = p + 1;
 		}
 	}
 	
-	Arena_Printf(pp->buf, "%.*s\")", p - begin, begin);
+	Arena_Printf(ctx->persistent_arena, "%.*s\")", p - begin, begin);
 }
 
 internal void
-LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC_Lexer* from)
+LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lexer* from)
 {
 	LangC_Lexer* lex = &(LangC_Lexer) {
 		.preprocessor = true,
 		.file = from ? from->file : NULL,
+		.ctx = ctx,
 	};
 	
-	LangC_SetupLexer(lex, source, pp->scratch_arena);
+	LangC_SetupLexer(lex, source, ctx->stage_arena);
 	LangC_PushLexerFile(lex, path, from);
 	
-	LangC_TracePreprocessor(pp, lex, 1);
+	LangC_TracePreprocessor(ctx, lex, 1);
 	
 	LangC_NextToken(lex);
 	
@@ -1088,18 +1049,18 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 				if (MatchCString("include", directive.data, directive.size))
 				{
 					LangC_NextToken(lex);
-					LangC_PreprocessInclude(pp, lex);
+					LangC_PreprocessInclude(ctx, lex);
 				}
 				else if (MatchCString("ifdef", directive.data, directive.size) ||
 						 (not = MatchCString("ifndef", directive.data, directive.size)))
 				{
 					LangC_NextToken(lex);
-					LangC_PreprocessIfDef(pp, lex, not);
+					LangC_PreprocessIfDef(ctx, lex, not);
 				}
 				else if (MatchCString("if", directive.data, directive.size))
 				{
 					LangC_NextToken(lex);
-					LangC_PreprocessIf(pp, lex);
+					LangC_PreprocessIf(ctx, lex);
 				}
 				else if (MatchCString("elif", directive.data, directive.size) ||
 						 MatchCString("elifdef", directive.data, directive.size) ||
@@ -1107,7 +1068,7 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 						 MatchCString("else", directive.data, directive.size))
 				{
 					LangC_NextToken(lex);
-					LangC_IgnoreUntilEndOfIf(pp, lex, true);
+					LangC_IgnoreUntilEndOfIf(ctx, lex, true);
 				}
 				else if (MatchCString("endif", directive.data, directive.size))
 				{
@@ -1123,7 +1084,7 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 						line = lex->token.value_int;
 					
 					lex->line = line-1; // NOTE(ljre): :P
-					LangC_TracePreprocessor(pp, lex, 0);
+					LangC_TracePreprocessor(ctx, lex, 0);
 				}
 				else if (MatchCString("define", directive.data, directive.size))
 				{
@@ -1142,7 +1103,7 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 							.data = def,
 						};
 						
-						LangC_DefineMacro(pp, macro_def);
+						LangC_DefineMacro(ctx, macro_def);
 					}
 				}
 				else if (MatchCString("undef", directive.data, directive.size))
@@ -1151,7 +1112,7 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 					
 					if (LangC_AssertToken(lex, LangC_TokenKind_Identifier))
 					{
-						LangC_UndefineMacro(pp, lex->token.value_ident);
+						LangC_UndefineMacro(ctx, lex->token.value_ident);
 					}
 				}
 				else if (MatchCString("error", directive.data, directive.size))
@@ -1193,12 +1154,12 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 					if (lex->token.kind == LangC_TokenKind_Identifier &&
 						MatchCString("once", lex->token.value_ident.data, lex->token.value_ident.size))
 					{
-						LangC_PragmaOncePPFile(pp, path);
+						LangC_PragmaOncePPFile(ctx, path);
 					}
 					else
 					{
 						lex->head = end;
-						LangC_GeneratePlainPragma(pp, begin, end);
+						LangC_GeneratePlainPragma(ctx, begin, end);
 					}
 				}
 				else
@@ -1208,7 +1169,7 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 				
 				LangC_IgnoreUntilNewline(lex);
 				LangC_NextToken(lex);
-				Arena_PushMemory(pp->buf, 1, "\n");
+				Arena_PushMemory(ctx->persistent_arena, 1, "\n");
 			} break;
 			
 			case LangC_TokenKind_Identifier:
@@ -1219,21 +1180,21 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 				
 				if (LangC_PeekIncomingToken(lex).kind == LangC_TokenKind_LeftParen)
 				{
-					macro = LangC_FindMacro(pp, ident, 3);
+					macro = LangC_FindMacro(ctx, ident, 3);
 				}
 				else
 				{
-					macro = LangC_FindMacro(pp, ident, 0);
+					macro = LangC_FindMacro(ctx, ident, 0);
 				}
 				
 				if (macro)
 				{
-					LangC_ExpandMacro(pp, macro, lex, leading_spaces);
+					LangC_ExpandMacro(ctx, macro, lex, leading_spaces);
 				}
 				else
 				{
-					Arena_PushMemory(pp->buf, ident.size, ident.data);
-					Arena_PushMemory(pp->buf, leading_spaces.size, leading_spaces.data);
+					Arena_PushMemory(ctx->persistent_arena, ident.size, ident.data);
+					Arena_PushMemory(ctx->persistent_arena, leading_spaces.size, leading_spaces.data);
 					LangC_NextToken(lex);
 				}
 				
@@ -1250,8 +1211,8 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 					previous_was_newline = true;
 				}
 				
-				Arena_PushMemory(pp->buf, StrFmt(lex->token.as_string));
-				Arena_PushMemory(pp->buf, StrFmt(lex->token.leading_spaces));
+				Arena_PushMemory(ctx->persistent_arena, StrFmt(lex->token.as_string));
+				Arena_PushMemory(ctx->persistent_arena, StrFmt(lex->token.leading_spaces));
 				LangC_NextToken(lex);
 			} break;
 		}
@@ -1260,61 +1221,54 @@ LangC_Preprocess2(LangC_Preprocessor* pp, String path, const char* source, LangC
 	// NOTE(ljre): Done preprocessing this file!
 }
 
-internal const char*
-LangC_Preprocess(String path, LangC_CompilerOptions* options, Arena* scratch_arena)
+internal bool32
+LangC_Preprocess(LangC_Context* ctx, String path)
 {
-	LangC_Preprocessor pp = {
-		.options = options,
-		.scratch_arena = scratch_arena,
-	};
-	
-	// NOTE(ljre): Yeah, projects that generate TUs bigger than 2GiBs after pp are going to fail :P
-	pp.buf = Arena_Create(Gigabytes(2));
-	
-	LangC_DefineMacro(&pp, Str("__STDC__ 1"));
-	LangC_DefineMacro(&pp, Str("__STDC_HOSTED__ 1"));
-	LangC_DefineMacro(&pp, Str("__STDC_VERSION__ 199901L"));
-	LangC_DefineMacro(&pp, Str("__x86_64 1"));
-	LangC_DefineMacro(&pp, Str("_WIN32 1"));
-	LangC_DefineMacro(&pp, Str("_WIN64 1"));
-	LangC_DefineMacro(&pp, Str("__OCC__ 1"));
-	LangC_DefineMacro(&pp, Str("__int64 long long"));
-	LangC_DefineMacro(&pp, Str("__int32 int"));
-	LangC_DefineMacro(&pp, Str("__int16 short"));
-	LangC_DefineMacro(&pp, Str("__int8 char"));
-	LangC_DefineMacro(&pp, Str("__inline inline"));
-	LangC_DefineMacro(&pp, Str("__inline__ inline"));
-	LangC_DefineMacro(&pp, Str("__forceinline inline"));
-	LangC_DefineMacro(&pp, Str("__restrict restrict"));
-	LangC_DefineMacro(&pp, Str("__restrict__ restrict"));
-	LangC_DefineMacro(&pp, Str("__const const"));
-	LangC_DefineMacro(&pp, Str("__const__ const"));
-	LangC_DefineMacro(&pp, Str("__volatile volatile"));
-	LangC_DefineMacro(&pp, Str("__volatile__ volatile"));
-	LangC_DefineMacro(&pp, Str("__attribute(...)"));
-	LangC_DefineMacro(&pp, Str("__attribute__(...)"));
-	LangC_DefineMacro(&pp, Str("__declspec(...)"));
-	LangC_DefineMacro(&pp, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"));
-	LangC_DefineMacro(&pp, Str("__builtin_va_list void*"));
-	LangC_DefineMacro(&pp, Str("__cdecl"));
-	LangC_DefineMacro(&pp, Str("__stdcall"));
-	LangC_DefineMacro(&pp, Str("__vectorcall"));
-	LangC_DefineMacro(&pp, Str("__fastcall"));
+	LangC_DefineMacro(ctx, Str("__STDC__ 1"));
+	LangC_DefineMacro(ctx, Str("__STDC_HOSTED__ 1"));
+	LangC_DefineMacro(ctx, Str("__STDC_VERSION__ 199901L"));
+	LangC_DefineMacro(ctx, Str("__x86_64 1"));
+	LangC_DefineMacro(ctx, Str("_WIN32 1"));
+	LangC_DefineMacro(ctx, Str("_WIN64 1"));
+	LangC_DefineMacro(ctx, Str("__OCC__ 1"));
+	LangC_DefineMacro(ctx, Str("__int64 long long"));
+	LangC_DefineMacro(ctx, Str("__int32 int"));
+	LangC_DefineMacro(ctx, Str("__int16 short"));
+	LangC_DefineMacro(ctx, Str("__int8 char"));
+	LangC_DefineMacro(ctx, Str("__inline inline"));
+	LangC_DefineMacro(ctx, Str("__inline__ inline"));
+	LangC_DefineMacro(ctx, Str("__forceinline inline"));
+	LangC_DefineMacro(ctx, Str("__restrict restrict"));
+	LangC_DefineMacro(ctx, Str("__restrict__ restrict"));
+	LangC_DefineMacro(ctx, Str("__const const"));
+	LangC_DefineMacro(ctx, Str("__const__ const"));
+	LangC_DefineMacro(ctx, Str("__volatile volatile"));
+	LangC_DefineMacro(ctx, Str("__volatile__ volatile"));
+	LangC_DefineMacro(ctx, Str("__attribute(...)"));
+	LangC_DefineMacro(ctx, Str("__attribute__(...)"));
+	LangC_DefineMacro(ctx, Str("__declspec(...)"));
+	LangC_DefineMacro(ctx, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"));
+	LangC_DefineMacro(ctx, Str("__builtin_va_list void*"));
+	LangC_DefineMacro(ctx, Str("__cdecl"));
+	LangC_DefineMacro(ctx, Str("__stdcall"));
+	LangC_DefineMacro(ctx, Str("__vectorcall"));
+	LangC_DefineMacro(ctx, Str("__fastcall"));
 	
 	// NOTE(ljre): Those macros are handled internally, but a definition is still needed.
-	LangC_DefineMacro(&pp, Str("__LINE__"));
-	LangC_DefineMacro(&pp, Str("__FILE__"));
+	LangC_DefineMacro(ctx, Str("__LINE__"));
+	LangC_DefineMacro(ctx, Str("__FILE__"));
 	
 	String fullpath;
-	const char* source = LangC_TryToLoadFile(&pp, path, true, StrNull, &fullpath);
+	ctx->source = LangC_TryToLoadFile(ctx, path, true, StrNull, &fullpath);
+	ctx->pre_source = Arena_End(ctx->persistent_arena);
 	
-	if (source)
-		LangC_Preprocess2(&pp, fullpath, source, NULL);
+	if (ctx->source)
+		LangC_Preprocess2(ctx, fullpath, ctx->source, NULL);
 	else
 	{
 		Print("error: could not open input file '%.*s'.\n", StrFmt(path));
 		++LangC_error_count;
 	}
 	
-	return (const char*)pp.buf->memory;
+	return LangC_error_count == 0;
 }

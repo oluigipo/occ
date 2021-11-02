@@ -1,6 +1,15 @@
 #ifndef LANG_C_DEFINITIONS_H
 #define LANG_C_DEFINITIONS_H
 
+// NOTE(ljre): Forward decls
+struct LangC_Context typedef LangC_Context;
+struct LangC_OperatorPrecedence typedef LangC_OperatorPrecedence;
+struct LangC_TokenList typedef LangC_TokenList;
+struct LangC_LexerFile typedef LangC_LexerFile;
+struct LangC_SymbolStack typedef LangC_SymbolStack;
+struct LangC_Symbol typedef LangC_Symbol;
+struct LangC_Node typedef LangC_Node;
+
 enum LangC_TokenKind
 {
 	LangC_TokenKind_Eof = 0,
@@ -236,7 +245,6 @@ internal const char* LangC_token_str_table[LangC_TokenKind__Count] = {
 	[LangC_TokenKind_Hashtag] = "#",
 };
 
-struct LangC_OperatorPrecedence typedef LangC_OperatorPrecedence;
 struct LangC_OperatorPrecedence
 {
 	// from lower to higher
@@ -305,14 +313,12 @@ struct LangC_Token
 }
 typedef LangC_Token;
 
-struct LangC_TokenList typedef LangC_TokenList;
 struct LangC_TokenList
 {
 	LangC_TokenList* next;
 	LangC_Token token;
 };
 
-struct LangC_LexerFile typedef LangC_LexerFile;
 struct LangC_LexerFile
 {
 	String path;
@@ -326,6 +332,10 @@ struct LangC_Lexer
 	LangC_Token token;
 	LangC_LexerFile* file;
 	Arena* arena;
+	
+	// NOTE(ljre): The lexer is special because we need multiple of those to run within a single context.
+	//             It can also be NULL.
+	LangC_Context* ctx;
 	
 	LangC_TokenList* waiting_token;
 	LangC_TokenList* last_waiting_token;
@@ -350,6 +360,7 @@ enum LangC_NodeKind
 	LangC_NodeKind_FunctionType, // flags = LangC_Node_FunctionType_*
 	LangC_NodeKind_PointerType, // flags = 
 	LangC_NodeKind_ArrayType, // flags = 
+	LangC_NodeKind_VariableLengthArrayType, // flags = 
 	LangC_NodeKind_Ident,
 	LangC_NodeKind_Decl,
 	LangC_NodeKind_EmptyStmt,
@@ -393,8 +404,9 @@ enum
 	LangC_Node_Auto = 1 << 24,
 	LangC_Node_Typedef = 1 << 23,
 	LangC_Node_Inline = 1 << 22,
+	LangC_Node_Implicit = 1 << 21,
 	
-	LangC_Node_LowerBits = (1 << 22) - 1,
+	LangC_Node_LowerBits = (1 << 21) - 1,
 };
 
 enum
@@ -405,6 +417,7 @@ enum
 enum
 {
 	LangC_Node_Attribute_Packed = 1,
+	LangC_Node_Attribute_Bitfield = 2,
 };
 
 enum
@@ -500,10 +513,6 @@ enum
 	LangC_Node_InitializerEntry_Field,
 };
 
-struct LangC_SymbolStack typedef LangC_SymbolStack;
-struct LangC_Symbol typedef LangC_Symbol;
-struct LangC_Node typedef LangC_Node;
-
 struct LangC_SymbolStack
 {
 	LangC_SymbolStack* up; // NOTE(ljre): One level above
@@ -514,7 +523,10 @@ struct LangC_SymbolStack
 
 enum LangC_SymbolKind
 {
+	LangC_SymbolKind_Null = 0,
+	
 	LangC_SymbolKind_GlobalVar,
+	LangC_SymbolKind_GlobalStaticVar,
 	LangC_SymbolKind_GlobalVarDecl,
 	LangC_SymbolKind_GlobalFunction,
 	LangC_SymbolKind_GlobalFunctionDecl,
@@ -539,6 +551,7 @@ struct LangC_Symbol
 	uint64 name_hash;
 	
 	LangC_SymbolKind kind;
+	bool32 poisoned;
 	
 	union
 	{
@@ -592,6 +605,7 @@ struct LangC_Node
 	// { stmt stmt->next ... }
 	// type name[type->expr];
 	// type name = expr;
+	// type name: attributes;
 	// type name(type->params, type->params->next, ...) body
 	// sizeof expr
 	// struct name body
@@ -599,7 +613,7 @@ struct LangC_Node
 	// name: stmt
 	// case expr: stmt
 	// (type) init
-	// { .left[middle] = right, .name, expr, [middle] = right, }
+	// { .left[middle] = right, .name = expr, expr, [middle] = right, }
 	LangC_Node* init;
 	LangC_Node* iter;
 	union
@@ -620,8 +634,8 @@ struct LangC_Node
 		
 		struct
 		{
-			LangC_Node* params;
 			LangC_Node* body;
+			LangC_Node* params;
 		};
 	};
 	
@@ -637,6 +651,9 @@ struct LangC_Node
 	// NOTE(ljre): Data used after parsing stage
 	LangC_Symbol* symbol;
 	bool32 cannot_be_evaluated_at_compile_time;
+	uint64 offset; // ex: offset in struct, offset in array (index), etc.
+	uint64 length; // length of array or array initializer
+	uint64 alignment; // alignment requirements (only for types)
 };
 
 enum LangC_Warning
@@ -689,6 +706,48 @@ struct LangC_TypeNode
 	String name;
 };
 
+struct LangC_Macro typedef LangC_Macro;
+struct LangC_Macro
+{
+	LangC_Macro* next;
+	LangC_Macro* previous;
+	
+	const char* def;
+	String name;
+	bool16 is_func_like;
+	bool16 expanding;
+};
+
+struct LangC_MacroParameter
+{
+	String name;
+	const char* expands_to;
+}
+typedef LangC_MacroParameter;
+
+struct LangC_PPLoadedFile typedef LangC_PPLoadedFile;
+struct LangC_PPLoadedFile
+{
+	LangC_PPLoadedFile* next;
+	uint64 hash;
+	const char* contents;
+	bool8 relative;
+	bool8 pragma_onced;
+};
+
+struct LangC_Preprocessor
+{
+	Arena* buf;
+	Arena* scratch_arena;
+	LangC_CompilerOptions* options;
+	
+	LangC_Macro* first_macro;
+	LangC_Macro* last_macro;
+	
+	LangC_PPLoadedFile* loaded_files;
+}
+typedef LangC_Preprocessor;
+
 struct LangC_Context
 {
 	LangC_CompilerOptions* options;
@@ -696,6 +755,10 @@ struct LangC_Context
 	Arena* stage_arena; // NOTE(ljre): This arena is used for a single stage.
 	
 	LangC_Lexer lex;
+	LangC_Preprocessor pp;
+	
+	const char* source; // NOTE(ljre): source code *before* preprocessing.
+	const char* pre_source; // NOTE(ljre): source code *after* preprocessing.
 	
 	// NOTE(ljre): Those nodes live in 'stage_arena' during parsing.
 	LangC_TypeNode* first_typenode;
@@ -707,8 +770,9 @@ struct LangC_Context
 	LangC_SymbolStack* symbol_stack;
 	LangC_SymbolStack* previous_symbol_stack;
 	
-	char* nasm;
-}
-typedef LangC_Context;
+	// NOTE(ljre): Warning list
+	LangC_QueuedWarning* queued_warning;
+	LangC_QueuedWarning* last_queued_warning;
+};
 
 #endif //LANG_C_DEFINITIONS_H

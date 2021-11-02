@@ -4,12 +4,12 @@
 *    - Check for BOM at the beginning of the file;
 *    - Validate UTF-8 Codepoints;
 *    - Add more identifier-valid codepoints according to ISO 9899:1999;
+*    - Store files informations such as lines offsets and contents  in structs for warnings and errors;
 *    - Parsing standard C99 (halfway through);
 *    - Type-checking;
 *    - Code analysis for warnings:
 *        - "a<<b + 10", misleading spacing between operations;
 *        - constness;
-*        - 
 *    - Codegen with Succ3s's backend;
 *    - Flag (-I): Add include directory;
 *    - Flag (-D): Define a macro;
@@ -38,6 +38,7 @@
 *        - Extend compound literals for function objects;
 *            Example: fptr = (int(int a, int b)) { return a + b; };
 *        - (GNU) Elvis operator (a ?: b);
+*        - (GNU) Switch Ranges;
 *        - __builtin_assume(expr);
 *        - __debugbreak();
 *        - Default values for function parameters;
@@ -45,6 +46,11 @@
 *        - Optional configuration file (.ini) in the same folder as the compiler:
 *            - Defines some paths the compiler needs for includes, etc.;
 *            - Defines other programs's paths, such as linker, etc.;
+*        - One of those (last 2 requires the lexer and parser to deal with the entire file *again*):
+*            - const char* __builtin_embed(const char* path); size_t __builtin_embed_size(const char* path);
+*            - directive #embed ident "path", defines 'ident' as an 'unsigned char[]' of the file's contents;
+*            - macro __builtin_embed(path) expands to comma separated integers;
+*            - directive #embed "path", expands to { comma separated integers };
 *
 */
 
@@ -74,17 +80,27 @@ LangC_AddInputFile(StringList** first, StringList** last, String str)
 }
 
 internal void
-LangC_PushWarning(LangC_Warning warning, const char* message)
+LangC_PushWarning(LangC_Context* ctx, LangC_Warning warning, const char* message)
 {
-	LangC_last_queued_warning = LangC_last_queued_warning->next = PushMemory(sizeof(LangC_QueuedWarning));
-	LangC_last_queued_warning->warning = warning;
-	LangC_last_queued_warning->to_print = message;
+	LangC_QueuedWarning* newone = Arena_Push(ctx->persistent_arena, sizeof(LangC_QueuedWarning));
+	
+	if (!ctx->last_queued_warning)
+	{
+		ctx->queued_warning = ctx->last_queued_warning = newone;
+	}
+	else
+	{
+		ctx->last_queued_warning = ctx->last_queued_warning->next = newone;
+	}
+	
+	ctx->last_queued_warning->warning = warning;
+	ctx->last_queued_warning->to_print = message;
 }
 
 internal void
-LangC_FlushWarnings(void)
+LangC_FlushWarnings(LangC_Context* ctx)
 {
-	LangC_QueuedWarning* warning = LangC_queued_warning->next;
+	LangC_QueuedWarning* warning = ctx->queued_warning->next;
 	
 	while (warning)
 	{
@@ -92,8 +108,8 @@ LangC_FlushWarnings(void)
 		warning = warning->next;
 	}
 	
-	LangC_queued_warning->next = NULL;
-	LangC_last_queued_warning = LangC_queued_warning;
+	ctx->queued_warning->next = NULL;
+	ctx->last_queued_warning = LangC_queued_warning;
 }
 
 // NOTE(ljre): The order of the includes here matters.
@@ -109,10 +125,8 @@ internal int32
 LangC_Main(int32 argc, const char** argv)
 {
 	int32 result = 0;
-	LangC_FlushWarnings(); // init
 	
 	// TODO(ljre): cl.exe compiler driver just for testing.
-	
 	result = LangC_DefaultDriver(argc, argv);
 	
 	return result;

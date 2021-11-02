@@ -96,23 +96,26 @@ LangC_PrintIncludeStackToArena(LangC_LexerFile* file, int32 line, Arena* arena)
 internal void
 LangC_LexerWarning(LangC_Lexer* lex, LangC_Warning warning, const char* fmt, ...)
 {
-	LangC_LexerFile* file = lex->file;
-	char* buf = Arena_End(global_arena);
-	
-	Arena_PushMemory(global_arena, 1, "\n");
-	if (file->included_from)
-		LangC_PrintIncludeStackToArena(file->included_from, file->included_line, global_arena);
-	
-	Arena_Printf(global_arena, "%.*s(%i:%i): warning: ", StrFmt(file->path), lex->line, lex->col);
-	
-	va_list args;
-	va_start(args, fmt);
-	Arena_VPrintf(global_arena, fmt, args);
-	va_end(args);
-	
-	Arena_PushMemory(global_arena, 1, "");
-	
-	LangC_PushWarning(warning, buf);
+	if (lex->ctx)
+	{
+		LangC_LexerFile* file = lex->file;
+		char* buf = Arena_End(global_arena);
+		
+		Arena_PushMemory(global_arena, 1, "\n");
+		if (file->included_from)
+			LangC_PrintIncludeStackToArena(file->included_from, file->included_line, global_arena);
+		
+		Arena_Printf(global_arena, "%.*s(%i:%i): warning: ", StrFmt(file->path), lex->line, lex->col);
+		
+		va_list args;
+		va_start(args, fmt);
+		Arena_VPrintf(global_arena, fmt, args);
+		va_end(args);
+		
+		Arena_PushMemory(global_arena, 1, "");
+		
+		LangC_PushWarning(lex->ctx, warning, buf);
+	}
 }
 
 internal void
