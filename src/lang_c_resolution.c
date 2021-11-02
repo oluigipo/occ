@@ -1,21 +1,40 @@
 // NOTE(ljre): This file contains code for symbol and type resolution.
 
+internal LangC_Node LangC_basic_types_table[] = {
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Char, },
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Char | LangC_Node_BaseType_Signed, },
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Char | LangC_Node_BaseType_Unsigned, },
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Short, },
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Short | LangC_Node_BaseType_Unsigned, },
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Int, },
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Int | LangC_Node_BaseType_Unsigned, },
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Long, },
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Long | LangC_Node_BaseType_Unsigned, },
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_LongLong, },
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_LongLong | LangC_Node_BaseType_Unsigned, },
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Float, },
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Double, },
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_LongLong | LangC_Node_BaseType_Unsigned, },
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Void, },
+};
+
 #define LangC_INVALID (-2)
-#define LangC_CHAR ((LangC_Node*)1)
-#define LangC_SCHAR ((LangC_Node*)2)
-#define LangC_UCHAR ((LangC_Node*)3)
-#define LangC_SHORT ((LangC_Node*)4)
-#define LangC_USHORT ((LangC_Node*)5)
-#define LangC_INT ((LangC_Node*)6)
-#define LangC_UINT ((LangC_Node*)7)
-#define LangC_LINT ((LangC_Node*)8)
-#define LangC_LUINT ((LangC_Node*)9)
-#define LangC_LLINT ((LangC_Node*)10)
-#define LangC_LLUINT ((LangC_Node*)11)
-#define LangC_FLOAT ((LangC_Node*)12)
-#define LangC_DOUBLE ((LangC_Node*)13)
-#define LangC_VOID ((LangC_Node*)14)
-#define LangC_IsSimpleType(node) ((node) && (node) <= LangC_VOID)
+#define LangC_CHAR (&LangC_basic_types_table[0])
+#define LangC_SCHAR (&LangC_basic_types_table[1])
+#define LangC_UCHAR (&LangC_basic_types_table[2])
+#define LangC_SHORT (&LangC_basic_types_table[3])
+#define LangC_USHORT (&LangC_basic_types_table[4])
+#define LangC_INT (&LangC_basic_types_table[5])
+#define LangC_UINT (&LangC_basic_types_table[6])
+#define LangC_LINT (&LangC_basic_types_table[7])
+#define LangC_LUINT (&LangC_basic_types_table[8])
+#define LangC_LLINT (&LangC_basic_types_table[9])
+#define LangC_LLUINT (&LangC_basic_types_table[10])
+#define LangC_FLOAT (&LangC_basic_types_table[11])
+#define LangC_DOUBLE (&LangC_basic_types_table[12])
+#define LangC_SIZE_T (&LangC_basic_types_table[13])
+#define LangC_VOID (&LangC_basic_types_table[14])
+#define LangC_IsSimpleType(node) ((node) && (node) >= LangC_CHAR && (node) <= LangC_VOID)
 #define LangC_IsStructType(node) ((node) && (node)->kind == LangC_NodeKind_BaseType && ((node)->flags & LangC_Node_BaseType_Struct))
 #define LangC_IsUnionType(node) ((node) && (node)->kind == LangC_NodeKind_BaseType && ((node)->flags & LangC_Node_BaseType_Union))
 
@@ -170,9 +189,59 @@ LangC_CStringFromType(LangC_Context* ctx, LangC_Node* type)
 	return "";
 }
 
+internal int32
+LangC_NodeCount(LangC_Node* node)
+{
+	int32 count = 0;
+	
+	while (node)
+	{
+		++count;
+		node = node->next;
+	}
+	
+	return count;
+}
+
+internal bool32
+LangC_IsNumericType(LangC_Context* ctx, LangC_Node* type)
+{
+	// TODO(ljre)
+	
+	return true;
+}
+
+internal uint64
+LangC_Sizeof(LangC_Context* ctx, LangC_Node* type)
+{
+	// TODO(ljre)
+	
+	return 8;
+}
+
+internal bool32
+LangC_IsIncompleteType(LangC_Context* ctx, LangC_Node* type)
+{
+	type = LangC_ResolveType(ctx, type);
+	
+	if (type->kind == LangC_NodeKind_BaseType)
+	{
+		if (type->flags & LangC_Node_BaseType_Void)
+			return true;
+		
+		if (type->flags & LangC_Node_BaseType_Struct)
+			return LangC_FindSymbol(ctx, type->name, LangC_SymbolKind_Struct) != NULL;
+		
+		if (type->flags & LangC_Node_BaseType_Union)
+			return LangC_FindSymbol(ctx, type->name, LangC_SymbolKind_Union) != NULL;
+	}
+	
+	return false;
+}
+
 // NOTE(ljre): Compares two types.
 //             Returns 0 if both are the same type, 1 if 'left' is "bigger" than 'right', -1 if
-//             'right' is "bigger" than 'left', and -2 if both types are incompatible.
+//             'right' is "bigger" than 'left', and -2 (aka LangC_INVALID) if both types are incompatible.
 internal int32
 LangC_CompareTypes(LangC_Context* ctx, LangC_Node* left, LangC_Node* right)
 {
@@ -230,6 +299,7 @@ LangC_TryToEval(LangC_Context* ctx, LangC_Node* expr)
 	if (expr->cannot_be_evaluated_at_compile_time)
 		return;
 	
+	expr->cannot_be_evaluated_at_compile_time = true;
 	// TODO
 }
 
@@ -278,16 +348,232 @@ LangC_DecayExpr(LangC_Context* ctx, LangC_Node* expr)
 	return result;
 }
 
-internal void
+internal LangC_Node*
 LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 {
 	switch (expr->kind)
 	{
 		case LangC_NodeKind_Expr:
 		{
-			switch (expr->flags & LangC_Node_LowerBits)
+			uint64 low = (expr->flags & LangC_Node_LowerBits);
+			
+			if (low >= LangC_Node_Expr__FirstSpecial)
 			{
+				switch (low)
+				{
+					case LangC_Node_Expr_Call:
+					{
+						expr->left = LangC_ResolveExpr(ctx, expr->left);
+						LangC_Node* functype = expr->left->type;
+						
+						if (functype->kind == LangC_NodeKind_PointerType)
+							functype = functype->type;
+						
+						if (functype->kind != LangC_NodeKind_FunctionType)
+						{
+							LangC_NodeError(ctx, expr->left, "this is not a function.");
+						}
+						else
+						{
+							LangC_Node* funcargs = functype->params;
+							
+							for (LangC_Node** arg = &expr->right; *arg; arg = &(*arg)->next, funcargs = funcargs->next)
+							{
+								if (!funcargs)
+								{
+									LangC_NodeError(ctx, *arg, "excessive number of arguments being passed to function.");
+									break;
+								}
+								
+								*arg = LangC_ResolveExpr(ctx, *arg);
+								
+								LangC_Node* c = LangC_AddCastToExprIfNeeded(ctx, *arg, funcargs);
+								if (!c)
+								{
+									LangC_NodeError(ctx, *arg, "cannot convert from type '%s' to '%s' when passing argument to function.",
+													LangC_CStringFromType(ctx, (*arg)->type),
+													LangC_CStringFromType(ctx, funcargs));
+								}
+								else
+								{
+									*arg = c;
+								}
+							}
+							
+							if (funcargs)
+							{
+								LangC_NodeError(ctx, expr, "missing %i arguments when calling function.", LangC_NodeCount(expr->right));
+							}
+							
+							expr->type = functype->type;
+						}
+					} break;
+					
+					case LangC_Node_Expr_Index:
+					{
+						expr->left = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->left));
+						expr->right = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->right));
+						
+						if (!LangC_IsNumericType(ctx, expr->left->type))
+						{
+							LangC_NodeError(ctx, expr->left, "expected numeric type when indexing.");
+						}
+						else if (!LangC_IsNumericType(ctx, expr->right->type))
+						{
+							LangC_NodeError(ctx, expr->right, "expected numeric type when indexing.");
+						}
+						else
+						{
+							int32 cmp = LangC_CompareTypes(ctx, expr->left->type, expr->right->type);
+							
+							// NOTE(ljre): Swap, make sure pointer is 'expr->left'.
+							if (cmp <= 0)
+							{
+								LangC_Node* temp = expr->left;
+								expr->left = expr->right;
+								expr->right = temp;
+							}
+							
+							if (expr->left->type->kind != LangC_NodeKind_PointerType)
+							{
+								LangC_NodeError(ctx, expr, "expected a pointer type when indexing.");
+							}
+							else if (expr->right->type->kind == LangC_NodeKind_PointerType)
+							{
+								// TODO(ljre): maybe void* + T*?
+							}
+							else if (LangC_IsIncompleteType(ctx, expr->left->type->type))
+							{
+								LangC_NodeError(ctx, expr, "cannot deref pointer to incomplete type.");
+							}
+							else
+							{
+								expr->type = expr->left->type->type;
+							}
+						}
+					} break;
+					
+					case LangC_Node_Expr_Cast:
+					{
+						expr->expr = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->expr));
+						int32 cmp = LangC_CompareTypes(ctx, expr->expr->type, expr->type);
+						
+						if (cmp == LangC_INVALID)
+						{
+							LangC_NodeError(ctx, expr, "cannot convert from type '%s' to '%s'.",
+											LangC_CStringFromType(ctx, expr->expr->type),
+											LangC_CStringFromType(ctx, expr->type));
+						}
+					} break;
+					
+					case LangC_Node_Expr_Ternary:
+					{
+						expr->left = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->left));
+						expr->middle = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->middle));
+						expr->right = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->right));
+						
+						LangC_Node* c = LangC_AddCastToExprIfNeeded(ctx, expr->left, LangC_INT);
+						if (!c)
+						{
+							LangC_NodeError(ctx, expr->left, "condition cannot be converted to an int.");
+						}
+						
+						int32 cmp = LangC_CompareTypes(ctx, expr->middle->type, expr->right->type);
+						if (cmp == LangC_INVALID)
+						{
+							LangC_NodeError(ctx, expr, "both sides of ternary operator are incompatible.");
+						}
+						else if (cmp < 0)
+						{
+							expr->type = expr->middle->type;
+						}
+						else // if (cmp > 0 || cmp == 0)
+						{
+							expr->type = expr->right->type;
+						}
+					} break;
+					
+					case LangC_Node_Expr_CompoundLiteral:
+					{
+						// TODO(ljre)
+					} break;
+					
+					case LangC_Node_Expr_Initializer:
+					{
+						// TODO(ljre)
+					} break;
+					
+					case LangC_Node_Expr_Access:
+					{
+						// TODO(ljre)
+					} break;
+					
+					case LangC_Node_Expr_DerefAccess:
+					{
+						// TODO(ljre)
+					} break;
+					
+					default: Unreachable(); break;
+				}
+			}
+			else if (low >= LangC_Node_Expr__FirstBinary)
+			{
+				expr->left = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->left));
+				expr->right = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->right));
 				
+				switch (low)
+				{
+					case LangC_Node_Expr_Comma:
+					{
+						expr->type = expr->right->type;
+					} break;
+					
+					// TODO(ljre): All other binary exprs
+					
+					default: Unreachable(); break;
+				}
+			}
+			else if (low >= LangC_Node_Expr__FirstUnary)
+			{
+				expr->expr = LangC_ResolveExpr(ctx, expr->expr);
+				
+				switch (low)
+				{
+					case LangC_Node_Expr_Ref:
+					{
+						expr->type = LangC_CreateNodeFrom(ctx, expr, LangC_NodeKind_PointerType);
+						expr->type->type = expr->expr->type;
+						
+						if (0)
+						{
+							case LangC_Node_Expr_PrefixInc:
+							case LangC_Node_Expr_PrefixDec:
+							case LangC_Node_Expr_PostfixInc:
+							case LangC_Node_Expr_PostfixDec:
+							
+							expr->type = expr->expr->type;
+							
+							// TODO(ljre): Check if this is needed.
+							//LangC_PromoteToAtLeast(expr, LangC_INT);
+							
+							if (!LangC_IsNumericType(ctx, expr))
+							{
+								LangC_NodeError(ctx, expr, "++ and -- operators expects operand of numeric value.");
+							}
+						}
+						
+						if (!LangC_IsExprLValue(ctx, expr->expr))
+						{
+							LangC_NodeError(ctx, expr->expr, "operand is not a lvalue.");
+						}
+					} break;
+					
+					case LangC_Node_Expr_Sizeof:
+					{
+						expr->value_uint = LangC_Sizeof(ctx, expr);
+						expr->type = LangC_SIZE_T;
+					} break;
+				}
 			}
 		} break;
 		
@@ -322,13 +608,15 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 		
 		default: Unreachable(); break;
 	}
+	
+	return expr;
 }
 
 internal LangC_Node*
 LangC_ResolveExprOfType(LangC_Context* ctx, LangC_Node* expr, LangC_Node* type)
 {
-	LangC_ResolveExpr(ctx, expr);
-	
+	expr = LangC_ResolveExpr(ctx, expr);
+	expr = LangC_DecayExpr(ctx, expr);
 	LangC_Node* result = LangC_AddCastToExprIfNeeded(ctx, expr, type);
 	if (!result)
 	{
@@ -362,7 +650,7 @@ LangC_ResolveDecl(LangC_Context* ctx, LangC_Node* decl)
 			{
 				if (!aliased)
 				{
-					LangC_ResolveExpr(ctx, decl->type->expr);
+					decl->type->expr = LangC_ResolveExpr(ctx, decl->type->expr);
 					LangC_TryToEval(ctx, decl->type->expr);
 				}
 				
@@ -376,7 +664,7 @@ LangC_ResolveDecl(LangC_Context* ctx, LangC_Node* decl)
 			
 			if (decl->expr)
 			{
-				LangC_ResolveExpr(ctx, decl->expr);
+				decl->expr = LangC_ResolveExpr(ctx, decl->expr);
 				
 				if (!decl->type->expr)
 				{
@@ -448,7 +736,7 @@ LangC_ResolveDecl(LangC_Context* ctx, LangC_Node* decl)
 		{
 			if (decl->expr)
 			{
-				LangC_ResolveExpr(ctx, decl->expr);
+				decl->expr = LangC_ResolveExpr(ctx, decl->expr);
 				
 				LangC_Node* newone = LangC_AddCastToExprIfNeeded(ctx, decl->expr, decl->type);
 				if (!newone)
@@ -497,7 +785,7 @@ LangC_ResolveStmt(LangC_Context* ctx, LangC_Node* stmt)
 		case LangC_NodeKind_ReturnStmt:
 		case LangC_NodeKind_Expr:
 		{
-			LangC_ResolveExpr(ctx, stmt->expr);
+			stmt->expr = LangC_ResolveExpr(ctx, stmt->expr);
 		} break;
 		
 		case LangC_NodeKind_ForStmt:
@@ -507,11 +795,11 @@ LangC_ResolveStmt(LangC_Context* ctx, LangC_Node* stmt)
 				if (stmt->init->kind == LangC_NodeKind_Decl)
 					LangC_ResolveDecl(ctx, stmt->init);
 				else
-					LangC_ResolveExpr(ctx, stmt->init);
+					stmt->init = LangC_ResolveExpr(ctx, stmt->init);
 			}
 			
 			if (stmt->iter)
-				LangC_ResolveExpr(ctx, stmt->iter);
+				stmt->iter = LangC_ResolveExpr(ctx, stmt->iter);
 		} /* fallthrough */
 		
 		case LangC_NodeKind_SwitchStmt:
@@ -521,7 +809,7 @@ LangC_ResolveStmt(LangC_Context* ctx, LangC_Node* stmt)
 		{
 			// NOTE(ljre): If 'stmt->expr' is null, then the code gen shall generate an 1 constant
 			if (stmt->expr)
-				LangC_ResolveExpr(ctx, stmt->expr);
+				stmt->expr = LangC_ResolveExpr(ctx, stmt->expr);
 			
 			cast = LangC_AddCastToExprIfNeeded(ctx, stmt->expr, LangC_INT);
 			if (!cast)
@@ -549,7 +837,7 @@ LangC_ResolveStmt(LangC_Context* ctx, LangC_Node* stmt)
 		
 		case LangC_NodeKind_CaseLabel:
 		{
-			LangC_ResolveExpr(ctx, stmt->expr);
+			stmt->expr = LangC_ResolveExpr(ctx, stmt->expr);
 			
 			cast = LangC_AddCastToExprIfNeeded(ctx, stmt->expr, LangC_INT);
 			if (!cast)

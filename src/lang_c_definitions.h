@@ -499,7 +499,7 @@ enum
 	LangC_Node_Expr_Call = LangC_Node_Expr__FirstSpecial, // left(right, right->next, ...)
 	LangC_Node_Expr_Index, // left[right]
 	LangC_Node_Expr_Cast, // (type)expr
-	LangC_Node_Expr_Ternary, // condition ? branch1 : branch2
+	LangC_Node_Expr_Ternary, // left ? middle : right
 	LangC_Node_Expr_CompoundLiteral, // (type) { init, init->next, ... }
 	LangC_Node_Expr_Initializer, // { init, init->next, ... }
 	LangC_Node_Expr_Access, // expr.name
