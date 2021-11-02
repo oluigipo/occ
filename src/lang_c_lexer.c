@@ -664,6 +664,7 @@ LangC_NextToken(LangC_Lexer* lex)
 		case ':': lex->token.kind = LangC_TokenKind_Colon; ++lex->head; break;
 		case ';': lex->token.kind = LangC_TokenKind_Semicolon; ++lex->head; break;
 		case '?': lex->token.kind = LangC_TokenKind_QuestionMark; ++lex->head; break;
+		case '~': lex->token.kind = LangC_TokenKind_Not; ++lex->head; break;
 		
 		case '/':
 		{

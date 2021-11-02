@@ -16,6 +16,8 @@ struct Arena
 internal Arena*
 Arena_Create(uintsize size)
 {
+	Trace();
+	
 	size = AlignUp(size, Arena_PAGE_SIZE-1);
 	Assert(size > 0);
 	

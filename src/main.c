@@ -46,6 +46,12 @@ PushMemory(uintsize size)
 
 int main(int argc, char* argv[])
 {
+#ifdef TRACY_ENABLE
+	getchar();
+	
+	TracyCFrameMark;
+#endif
+	
 	// NOTE(ljre): Setup basic stuff
 	global_arena = Arena_Create(Gigabytes(4));
 	global_my_path = OS_GetMyPath();

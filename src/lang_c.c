@@ -82,7 +82,9 @@ LangC_AddInputFile(StringList** first, StringList** last, String str)
 internal void
 LangC_PushWarning(LangC_Context* ctx, LangC_Warning warning, const char* message)
 {
-	LangC_QueuedWarning* newone = Arena_Push(ctx->persistent_arena, sizeof(LangC_QueuedWarning));
+	Arena* arena = (ctx->use_stage_arena_for_warnings) ? ctx->stage_arena : ctx->persistent_arena;
+	
+	LangC_QueuedWarning* newone = Arena_Push(arena, sizeof(LangC_QueuedWarning));
 	
 	if (!ctx->last_queued_warning)
 	{
@@ -124,6 +126,8 @@ LangC_FlushWarnings(LangC_Context* ctx)
 internal int32
 LangC_Main(int32 argc, const char** argv)
 {
+	Trace();
+	
 	int32 result = 0;
 	
 	// TODO(ljre): cl.exe compiler driver just for testing.

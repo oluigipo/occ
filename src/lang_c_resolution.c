@@ -385,7 +385,7 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 									break;
 								}
 								
-								*arg = LangC_ResolveExpr(ctx, *arg);
+								*arg = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, *arg));
 								
 								LangC_Node* c = LangC_AddCastToExprIfNeeded(ctx, *arg, funcargs);
 								if (!c)
@@ -946,6 +946,8 @@ LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 internal bool32
 LangC_ResolveAst(LangC_Context* ctx)
 {
+	Trace();
+	
 	LangC_PushSymbolStack(ctx);
 	
 	LangC_Node* global_decl = ctx->ast;

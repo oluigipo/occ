@@ -40,6 +40,8 @@ OS_GetMyPath(void)
 internal const char*
 OS_ReadWholeFile(const char* path)
 {
+	TraceName(StrFrom(path));
+	
 	FILE* file = fopen(path, "rb");
 	if (!file)
 		return NULL;
@@ -59,6 +61,8 @@ OS_ReadWholeFile(const char* path)
 internal bool32
 OS_WriteWholeFile(const char* path, const void* data, uintsize size)
 {
+	TraceName(StrFrom(path));
+	
 	FILE* file = fopen(path, "wb");
 	if (!file)
 		return false;

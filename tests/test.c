@@ -130,7 +130,7 @@ int vfprintf(FILE* restrict stream, const char* restrict format, void* arg);
 int vfscanf(FILE* restrict stream, const char* restrict format, void* arg);
 int vprintf(const char* restrict format, void* arg);
 int vscanf(const char* restrict format, void* arg);
-int vsprintf(char* restrict s, size_t n, const char* restrict format, void* arg);
+int vsnprintf(char* restrict s, size_t n, const char* restrict format, void* arg);
 int vsprintf(char* restrict s, const char* restrict format, void* arg);
 int vsscanf(const char* restrict s, const char* restrict format, void* arg);
 

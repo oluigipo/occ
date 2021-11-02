@@ -1746,6 +1746,8 @@ LangC_ParseDeclAndSemicolonIfNeeded(LangC_Context* ctx, LangC_Node** out_last, i
 internal bool32
 LangC_ParseFile(LangC_Context* ctx)
 {
+	Trace();
+	
 	LangC_Node* first_node = NULL;
 	LangC_Node* last_node;
 	

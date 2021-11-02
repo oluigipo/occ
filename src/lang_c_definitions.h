@@ -737,10 +737,6 @@ struct LangC_PPLoadedFile
 
 struct LangC_Preprocessor
 {
-	Arena* buf;
-	Arena* scratch_arena;
-	LangC_CompilerOptions* options;
-	
 	LangC_Macro* first_macro;
 	LangC_Macro* last_macro;
 	
@@ -773,6 +769,8 @@ struct LangC_Context
 	// NOTE(ljre): Warning list
 	LangC_QueuedWarning* queued_warning;
 	LangC_QueuedWarning* last_queued_warning;
+	
+	bool8 use_stage_arena_for_warnings;
 };
 
 #endif //LANG_C_DEFINITIONS_H

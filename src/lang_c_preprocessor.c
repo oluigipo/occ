@@ -95,9 +95,9 @@ LangC_TryToLoadFile(LangC_Context* ctx, String path, bool32 relative, String inc
 		}
 	}
 	
-	for (int32 i = 0; i < pp->options->include_dirs_count; ++i)
+	for (int32 i = 0; i < ctx->options->include_dirs_count; ++i)
 	{
-		String include_dir = pp->options->include_dirs[i];
+		String include_dir = ctx->options->include_dirs[i];
 		include_dir = IgnoreNullTerminator(include_dir);
 		
 		memcpy(fullpath, include_dir.data, include_dir.size);
@@ -333,6 +333,8 @@ LangC_TracePreprocessor(LangC_Context* ctx, LangC_Lexer* lex, uint32 flags)
 internal void
 LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_lex, String leading_spaces)
 {
+	TraceName(macro->name);
+	
 	// NOTE(ljre): Handle special macros
 	if (MatchCString("__LINE__", macro->name.data, macro->name.size))
 	{
@@ -1008,6 +1010,8 @@ LangC_GeneratePlainPragma(LangC_Context* ctx, const char* begin, const char* end
 internal void
 LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lexer* from)
 {
+	TraceName(path);
+	
 	LangC_Lexer* lex = &(LangC_Lexer) {
 		.preprocessor = true,
 		.file = from ? from->file : NULL,
@@ -1224,6 +1228,8 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 internal bool32
 LangC_Preprocess(LangC_Context* ctx, String path)
 {
+	Trace();
+	
 	LangC_DefineMacro(ctx, Str("__STDC__ 1"));
 	LangC_DefineMacro(ctx, Str("__STDC_HOSTED__ 1"));
 	LangC_DefineMacro(ctx, Str("__STDC_VERSION__ 199901L"));
@@ -1261,6 +1267,7 @@ LangC_Preprocess(LangC_Context* ctx, String path)
 	String fullpath;
 	ctx->source = LangC_TryToLoadFile(ctx, path, true, StrNull, &fullpath);
 	ctx->pre_source = Arena_End(ctx->persistent_arena);
+	ctx->use_stage_arena_for_warnings = true;
 	
 	if (ctx->source)
 		LangC_Preprocess2(ctx, fullpath, ctx->source, NULL);
@@ -1269,6 +1276,8 @@ LangC_Preprocess(LangC_Context* ctx, String path)
 		Print("error: could not open input file '%.*s'.\n", StrFmt(path));
 		++LangC_error_count;
 	}
+	
+	ctx->use_stage_arena_for_warnings = false;
 	
 	return LangC_error_count == 0;
 }

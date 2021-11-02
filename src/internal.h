@@ -64,26 +64,37 @@ typedef String;
 #define Unreachable() do { Panic("\nUnreachable code was reached, at '" __FILE__ "' line " StrMacro(__LINE__) ".\n"); } while (0)
 
 // NOTE(ljre): Compiler specifics
-#ifdef _MSC_VER
-#   define Assume(x) __assume(x)
-#   define DebugBreak_() __debugbreak()
-#   define Likely(x) (x)
-#   define Unlikely(x) (x)
-#elif defined __clang__
+#ifdef __clang__
 #   define Assume(x) __builtin_assume(x)
 #   define DebugBreak_() __debugbreak()
 #   define Likely(x) __builtin_expect(!!(x), 1)
 #   define Unlikely(x) __builtin_expect((x), 0)
+#   if !defined NDEBUG && defined TRACY_ENABLE
+#       include "../../tracy/TracyC.h"
+internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
+#       define Trace() TracyCZone(_ctx __attribute((cleanup(___my_tracy_zone_end))),true); ((void)_ctx)
+#       define TraceName(x) Trace(); { String a = (x); TracyCZoneText(_ctx, a.data, a.size); }
+#   else
+#       define Trace(x) ((void)0)
+#   endif
+#elif defined _MSC_VER
+#   define Assume(x) __assume(x)
+#   define DebugBreak_() __debugbreak()
+#   define Likely(x) (x)
+#   define Unlikely(x) (x)
+#   define Trace(x) ((void)0)
 #elif defined __GNUC__
 #   define Assume(x) do { if (!(x)) __builtin_unreachable(); } while (0)
 #   define DebugBreak_() __builtin_debugtrap()
 #   define Likely(x) __builtin_expect(!!(x), 1)
 #   define Unlikely(x) __builtin_expect((x), 0)
+#   define Trace(x) ((void)0)
 #else
 #   define Assume(x) ((void)0)
 #   define DebugBreak_() ((void)0)
 #   define Likely(x) (x)
 #   define Unlikely(x) (x)
+#   define Trace(x) ((void)0)
 #endif
 
 // NOTE(ljre): Assert
