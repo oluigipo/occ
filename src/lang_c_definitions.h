@@ -652,8 +652,12 @@ struct LangC_Node
 	LangC_Symbol* symbol;
 	bool32 cannot_be_evaluated_at_compile_time;
 	uint64 offset; // ex: offset in struct, offset in array (index), etc.
-	uint64 length; // length of array or array initializer
-	uint64 alignment; // alignment requirements (only for types)
+	union
+	{
+		uint64 length; // length of array or array initializer
+		uint64 size; // size of type
+	};
+	uint64 alignment_mask; // alignment requirements (only for types)
 };
 
 enum LangC_Warning
@@ -744,6 +748,45 @@ struct LangC_Preprocessor
 }
 typedef LangC_Preprocessor;
 
+struct LangC_ABIType
+{
+	uint16 size;
+	uint8 alignment_mask;
+	bool8 unsig;
+}
+typedef LangC_ABIType;
+
+struct LangC_ABI
+{
+	union
+	{
+		struct
+		{
+			LangC_ABIType t_char;
+			LangC_ABIType t_schar;
+			LangC_ABIType t_uchar;
+			LangC_ABIType t_short;
+			LangC_ABIType t_ushort;
+			LangC_ABIType t_int;
+			LangC_ABIType t_uint;
+			LangC_ABIType t_long;
+			LangC_ABIType t_ulong;
+			LangC_ABIType t_longlong;
+			LangC_ABIType t_ulonglong;
+			LangC_ABIType t_float;
+			LangC_ABIType t_double;
+			LangC_ABIType t_ptr;
+		};
+		
+		LangC_ABIType t[14];
+	};
+	
+	uint8 char_bit;
+	int8 index_sizet;
+	int8 index_ptrdifft;
+}
+typedef LangC_ABI;
+
 struct LangC_Context
 {
 	LangC_CompilerOptions* options;
@@ -752,6 +795,7 @@ struct LangC_Context
 	
 	LangC_Lexer lex;
 	LangC_Preprocessor pp;
+	LangC_ABI* abi;
 	
 	const char* source; // NOTE(ljre): source code *before* preprocessing.
 	const char* pre_source; // NOTE(ljre): source code *after* preprocessing.

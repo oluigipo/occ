@@ -1,6 +1,5 @@
-// NOTE(ljre): This file contains code for symbol and type resolution.
-
-internal LangC_Node LangC_basic_types_table[] = {
+// NOTE(ljre): DO NOT MODIFY THESE OBJECTS. ACT AS IF THERE WAS CONST HERE.
+internal /* const */ LangC_Node LangC_basic_types_table[] = {
 	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Char, },
 	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Char | LangC_Node_BaseType_Signed, },
 	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Char | LangC_Node_BaseType_Unsigned, },
@@ -14,7 +13,7 @@ internal LangC_Node LangC_basic_types_table[] = {
 	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_LongLong | LangC_Node_BaseType_Unsigned, },
 	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Float, },
 	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Double, },
-	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_LongLong | LangC_Node_BaseType_Unsigned, },
+	{ .kind = LangC_NodeKind_PointerType, .type = &(LangC_Node) { .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Void, }, },
 	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Void, },
 };
 
@@ -32,8 +31,10 @@ internal LangC_Node LangC_basic_types_table[] = {
 #define LangC_LLUINT (&LangC_basic_types_table[10])
 #define LangC_FLOAT (&LangC_basic_types_table[11])
 #define LangC_DOUBLE (&LangC_basic_types_table[12])
-#define LangC_SIZE_T (&LangC_basic_types_table[13])
+#define LangC_PTR (&LangC_basic_types_table[13])
 #define LangC_VOID (&LangC_basic_types_table[14])
+#define LangC_SIZE_T (&LangC_basic_types_table[ctx->abi->index_sizet])
+#define LangC_PTRDIFF_T (&LangC_basic_types_table[ctx->abi->index_ptrdifft])
 #define LangC_IsSimpleType(node) ((node) && (node) >= LangC_CHAR && (node) <= LangC_VOID)
 #define LangC_IsStructType(node) ((node) && (node)->kind == LangC_NodeKind_BaseType && ((node)->flags & LangC_Node_BaseType_Struct))
 #define LangC_IsUnionType(node) ((node) && (node)->kind == LangC_NodeKind_BaseType && ((node)->flags & LangC_Node_BaseType_Union))
@@ -203,20 +204,124 @@ LangC_NodeCount(LangC_Node* node)
 	return count;
 }
 
+internal int32
+LangC_RankOfType(LangC_Context* ctx, uint64 flags)
+{
+	Assert(ArrayLength(LangC_basic_types_table) >= ArrayLength(ctx->abi->t));
+	
+	for (int32 i = 0; i < ArrayLength(ctx->abi->t); ++i)
+	{
+		const LangC_Node* node = &LangC_basic_types_table[i];
+		if ((node->flags & flags) == node->flags)
+			return i;
+	}
+	
+	return -1;
+}
+
+internal LangC_ABIType*
+LangC_GetABIType(LangC_Context* ctx, uint64 flags)
+{
+	int32 rank = LangC_RankOfType(ctx, flags);
+	if (rank == -1)
+		return NULL;
+	
+	return &ctx->abi->t[rank];
+}
+
 internal bool32
 LangC_IsNumericType(LangC_Context* ctx, LangC_Node* type)
 {
-	// TODO(ljre)
-	
-	return true;
+	// TODO(ljre): is this enough?
+	return LangC_RankOfType(ctx, type->flags) != -1;
 }
 
-internal uint64
-LangC_Sizeof(LangC_Context* ctx, LangC_Node* type)
+internal bool32
+LangC_TypeInfo(LangC_Context* ctx, const LangC_Node* type, uint64* out_size, uint64* out_alignment_mask)
 {
-	// TODO(ljre)
+	beginning:;
 	
-	return 8;
+	switch (type->kind)
+	{
+		case LangC_NodeKind_BaseType:
+		{
+			LangC_SymbolKind k = LangC_SymbolKind_Struct;
+			
+			if (type->flags & LangC_Node_BaseType_Bool)
+			{
+				*out_size = 1;
+				*out_alignment_mask = 0;
+				return true;
+			}
+			else if (type->flags & LangC_Node_BaseType_Enum)
+			{
+				*out_size = ctx->abi->t_int.size;
+				*out_alignment_mask = ctx->abi->t_int.alignment_mask;
+				return true;
+			}
+			else if (type->flags & LangC_Node_BaseType_Typename)
+			{
+				type = LangC_ResolveType(ctx, (LangC_Node*)type);
+				if (!type)
+					return false;
+				
+				goto beginning;
+			}
+			else if (type->flags & LangC_Node_BaseType_Struct ||
+					 type->flags & LangC_Node_BaseType_Union && (k = LangC_SymbolKind_Union))
+			{
+				LangC_Symbol* sym = LangC_FindSymbol(ctx, type->name, k);
+				if (!type)
+					return false;
+				
+				type = sym->type;
+				*out_size = type->size;
+				*out_alignment_mask = type->alignment_mask;
+				return true;
+			}
+			else if (type->flags & LangC_Node_BaseType_Void)
+			{
+				return false;
+			}
+			
+			LangC_ABIType* atype = LangC_GetABIType(ctx, type->flags);
+			if (atype)
+			{
+				*out_size = atype->size;
+				*out_alignment_mask = atype->alignment_mask;
+				return true;
+			}
+			
+			Unreachable();
+		} break;
+		
+		case LangC_NodeKind_ArrayType:
+		{
+			if (type->length > 0 && LangC_TypeInfo(ctx, type->type, out_size, out_alignment_mask))
+			{
+				*out_size *= type->length;
+				return true;
+			}
+			else
+			{
+				return false;
+			}
+		} break;
+		
+		case LangC_NodeKind_FunctionType:
+		{
+			return false;
+		} break;
+		
+		case LangC_NodeKind_PointerType:
+		{
+			*out_size = ctx->abi->t_ptr.size;
+			*out_alignment_mask = ctx->abi->t_ptr.alignment_mask;
+			return true;
+		} break;
+	}
+	
+	return false;
 }
 
 internal bool32
@@ -235,6 +340,8 @@ LangC_IsIncompleteType(LangC_Context* ctx, LangC_Node* type)
 		if (type->flags & LangC_Node_BaseType_Union)
 			return LangC_FindSymbol(ctx, type->name, LangC_SymbolKind_Union) != NULL;
 	}
+	else if (type->kind == LangC_NodeKind_FunctionType)
+		return true;
 	
 	return false;
 }
@@ -245,12 +352,97 @@ LangC_IsIncompleteType(LangC_Context* ctx, LangC_Node* type)
 internal int32
 LangC_CompareTypes(LangC_Context* ctx, LangC_Node* left, LangC_Node* right)
 {
+	left = LangC_ResolveType(ctx, left);
+	right = LangC_ResolveType(ctx, right);
+	
 	if (left == right)
 		return 0;
 	
-	// TODO
+	switch (left->kind)
+	{
+		case LangC_NodeKind_BaseType:
+		{
+			if (left->flags & LangC_Node_BaseType_Void && right->flags & LangC_Node_BaseType_Void)
+				return 0;
+			
+			// NOTE(ljre): Just return invalid since they are not the same definition.
+			if (left->flags & LangC_Node_BaseType_Struct ||
+				left->flags & LangC_Node_BaseType_Union)
+				return LangC_INVALID;
+			
+			int32 left_rank = LangC_RankOfType(ctx, left->flags);
+			int32 right_rank = LangC_RankOfType(ctx, left->flags);
+			
+			if (left_rank == -1 || right_rank == -1)
+				return LangC_INVALID;
+			
+			return (left_rank > right_rank) - (left_rank < right_rank);
+		} break;
+		
+		case LangC_NodeKind_PointerType:
+		{
+			if (right->kind == LangC_NodeKind_PointerType)
+			{
+				if ((right->type->kind == LangC_NodeKind_BaseType &&
+					 right->type->flags & LangC_Node_BaseType_Void) ||
+					(left->type->flags & LangC_Node_BaseType_Void))
+					return 1;
+				
+				if (LangC_CompareTypes(ctx, left->type, right->type) == 0)
+					return 0;
+				
+				return LangC_INVALID;
+			}
+			else if (right->kind == LangC_NodeKind_BaseType)
+			{
+				int32 right_rank = LangC_RankOfType(ctx, right->flags);
+				
+				if (right_rank == -1)
+					return LangC_INVALID;
+				
+				return 1;
+			}
+			else
+			{
+				return LangC_INVALID;
+			}
+		} break;
+		
+		case LangC_NodeKind_FunctionType:
+		{
+			if (right->kind != LangC_NodeKind_FunctionType)
+				return LangC_INVALID;
+			
+			LangC_Node* lparam = left->params;
+			LangC_Node* rparam = right->params;
+			
+			while (lparam && rparam)
+			{
+				if (LangC_CompareTypes(ctx, lparam->type, rparam->type) != 0)
+					return LangC_INVALID;
+				
+				lparam = lparam->next;
+				rparam = rparam->next;
+			}
+			
+			if (lparam != rparam) // NOTE(ljre): If one of them isn't NULL
+				return LangC_INVALID;
+			
+			return 0;
+		} break;
+		
+		case LangC_NodeKind_ArrayType:
+		{
+			if (right->kind != LangC_NodeKind_ArrayType ||
+				right->length != left->length ||
+				LangC_CompareTypes(ctx, left->type, right->type) != 0)
+				return LangC_INVALID;
+			
+			return 0;
+		} break;
+	}
 	
-	return 0;
+	return LangC_INVALID;
 }
 
 internal bool32
@@ -335,8 +527,7 @@ LangC_DecayExpr(LangC_Context* ctx, LangC_Node* expr)
 {
 	LangC_Node* result = expr;
 	
-	if (!LangC_IsSimpleType(expr->type) &&
-		(expr->type->kind == LangC_NodeKind_ArrayType || expr->type->kind == LangC_NodeKind_FunctionType))
+	if (expr->type->kind == LangC_NodeKind_ArrayType || expr->type->kind == LangC_NodeKind_FunctionType)
 	{
 		result = LangC_CreateNodeFrom(ctx, expr, LangC_NodeKind_Expr);
 		result->flags |= LangC_Node_Expr_Ref;
@@ -535,12 +726,12 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 			}
 			else if (low >= LangC_Node_Expr__FirstUnary)
 			{
-				expr->expr = LangC_ResolveExpr(ctx, expr->expr);
-				
 				switch (low)
 				{
 					case LangC_Node_Expr_Ref:
 					{
+						expr->expr = LangC_ResolveExpr(ctx, expr->expr);
+						
 						expr->type = LangC_CreateNodeFrom(ctx, expr, LangC_NodeKind_PointerType);
 						expr->type->type = expr->expr->type;
 						
@@ -570,8 +761,41 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 					
 					case LangC_Node_Expr_Sizeof:
 					{
-						expr->value_uint = LangC_Sizeof(ctx, expr);
-						expr->type = LangC_SIZE_T;
+						LangC_Node* type;
+						
+						if (!expr->expr->type)
+						{
+							expr->expr = LangC_ResolveExpr(ctx, expr->expr);
+							type = expr->expr->type;
+						}
+						else
+						{
+							type = expr->expr->type;
+						}
+						
+						if (type->kind == LangC_NodeKind_FunctionType)
+						{
+							LangC_NodeError(ctx, expr, "cannot take sizeof of function.");
+						}
+						else
+						{
+							uint64 size, ignored;
+							
+							if (LangC_TypeInfo(ctx, type, &size, &ignored))
+							{
+								expr->type = LangC_SIZE_T;
+								expr->value_uint = size;
+							}
+							else
+							{
+								LangC_NodeError(ctx, expr, "cannot take sizeof of incomplete type.");
+							}
+						}
+					} break;
+					
+					default:
+					{
+						expr->expr = LangC_ResolveExpr(ctx, expr->expr);
 					} break;
 				}
 			}

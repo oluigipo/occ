@@ -111,6 +111,22 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 		.options = &options,
 		.persistent_arena = Arena_Create(Gigabytes(64)),
 		.stage_arena = Arena_Create(Gigabytes(2)),
+		
+		.abi = &(LangC_ABI) {
+			.t_char = { 1, 0, true },
+			.t_schar = { 1, 0, false },
+			.t_uchar = { 1, 0, true },
+			.t_short = { 2, 1, false },
+			.t_ushort = { 2, 1, true },
+			.t_int = { 4, 3, false },
+			.t_uint = { 4, 3, true },
+			.t_long = { 4, 3, false },
+			.t_ulong = { 4, 3, true },
+			.t_longlong = { 8, 7, false },
+			.t_ulonglong = { 8, 7, true },
+			.t_double = { 8, 7, false },
+			.t_float = { 4, 3, false },
+		},
 	};
 	
 	switch (options.mode)
