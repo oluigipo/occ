@@ -303,7 +303,7 @@ LangC_TracePreprocessor(LangC_Context* ctx, LangC_Lexer* lex, uint32 flags)
 	int32 len;
 	Assert(flags < 16);
 	
-	static const char* flag_table[] = {
+	static const char* const flag_table[] = {
 		NULL,
 		"1",
 		"2",
@@ -550,10 +550,11 @@ LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_le
 			default:
 			{
 				LangC_Token tok = lex->token;
+				LangC_Token incoming = LangC_PeekIncomingToken(lex);
 				bool32 from_macro = lex->token_was_pushed;
 				LangC_Macro* to_expand;
 				
-				if (LangC_PeekIncomingToken(lex).kind == LangC_TokenKind_DoubleHashtag)
+				if (incoming.kind == LangC_TokenKind_DoubleHashtag)
 				{
 					LangC_NextToken(lex); // NOTE(ljre): Eat left side
 					LangC_NextToken(lex); // NOTE(ljre): Eat ##
@@ -581,7 +582,8 @@ LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_le
 				}
 				else if (from_macro &&
 						 tok.kind == LangC_TokenKind_Identifier &&
-						 (to_expand = LangC_FindMacro(ctx, tok.value_ident, 0)))
+						 (to_expand = LangC_FindMacro(ctx, tok.value_ident,
+													  (incoming.kind == LangC_TokenKind_LeftParen) ? 3 : 0)))
 				{
 					// NOTE(ljre): Tokens originated from parameters shall be expanded first.
 					LangC_ExpandMacro(ctx, to_expand, lex, tok.leading_spaces);
@@ -591,7 +593,6 @@ LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_le
 					LangC_NextToken(lex);
 					LangC_PushToken(parent_lex, &tok);
 				}
-				
 			} break;
 		}
 	}

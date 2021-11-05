@@ -109,7 +109,7 @@ LangC_PushWarning(LangC_Context* ctx, LangC_Warning warning, const char* message
 internal void
 LangC_FlushWarnings(LangC_Context* ctx)
 {
-	LangC_QueuedWarning* warning = ctx->queued_warning->next;
+	LangC_QueuedWarning* warning = ctx->queued_warning;
 	
 	while (warning)
 	{
@@ -117,8 +117,8 @@ LangC_FlushWarnings(LangC_Context* ctx)
 		warning = warning->next;
 	}
 	
-	ctx->queued_warning->next = NULL;
-	ctx->last_queued_warning = LangC_queued_warning;
+	ctx->queued_warning = NULL;
+	ctx->last_queued_warning = NULL;
 }
 
 // NOTE(ljre): The order of the includes here matters.
