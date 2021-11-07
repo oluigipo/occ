@@ -1156,7 +1156,7 @@ LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 				// NOTE(ljre): Global arrays definitions with implicit length shall have length of 1.
 				decl->type->length = 1;
 				
-				LangC_NodeWarning(ctx, decl->type, LangC_Warning_ImplicitLengthOf1, "global arrays definitions with implicit length have length of 1.");
+				LangC_NodeWarning(ctx, decl->type, LangC_Warning_ImplicitLengthOf1, "global arrays definitions have length of 1 when not specified.");
 			}
 		}
 		

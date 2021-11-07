@@ -106,8 +106,8 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	
 	Assert(options.input_files);
 	
-	//~ NOTE(ljre): Build
-	LangC_Context ctx = {
+	//~ NOTE(ljre): Config
+	LangC_Context* ctx = &(LangC_Context) {
 		.options = &options,
 		.persistent_arena = Arena_Create(Gigabytes(64)),
 		.stage_arena = Arena_Create(Gigabytes(2)),
@@ -133,6 +133,47 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 		},
 	};
 	
+	// NOTE(ljre): Default predefined macros.
+	LangC_DefineMacro(ctx, Str("__STDC__ 1"));
+	LangC_DefineMacro(ctx, Str("__STDC_HOSTED__ 1"));
+	LangC_DefineMacro(ctx, Str("__STDC_VERSION__ 199901L"));
+	LangC_DefineMacro(ctx, Str("__x86_64 1"));
+	LangC_DefineMacro(ctx, Str("_WIN32 1"));
+	LangC_DefineMacro(ctx, Str("_WIN64 1"));
+	LangC_DefineMacro(ctx, Str("__OCC__ 1"));
+	LangC_DefineMacro(ctx, Str("__int64 long long"));
+	LangC_DefineMacro(ctx, Str("__int32 int"));
+	LangC_DefineMacro(ctx, Str("__int16 short"));
+	LangC_DefineMacro(ctx, Str("__int8 char"));
+	LangC_DefineMacro(ctx, Str("__inline inline"));
+	LangC_DefineMacro(ctx, Str("__inline__ inline"));
+	LangC_DefineMacro(ctx, Str("__forceinline inline"));
+	LangC_DefineMacro(ctx, Str("__restrict restrict"));
+	LangC_DefineMacro(ctx, Str("__restrict__ restrict"));
+	LangC_DefineMacro(ctx, Str("__const const"));
+	LangC_DefineMacro(ctx, Str("__const__ const"));
+	LangC_DefineMacro(ctx, Str("__volatile volatile"));
+	LangC_DefineMacro(ctx, Str("__volatile__ volatile"));
+	LangC_DefineMacro(ctx, Str("__attribute(...)"));
+	LangC_DefineMacro(ctx, Str("__attribute__(...)"));
+	LangC_DefineMacro(ctx, Str("__declspec(...)"));
+	LangC_DefineMacro(ctx, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"));
+	LangC_DefineMacro(ctx, Str("__builtin_va_list void*"));
+	LangC_DefineMacro(ctx, Str("__cdecl"));
+	LangC_DefineMacro(ctx, Str("__stdcall"));
+	LangC_DefineMacro(ctx, Str("__vectorcall"));
+	LangC_DefineMacro(ctx, Str("__fastcall"));
+	
+#if 0
+	// NOTE(ljre): MINGW macros
+	LangC_DefineMacro(ctx, Str("__GNUC__"));
+	LangC_DefineMacro(ctx, Str("__MINGW_ATTRIB_DEPRECATED_STR(x)"));
+	LangC_DefineMacro(ctx, Str("__MINGW_ATTRIB_NONNULL(x)"));
+	LangC_DefineMacro(ctx, Str("__MINGW_NOTHROW"));
+	LangC_DefineMacro(ctx, Str("__extension__"));
+#endif
+	
+	//~ NOTE(ljre): Build.
 	switch (options.mode)
 	{
 		case LangC_InvokationMode_BuildToExecutable:
@@ -141,34 +182,34 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 			{
 				bool32 ok = true;
 				
-				ok = ok && LangC_Preprocess(&ctx, it->value);
-				LangC_FlushWarnings(&ctx);
-				Arena_Clear(ctx.stage_arena);
+				ok = ok && LangC_Preprocess(ctx, it->value);
+				LangC_FlushWarnings(ctx);
+				Arena_Clear(ctx->stage_arena);
 				
-				ok = ok && LangC_ParseFile(&ctx); Arena_Clear(ctx.stage_arena);
-				ok = ok && LangC_ResolveAst(&ctx); Arena_Clear(ctx.stage_arena);
+				ok = ok && LangC_ParseFile(ctx); Arena_Clear(ctx->stage_arena);
+				ok = ok && LangC_ResolveAst(ctx); Arena_Clear(ctx->stage_arena);
 				
-				LangC_FlushWarnings(&ctx);
+				LangC_FlushWarnings(ctx);
 				
-				ok = ok && LangC_GenerateCode(&ctx), Arena_Clear(ctx.stage_arena);
+				ok = ok && LangC_GenerateCode(ctx); Arena_Clear(ctx->stage_arena);
 				// TODO
 			}
 		} break;
 		
 		case LangC_InvokationMode_RunPreprocessor:
 		{
-			LangC_Preprocess(&ctx, options.input_files->value);
-			LangC_FlushWarnings(&ctx);
-			Arena_Clear(ctx.stage_arena);
+			LangC_Preprocess(ctx, options.input_files->value);
+			LangC_FlushWarnings(ctx);
+			Arena_Clear(ctx->stage_arena);
 			
-			if (!ctx.pre_source)
+			if (!ctx->pre_source)
 				break;
 			
 			if (options.output_file.size == 0)
 			{
-				Print("%s", ctx.pre_source);
+				Print("%s", ctx->pre_source);
 			}
-			else if (!OS_WriteWholeFile(NullTerminateString(options.output_file), ctx.pre_source, strlen(ctx.pre_source)))
+			else if (!OS_WriteWholeFile(NullTerminateString(options.output_file), ctx->pre_source, strlen(ctx->pre_source)))
 			{
 				Print("error: could not open output file.\n");
 				result = 1;
@@ -176,8 +217,9 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 		} break;
 	}
 	
-	Arena_Destroy(ctx.stage_arena);
-	Arena_Destroy(ctx.persistent_arena);
+	//~ NOTE(ljre): Clean-up.
+	Arena_Destroy(ctx->stage_arena);
+	Arena_Destroy(ctx->persistent_arena);
 	
 	return result;
 }

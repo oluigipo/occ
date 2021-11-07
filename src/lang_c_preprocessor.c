@@ -1231,36 +1231,6 @@ LangC_Preprocess(LangC_Context* ctx, String path)
 {
 	Trace();
 	
-	LangC_DefineMacro(ctx, Str("__STDC__ 1"));
-	LangC_DefineMacro(ctx, Str("__STDC_HOSTED__ 1"));
-	LangC_DefineMacro(ctx, Str("__STDC_VERSION__ 199901L"));
-	LangC_DefineMacro(ctx, Str("__x86_64 1"));
-	LangC_DefineMacro(ctx, Str("_WIN32 1"));
-	LangC_DefineMacro(ctx, Str("_WIN64 1"));
-	LangC_DefineMacro(ctx, Str("__OCC__ 1"));
-	LangC_DefineMacro(ctx, Str("__int64 long long"));
-	LangC_DefineMacro(ctx, Str("__int32 int"));
-	LangC_DefineMacro(ctx, Str("__int16 short"));
-	LangC_DefineMacro(ctx, Str("__int8 char"));
-	LangC_DefineMacro(ctx, Str("__inline inline"));
-	LangC_DefineMacro(ctx, Str("__inline__ inline"));
-	LangC_DefineMacro(ctx, Str("__forceinline inline"));
-	LangC_DefineMacro(ctx, Str("__restrict restrict"));
-	LangC_DefineMacro(ctx, Str("__restrict__ restrict"));
-	LangC_DefineMacro(ctx, Str("__const const"));
-	LangC_DefineMacro(ctx, Str("__const__ const"));
-	LangC_DefineMacro(ctx, Str("__volatile volatile"));
-	LangC_DefineMacro(ctx, Str("__volatile__ volatile"));
-	LangC_DefineMacro(ctx, Str("__attribute(...)"));
-	LangC_DefineMacro(ctx, Str("__attribute__(...)"));
-	LangC_DefineMacro(ctx, Str("__declspec(...)"));
-	LangC_DefineMacro(ctx, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"));
-	LangC_DefineMacro(ctx, Str("__builtin_va_list void*"));
-	LangC_DefineMacro(ctx, Str("__cdecl"));
-	LangC_DefineMacro(ctx, Str("__stdcall"));
-	LangC_DefineMacro(ctx, Str("__vectorcall"));
-	LangC_DefineMacro(ctx, Str("__fastcall"));
-	
 	// NOTE(ljre): Those macros are handled internally, but a definition is still needed.
 	LangC_DefineMacro(ctx, Str("__LINE__"));
 	LangC_DefineMacro(ctx, Str("__FILE__"));
