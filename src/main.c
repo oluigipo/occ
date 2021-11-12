@@ -8,8 +8,6 @@
 #include "internal.h"
 #include "os.h"
 
-#define COMMIT_PAGE Megabytes(32)
-
 internal Arena* global_arena;
 internal String global_my_path;
 

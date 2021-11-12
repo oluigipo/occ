@@ -36,22 +36,22 @@ typedef signed long long int64_t;
 typedef size_t uintptr_t;
 typedef ptrdiff_t intptr_t;
 
-typedef uint8_t uint_least8__t;
+typedef uint8_t uint_least8_t;
 typedef uint16_t uint_least16_t;
 typedef uint32_t uint_least32_t;
 typedef uint64_t uint_least64_t;
 
-typedef int8_t int_least8__t;
+typedef int8_t int_least8_t;
 typedef int16_t int_least16_t;
 typedef int32_t int_least32_t;
 typedef int64_t int_least64_t;
 
-typedef uint8_t uint_fast8__t;
+typedef uint8_t uint_fast8_t;
 typedef uint16_t uint_fast16_t;
 typedef uint32_t uint_fast32_t;
 typedef uint64_t uint_fast64_t;
 
-typedef int8_t int_fast8__t;
+typedef int8_t int_fast8_t;
 typedef int16_t int_fast16_t;
 typedef int32_t int_fast32_t;
 typedef int64_t int_fast64_t;
@@ -62,19 +62,19 @@ typedef uint64_t uintmax_t;
 typedef unsigned short wint_t;
 typedef unsigned short wctype_t;
 
-#define INT8_MIN -0x80
+#define INT8_MIN (-0x80)
 #define INT8_MAX 0x7f
 #define UINT8_MAX 0xffU
 
-#define INT16_MIN -0x8000
+#define INT16_MIN (-0x8000)
 #define INT16_MAX 0x7fff
 #define UINT16_MAX 0xffffU
 
-#define INT32_MIN -0x80000000
+#define INT32_MIN (-0x80000000)
 #define INT32_MAX 0x7fffffff
 #define UINT32_MAX 0xffffffffU
 
-#define INT64_MIN -0x8000000000000000LL
+#define INT64_MIN (-0x8000000000000000LL)
 #define INT64_MAX 0x7fffffffffffffffLL
 #define UINT64_MAX 0xffffffffffffffffULL
 

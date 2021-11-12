@@ -5,7 +5,7 @@ internal void LangC_PreprocessIf(LangC_Context* ctx, LangC_Lexer* lex);
 internal const char*
 LangC_LoadFileFromDisk(LangC_Context* ctx, const char path[MAX_PATH_SIZE], uint64 calculated_hash, bool32 relative)
 {
-	const char* contents = OS_ReadWholeFile(path);
+	const char* contents = OS_ReadWholeFile(path, NULL);
 	LangC_Preprocessor* const pp = &ctx->pp;
 	
 	if (contents)
@@ -178,7 +178,7 @@ LangC_IgnoreUntilNewline(LangC_Lexer* lex)
 	}
 }
 
-internal void
+internal LangC_Macro*
 LangC_DefineMacro(LangC_Context* ctx, String definition)
 {
 	LangC_Preprocessor* const pp = &ctx->pp;
@@ -216,6 +216,8 @@ LangC_DefineMacro(LangC_Context* ctx, String definition)
 	pp->last_macro->def = def;
 	pp->last_macro->name = name;
 	pp->last_macro->is_func_like = is_func_like;
+	
+	return pp->last_macro;
 }
 
 internal void
@@ -228,7 +230,9 @@ LangC_UndefineMacro(LangC_Context* ctx, String name)
 	
 	if (CompareString(pp->first_macro->name, name) == 0)
 	{
-		pp->first_macro = pp->first_macro->next;
+		if (!pp->first_macro->persistent)
+			pp->first_macro = pp->first_macro->next;
+		
 		return;
 	}
 	
@@ -236,7 +240,12 @@ LangC_UndefineMacro(LangC_Context* ctx, String name)
 	while (current->next && current->next != pp->last_macro)
 	{
 		if (CompareString(current->name, name) == 0)
-			current->next = current->next->next;
+		{
+			if (!current->persistent)
+				current->next = current->next->next;
+			
+			break;
+		}
 		
 		current = current->next;
 	}
@@ -1232,8 +1241,8 @@ LangC_Preprocess(LangC_Context* ctx, String path)
 	Trace();
 	
 	// NOTE(ljre): Those macros are handled internally, but a definition is still needed.
-	LangC_DefineMacro(ctx, Str("__LINE__"));
-	LangC_DefineMacro(ctx, Str("__FILE__"));
+	LangC_DefineMacro(ctx, Str("__LINE__"))->persistent = true;
+	LangC_DefineMacro(ctx, Str("__FILE__"))->persistent = true;
 	
 	String fullpath;
 	ctx->source = LangC_TryToLoadFile(ctx, path, true, StrNull, &fullpath);

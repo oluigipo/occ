@@ -63,10 +63,7 @@
 
 #include "lang_c_definitions.h"
 
-// NOTE(ljre): LangC_options should never be modified after the compiler driver finished running.
 internal int32 LangC_error_count = 0;
-internal LangC_QueuedWarning* LangC_queued_warning = &(LangC_QueuedWarning) { 0 };
-internal LangC_QueuedWarning* LangC_last_queued_warning = NULL;
 
 internal void
 LangC_AddInputFile(StringList** first, StringList** last, String str)
@@ -84,6 +81,18 @@ LangC_AddInputFile(StringList** first, StringList** last, String str)
 	}
 	
 	(*last)->value = str;
+}
+
+internal inline bool32
+LangC_IsWarningEnabled(LangC_Context* ctx, LangC_Warning warning)
+{
+	Assert(warning >= LangC_Warning_Null && warning < LangC_Warning__Count);
+	uint32 w = (uint32)warning;
+	
+	uint32 index = w >> 5;
+	uint32 bit = w & 63;
+	
+	return !!(ctx->options->enabled_warnings[index] & bit);
 }
 
 internal void

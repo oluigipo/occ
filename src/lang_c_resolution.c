@@ -40,6 +40,8 @@ internal /* const */ LangC_Node LangC_basic_types_table[] = {
 #define LangC_IsUnionType(node) ((node) && (node)->kind == LangC_NodeKind_BaseType && ((node)->flags & LangC_Node_BaseType_Union))
 
 internal LangC_SymbolStack* LangC_ResolveBlock(LangC_Context* ctx, LangC_Node* block);
+internal LangC_Node* LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr);
+internal LangC_Node* LangC_AddCastToExprIfNeeded(LangC_Context* ctx, LangC_Node* expr, LangC_Node* type);
 
 internal LangC_Node*
 LangC_CreateNodeFrom(LangC_Context* ctx, LangC_Node* other, LangC_NodeKind kind)
@@ -150,13 +152,13 @@ LangC_SymbolAlreadyDefinedInThisScope(LangC_Context* ctx, String name, LangC_Sym
 }
 
 internal LangC_Node*
-LangC_ResolveType(LangC_Context* ctx, LangC_Node* type)
+LangC_TypeFromTypename(LangC_Context* ctx, LangC_Node* type)
 {
 	while (!LangC_IsSimpleType(type) &&
 		   type->kind == LangC_NodeKind_BaseType &&
 		   (type->flags & LangC_Node_LowerBits) == LangC_Node_BaseType_Typename)
 	{
-		LangC_Symbol* sym = LangC_FindSymbol(ctx, type->name, LangC_SymbolKind_Typename);
+		LangC_Symbol* sym = type->symbol;
 		Assert(sym);
 		
 		type = sym->type;
@@ -176,7 +178,7 @@ LangC_CreateSymbol(LangC_Context* ctx, String name, LangC_SymbolKind kind, LangC
 	
 	result->kind = kind;
 	result->name = name;
-	result->type = LangC_ResolveType(ctx, type);
+	result->type = LangC_TypeFromTypename(ctx, type);
 	result->name_hash = SimpleHash(name);
 	
 	return result;
@@ -237,113 +239,9 @@ LangC_IsNumericType(LangC_Context* ctx, LangC_Node* type)
 }
 
 internal bool32
-LangC_TypeInfo(LangC_Context* ctx, const LangC_Node* type, uint64* out_size, uint64* out_alignment_mask)
-{
-	beginning:;
-	
-	switch (type->kind)
-	{
-		case LangC_NodeKind_BaseType:
-		{
-			LangC_SymbolKind k = LangC_SymbolKind_Struct;
-			
-			if (type->flags & LangC_Node_BaseType_Bool)
-			{
-				*out_size = 1;
-				*out_alignment_mask = 0;
-				return true;
-			}
-			else if (type->flags & LangC_Node_BaseType_Enum)
-			{
-				*out_size = ctx->abi->t_int.size;
-				*out_alignment_mask = ctx->abi->t_int.alignment_mask;
-				return true;
-			}
-			else if (type->flags & LangC_Node_BaseType_Typename)
-			{
-				type = LangC_ResolveType(ctx, (LangC_Node*)type);
-				if (!type)
-					return false;
-				
-				goto beginning;
-			}
-			else if (type->flags & LangC_Node_BaseType_Struct ||
-					 type->flags & LangC_Node_BaseType_Union && (k = LangC_SymbolKind_Union))
-			{
-				LangC_Symbol* sym = LangC_FindSymbol(ctx, type->name, k);
-				if (!type)
-					return false;
-				
-				type = sym->type;
-				*out_size = type->size;
-				*out_alignment_mask = type->alignment_mask;
-				return true;
-			}
-			else if (type->flags & LangC_Node_BaseType_Void)
-			{
-				return false;
-			}
-			
-			LangC_ABIType* atype = LangC_GetABIType(ctx, type->flags);
-			if (atype)
-			{
-				*out_size = atype->size;
-				*out_alignment_mask = atype->alignment_mask;
-				return true;
-			}
-			
-			Unreachable();
-		} break;
-		
-		case LangC_NodeKind_ArrayType:
-		{
-			if (type->length > 0 && LangC_TypeInfo(ctx, type->type, out_size, out_alignment_mask))
-			{
-				*out_size *= type->length;
-				return true;
-			}
-			else
-			{
-				return false;
-			}
-		} break;
-		
-		case LangC_NodeKind_FunctionType:
-		{
-			return false;
-		} break;
-		
-		case LangC_NodeKind_PointerType:
-		{
-			*out_size = ctx->abi->t_ptr.size;
-			*out_alignment_mask = ctx->abi->t_ptr.alignment_mask;
-			return true;
-		} break;
-	}
-	
-	return false;
-}
-
-internal bool32
 LangC_IsIncompleteType(LangC_Context* ctx, LangC_Node* type)
 {
-	type = LangC_ResolveType(ctx, type);
-	
-	if (type->kind == LangC_NodeKind_BaseType)
-	{
-		if (type->flags & LangC_Node_BaseType_Void)
-			return true;
-		
-		if (type->flags & LangC_Node_BaseType_Struct)
-			return LangC_FindSymbol(ctx, type->name, LangC_SymbolKind_Struct) != NULL;
-		
-		if (type->flags & LangC_Node_BaseType_Union)
-			return LangC_FindSymbol(ctx, type->name, LangC_SymbolKind_Union) != NULL;
-	}
-	else if (type->kind == LangC_NodeKind_FunctionType)
-		return true;
-	
-	return false;
+	return type->size == 0;
 }
 
 // NOTE(ljre): Compares two types.
@@ -352,8 +250,8 @@ LangC_IsIncompleteType(LangC_Context* ctx, LangC_Node* type)
 internal int32
 LangC_CompareTypes(LangC_Context* ctx, LangC_Node* left, LangC_Node* right)
 {
-	left = LangC_ResolveType(ctx, left);
-	right = LangC_ResolveType(ctx, right);
+	left = LangC_TypeFromTypename(ctx, left);
+	right = LangC_TypeFromTypename(ctx, right);
 	
 	if (left == right)
 		return 0;
@@ -493,6 +391,230 @@ LangC_TryToEval(LangC_Context* ctx, LangC_Node* expr)
 	
 	expr->cannot_be_evaluated_at_compile_time = true;
 	// TODO
+}
+
+internal void
+LangC_ResolveType(LangC_Context* ctx, LangC_Node* type, bool32* out_is_complete, bool32 inlined_symbols)
+{
+	uint64 low = type->flags & LangC_Node_LowerBits;
+	bool32 is_complete = false;
+	
+	switch (type->kind)
+	{
+		case LangC_NodeKind_BaseType:
+		{
+			LangC_SymbolKind kind = LangC_SymbolKind_Struct;
+			LangC_ABIType* abitype = NULL;
+			
+			switch (low)
+			{
+				case LangC_Node_BaseType_Typename:
+				{
+					type->symbol = LangC_FindSymbol(ctx, type->name, LangC_SymbolKind_Typename);
+					is_complete = !LangC_IsIncompleteType(ctx, type->symbol->type);
+				} break;
+				
+				case LangC_Node_BaseType_Union: kind = LangC_SymbolKind_Union;
+				case LangC_Node_BaseType_Struct:
+				{
+					if (type->name.size > 0)
+					{
+						LangC_Symbol* sym = LangC_FindSymbol(ctx, type->name, kind);
+						
+						if (sym)
+						{
+							type->symbol = sym;
+							
+							if (type->body)
+								LangC_NodeError(ctx, type->body, "redefinition of '%s %.*s'.",
+												kind == LangC_SymbolKind_Struct ? "struct" : "union",
+												StrFmt(type->name));
+							else
+								is_complete = true;
+						}
+					}
+					
+					if (type->body)
+					{
+						is_complete = true;
+						LangC_Symbol* sym;
+						
+						if (type->symbol)
+						{
+							sym = LangC_CreateSymbol(ctx, StrNull, kind, type);
+						}
+						else
+						{
+							sym = LangC_CreateSymbol(ctx, type->name, kind, type);
+							type->symbol = sym;
+						}
+						
+						if (inlined_symbols)
+							sym->fields = ctx->symbol_stack;
+						else
+							sym->fields = LangC_PushSymbolStack(ctx);
+						
+						LangC_Node* needs_to_be_the_last = NULL;
+						
+						for (LangC_Node* member = type->body; member; member = member->next)
+						{
+							if (member->kind != LangC_NodeKind_Decl)
+								continue;
+							
+							if (needs_to_be_the_last)
+							{
+								LangC_NodeError(ctx, needs_to_be_the_last, "incomplete flexible array needs to be at the end of struct");
+							}
+							
+							bool32 c;
+							LangC_ResolveType(ctx, member->type, &c, member->name.size == 0);
+							
+							LangC_Symbol* membersym = LangC_CreateSymbol(ctx, member->name, LangC_SymbolKind_Field, member->type);
+							
+							sym->size = AlignUp(sym->size, member->type->alignment_mask);
+							
+							if (!c)
+							{
+								if (member->type->kind == LangC_NodeKind_ArrayType)
+									needs_to_be_the_last = member;
+								else
+									LangC_NodeError(ctx, member->type, "incomplete type not allowed in struct.");
+							}
+							else
+							{
+								membersym->size = member->type->size;
+								membersym->offset = sym->size;
+								
+								if (kind == LangC_SymbolKind_Struct)
+									sym->size += member->type->size;
+								sym->alignment_mask = Max(sym->alignment_mask, member->type->alignment_mask);
+							}
+						}
+						
+						type->size = sym->size;
+						type->alignment_mask = sym->alignment_mask;
+						
+						if (!inlined_symbols)
+							LangC_PopSymbolStack(ctx);
+					}
+				} break;
+				
+				case LangC_Node_BaseType_Char: abitype = &ctx->abi->t_char; goto set_abi_type;
+				case LangC_Node_BaseType_Char | LangC_Node_BaseType_Signed: abitype = &ctx->abi->t_schar; goto set_abi_type;
+				case LangC_Node_BaseType_Char | LangC_Node_BaseType_Unsigned: abitype = &ctx->abi->t_uchar; goto set_abi_type;
+				
+				case LangC_Node_BaseType_Short | LangC_Node_BaseType_Signed:
+				case LangC_Node_BaseType_Short: abitype = &ctx->abi->t_short; goto set_abi_type;
+				case LangC_Node_BaseType_Short | LangC_Node_BaseType_Unsigned: abitype = &ctx->abi->t_ushort; goto set_abi_type;
+				
+				case LangC_Node_BaseType_Int | LangC_Node_BaseType_Signed:
+				case LangC_Node_BaseType_Int: abitype = &ctx->abi->t_int; goto set_abi_type;
+				case LangC_Node_BaseType_Int | LangC_Node_BaseType_Unsigned: abitype = &ctx->abi->t_uint; goto set_abi_type;
+				
+				case LangC_Node_BaseType_Long | LangC_Node_BaseType_Signed:
+				case LangC_Node_BaseType_Long: abitype = &ctx->abi->t_long; goto set_abi_type;
+				case LangC_Node_BaseType_Long | LangC_Node_BaseType_Unsigned: abitype = &ctx->abi->t_ulong; goto set_abi_type;
+				
+				case LangC_Node_BaseType_LongLong | LangC_Node_BaseType_Signed:
+				case LangC_Node_BaseType_LongLong: abitype = &ctx->abi->t_longlong; goto set_abi_type;
+				case LangC_Node_BaseType_LongLong | LangC_Node_BaseType_Unsigned: abitype = &ctx->abi->t_ulonglong; goto set_abi_type;
+				
+				case LangC_Node_BaseType_Float:  abitype = &ctx->abi->t_float;  goto set_abi_type;
+				case LangC_Node_BaseType_Double: abitype = &ctx->abi->t_double; goto set_abi_type;
+				
+				default: Unreachable(); break;
+			}
+			
+			if (0) set_abi_type:
+			{
+				type->size = abitype->size;
+				type->alignment_mask = abitype->alignment_mask;
+			}
+		} break;
+		
+		case LangC_NodeKind_PointerType:
+		{
+			is_complete = true;
+			
+			type->size = ctx->abi->t_ptr.size;
+			type->alignment_mask = ctx->abi->t_ptr.alignment_mask;
+			LangC_ResolveType(ctx, type->type, NULL, false);
+		} break;
+		
+		case LangC_NodeKind_ArrayType:
+		{
+			bool32 c;
+			LangC_ResolveType(ctx, type->type, &c, false);
+			
+			if (!c)
+			{
+				LangC_NodeError(ctx, type->type, "cannot have array of incomplete type.");
+			}
+			else
+			{
+				type->alignment_mask = type->type->alignment_mask;
+				type->length = 0;
+				
+				if (type->expr)
+				{
+					type->expr = LangC_ResolveExpr(ctx, type->expr);
+					LangC_Node* casted = LangC_AddCastToExprIfNeeded(ctx, type->expr, LangC_SIZE_T);
+					if (!casted)
+					{
+						LangC_NodeError(ctx, type->expr, "array length needs to be of numeric type.");
+					}
+					else
+					{
+						type->expr = casted;
+						LangC_TryToEval(ctx, type->expr);
+						
+						if (type->expr->cannot_be_evaluated_at_compile_time)
+						{
+							// TODO(ljre): Maybe warn about VLA?
+							type->kind = LangC_NodeKind_VariableLengthArrayType;
+						}
+						else
+						{
+							type->length = type->expr->value_uint;
+							type->size = type->length * type->type->size;
+							is_complete = true;
+						}
+					}
+				}
+			}
+		} break;
+		
+		case LangC_NodeKind_FunctionType:
+		{
+			bool32 c;
+			LangC_ResolveType(ctx, type->type, &c, false);
+			
+			if (!c)
+			{
+				if (type->type->kind == LangC_NodeKind_BaseType && type->type->flags & LangC_Node_BaseType_Void)
+				{
+					type->type = NULL;
+				}
+				else
+				{
+					LangC_NodeError(ctx, type->type, "function cannot return incomplete type.");
+				}
+			}
+			else
+			{
+				for (LangC_Node* param = type->params; param; param = param->next)
+				{
+					LangC_ResolveType(ctx, param->type, &c, false);
+					
+					if (!c)
+						LangC_NodeError(ctx, param->type, "function parameter cannot be of incomplete type.");
+				}
+			}
+		} break;
+	}
+	
+	if (out_is_complete)
+		*out_is_complete = is_complete;
 }
 
 // NOTE(ljre): Returns NULL if types are incompatible.
@@ -777,19 +899,14 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 						{
 							LangC_NodeError(ctx, expr, "cannot take sizeof of function.");
 						}
+						else if (!LangC_IsIncompleteType(ctx, expr->type))
+						{
+							expr->type = LangC_SIZE_T;
+							expr->value_uint = expr->type->size;
+						}
 						else
 						{
-							uint64 size, ignored;
-							
-							if (LangC_TypeInfo(ctx, type, &size, &ignored))
-							{
-								expr->type = LangC_SIZE_T;
-								expr->value_uint = size;
-							}
-							else
-							{
-								LangC_NodeError(ctx, expr, "cannot take sizeof of incomplete type.");
-							}
+							LangC_NodeError(ctx, expr, "cannot take sizeof of incomplete type.");
 						}
 					} break;
 					
@@ -828,6 +945,7 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 			expr->type = LangC_CreateNodeFrom(ctx, expr, LangC_NodeKind_ArrayType);
 			expr->type->type = LangC_CHAR;
 			expr->type->length = expr->value_str.size + 1; // NOTE(ljre): null terminator
+			expr->type->size = expr->type->length;
 		} break;
 		
 		default: Unreachable(); break;
@@ -859,8 +977,12 @@ LangC_ResolveDecl(LangC_Context* ctx, LangC_Node* decl)
 	Assert(decl->kind == LangC_NodeKind_Decl);
 	
 	LangC_SymbolKind sym_kind = LangC_SymbolKind_LocalVar;
-	LangC_Node* type = LangC_ResolveType(ctx, decl->type);
-	bool32 aliased = (type != decl->type);
+	bool32 is_complete;
+	LangC_ResolveType(ctx, decl->type, &is_complete, false);
+	
+	// TODO(ljre): Refactor this function -- remove unecessary LangC_FindSymbol-s
+	
+	LangC_Node* type = LangC_TypeFromTypename(ctx, decl->type);
 	
 	if (type->flags & LangC_Node_Poisoned)
 	{
@@ -872,14 +994,14 @@ LangC_ResolveDecl(LangC_Context* ctx, LangC_Node* decl)
 		{
 			if (decl->type->expr)
 			{
-				if (!aliased)
-				{
-					decl->type->expr = LangC_ResolveExpr(ctx, decl->type->expr);
-					LangC_TryToEval(ctx, decl->type->expr);
-				}
-				
 				if (decl->type->expr->cannot_be_evaluated_at_compile_time)
+				{
 					decl->type->kind = LangC_NodeKind_VariableLengthArrayType;
+					if (decl->expr)
+						LangC_NodeError(ctx, decl->type, "cannot initialize variable-length array.");
+					
+					break;
+				}
 			}
 			else if (!decl->expr)
 			{
@@ -890,13 +1012,20 @@ LangC_ResolveDecl(LangC_Context* ctx, LangC_Node* decl)
 			{
 				decl->expr = LangC_ResolveExpr(ctx, decl->expr);
 				
-				if (!decl->type->expr)
+				if (decl->expr->kind != LangC_NodeKind_Expr || !(decl->expr->flags & LangC_Node_Expr_Initializer))
+				{
+					LangC_NodeError(ctx, decl->expr, "this is not a valid array initializer.");
+				}
+				else if (decl->type->length == 0)
 				{
 					uint64 length = decl->expr->length;
 					
-					decl->type->expr = LangC_CreateNodeFrom(ctx, decl->expr, LangC_NodeKind_LLUintConstant);
-					decl->type->expr->value_uint = length;
 					decl->type->length = length;
+					decl->type->size = decl->type->type->size * length;
+				}
+				else if (decl->expr->length > decl->type->length)
+				{
+					LangC_NodeError(ctx, decl->expr, "excessive number of items in array initializer");
 				}
 			}
 		} break;
@@ -934,7 +1063,7 @@ LangC_ResolveDecl(LangC_Context* ctx, LangC_Node* decl)
 				else if (low == LangC_Node_BaseType_Typename)
 				{
 					sym = LangC_FindSymbol(ctx, decl->type->name, LangC_SymbolKind_Typename);
-					resolved = LangC_ResolveType(ctx, sym->type);
+					resolved = LangC_TypeFromTypename(ctx, sym->type);
 					
 					if (LangC_IsStructType(resolved->type))
 					{
@@ -1111,32 +1240,64 @@ LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 {
 	Assert(decl->kind == LangC_NodeKind_Decl);
 	
+	LangC_ResolveType(ctx, decl->type, NULL, false);
+	
 	if (decl->flags & LangC_Node_Typedef)
 	{
 		if (LangC_SymbolAlreadyDefinedInThisScope(ctx, decl->name, LangC_SymbolKind_Typename))
 			LangC_NodeError(ctx, decl, "redefinition of type '%.*s'.", StrFmt(decl->name));
 		
-		LangC_CreateSymbol(ctx, decl->name, LangC_SymbolKind_Typename, decl->type);
+		if (decl->name.size > 0)
+			LangC_CreateSymbol(ctx, decl->name, LangC_SymbolKind_Typename, decl->type);
+		
 		return;
 	}
 	
 	if (decl->type->kind == LangC_NodeKind_FunctionType)
 	{
 		// NOTE(ljre): "extern" is useless for functions.
-		
 		LangC_SymbolKind kind = LangC_SymbolKind_GlobalFunctionDecl;
 		if (decl->body)
 			kind = LangC_SymbolKind_GlobalFunction;
 		
-		LangC_Symbol* sym = LangC_CreateSymbol(ctx, decl->name, kind, decl->type);
-		
-		LangC_ResolveType(ctx, decl->type);
-		
-		if (decl->body)
-			sym->locals = LangC_ResolveBlock(ctx, decl->body);
+		if (decl->name.size == 0)
+		{
+			LangC_NodeError(ctx, decl, "functions without a name are not allowed.");
+		}
+		else
+		{
+			LangC_Symbol* old_decl = LangC_FindSymbol(ctx, decl->name, 0);
+			LangC_Symbol* sym;
+			uint64 flags = (decl->flags & ~LangC_Node_LowerBits);
+			
+			if (old_decl)
+			{
+				if (0 != LangC_CompareTypes(ctx, decl->type, old_decl->type))
+				{
+					LangC_NodeError(ctx, decl, "previous function declaration is incompatible.");
+				}
+				else if (decl->type != old_decl->type)
+				{
+					LangC_NodeError(ctx, decl, "linking mismatch with previous declaration of function.");
+				}
+			}
+			else
+			{
+				sym = LangC_CreateSymbol(ctx, decl->name, kind, decl->type);
+				sym->flags |= flags;
+			}
+			
+			if (decl->body)
+			{
+				sym->locals = LangC_ResolveBlock(ctx, decl->body);
+				
+				// TODO(ljre): Calculate sym->stack_needed
+			}
+		}
 	}
 	else
 	{
+		// TODO(ljre): Fetch previous declaration and match them.
 		LangC_SymbolKind kind = LangC_SymbolKind_GlobalVar;
 		
 		if (decl->flags & LangC_Node_Extern)
@@ -1151,7 +1312,7 @@ LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 			}
 			// NOTE(ljre): We have an "else" here because every static global variable declaration is a
 			//             "potential declaration". This should be checked after the entire thing is resolved.
-			else if (decl->type->kind == LangC_NodeKind_ArrayType && decl->type->expr == NULL && decl->type->length == 0)
+			else if (decl->type->kind == LangC_NodeKind_ArrayType && decl->type->length == 0)
 			{
 				// NOTE(ljre): Global arrays definitions with implicit length shall have length of 1.
 				decl->type->length = 1;
@@ -1161,9 +1322,8 @@ LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 		}
 		
 		LangC_Symbol* sym = LangC_CreateSymbol(ctx, decl->name, kind, decl->type);
-		(void)sym;
-		
-		LangC_ResolveType(ctx, decl->type);
+		uint64 flags = (decl->flags & ~LangC_Node_LowerBits);
+		sym->flags |= flags;
 	}
 }
 
@@ -1181,7 +1341,8 @@ LangC_ResolveAst(LangC_Context* ctx)
 		global_decl = global_decl->next;
 	}
 	
-	LangC_PopSymbolStack(ctx);
+	// NOTE(ljre): Don't pop the global stack, we want the global symbols.
+	//LangC_PopSymbolStack(ctx);
 	
 	return LangC_error_count == 0;
 }

@@ -531,6 +531,7 @@ enum LangC_SymbolKind
 	LangC_SymbolKind_GlobalFunction,
 	LangC_SymbolKind_GlobalFunctionDecl,
 	LangC_SymbolKind_Parameter,
+	LangC_SymbolKind_Field,
 	LangC_SymbolKind_LocalVar,
 	LangC_SymbolKind_LocalFunctionDecl,
 	LangC_SymbolKind_EnumConstant,
@@ -551,30 +552,42 @@ struct LangC_Symbol
 	uint64 name_hash;
 	
 	LangC_SymbolKind kind;
-	bool32 poisoned;
+	
+	uintsize size;
+	uint64 flags; // LangC_Node_* flags
 	
 	union
 	{
+		// NOTE(ljre): For functions.
 		struct
 		{
 			LangC_SymbolStack* locals;
 			uintsize stack_needed;
 		};
 		
+		// NOTE(ljre): For struct/union
 		struct
 		{
 			LangC_SymbolStack* fields;
-			uintsize size;
+			uintsize alignment_mask;
 		};
 		
+		// NOTE(ljre): for enum
 		struct
 		{
 			LangC_SymbolStack* entries;
 		};
 		
+		// NOTE(ljre): for enum constant
 		struct
 		{
-			int32 value; // NOTE(ljre): for enum constant
+			int32 value;
+		};
+		
+		// NOTE(ljre): For struct/union field
+		struct
+		{
+			uintsize offset;
 		};
 	};
 };
@@ -651,41 +664,32 @@ struct LangC_Node
 	// NOTE(ljre): Data used after parsing stage
 	LangC_Symbol* symbol;
 	bool32 cannot_be_evaluated_at_compile_time;
-	uint64 offset; // ex: offset in struct, offset in array (index), etc.
-	union
-	{
-		uint64 length; // length of array or array initializer
-		uint64 size; // size of type
-	};
+	uint64 size; // size of type
+	uint64 length; // length for array types
 	uint64 alignment_mask; // alignment requirements (only for types)
 };
 
 enum LangC_Warning
 {
 	LangC_Warning_Null = 0,
+	
 	LangC_Warning_ImplicitInt, // implicit type "int" in declarations
 	LangC_Warning_RegisterIgnored, // "register" keyword ignored for now
 	LangC_Warning_ImplicitLengthOf1, // when a global array has no length, it has a length of 1
 	LangC_Warning_UserWarning, // #warning directive
+	
+	LangC_Warning__Count,
 }
 typedef LangC_Warning;
 
 #define LangC_MAX_INCLUDE_DIRS 64
 
-enum LangC_InvokationMode
-{
-	LangC_InvokationMode_BuildToExecutable,
-	LangC_InvokationMode_RunPreprocessor,
-}
-typedef LangC_InvokationMode;
-
 struct LangC_CompilerOptions
 {
 	String include_dirs[LangC_MAX_INCLUDE_DIRS];
 	int32 include_dirs_count;
-	LangC_InvokationMode mode;
-	StringList* input_files;
-	String output_file;
+	
+	uint64 enabled_warnings[(LangC_Warning__Count + 63) / 64];
 }
 typedef LangC_CompilerOptions;
 
@@ -718,8 +722,9 @@ struct LangC_Macro
 	
 	const char* def;
 	String name;
-	bool16 is_func_like;
-	bool16 expanding;
+	bool8 is_func_like;
+	bool8 expanding;
+	bool8 persistent; // cant #undef it if true
 };
 
 struct LangC_MacroParameter

@@ -96,7 +96,7 @@ LangC_PrintIncludeStackToArena(LangC_LexerFile* file, int32 line, Arena* arena)
 internal void
 LangC_LexerWarning(LangC_Lexer* lex, LangC_Warning warning, const char* fmt, ...)
 {
-	if (lex->ctx)
+	if (lex->ctx && LangC_IsWarningEnabled(lex->ctx, warning))
 	{
 		LangC_LexerFile* file = lex->file;
 		char* buf = Arena_End(global_arena);

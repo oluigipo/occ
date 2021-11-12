@@ -134,6 +134,9 @@ LangC_NodeError(LangC_Context* ctx, LangC_Node* node, const char* fmt, ...)
 internal void
 LangC_NodeWarning(LangC_Context* ctx, LangC_Node* node, LangC_Warning warning, const char* fmt, ...)
 {
+	if (!LangC_IsWarningEnabled(ctx, warning))
+		return;
+	
 	LangC_LexerFile* lexfile = node->lexfile;
 	char* buf = Arena_End(global_arena);
 	
