@@ -61,12 +61,12 @@ OS_ReadWholeFile(const char* path, uintsize* out_size)
 	TraceName(StrFrom(path));
 	wchar_t wpath[MAX_PATH_SIZE];
 	int32 wpath_len = MultiByteToWideChar(CP_UTF8, 0, path, strlen(path), wpath, ArrayLength(wpath));
-	if (wpath_len == 0 || wpath_len >= MAX_PATH_SIZE)
+	if (wpath_len <= 0 || wpath_len >= MAX_PATH_SIZE)
 		return NULL;
 	
 	wpath[wpath_len] = 0;
 	
-	HANDLE file = CreateFileW(wpath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_READONLY, NULL);
+	HANDLE file = CreateFileW(wpath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
 	if (file == INVALID_HANDLE_VALUE)
 		return NULL;
 	

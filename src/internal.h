@@ -3,8 +3,10 @@
 
 #ifdef __GNUC__
 #   define alignas(_) __attribute__((aligned(_)))
-#else
+#elif defined _MSC_VER
 #   define alignas(_) __declspec(align(_))
+#else
+#   define alignas(_)
 #endif
 
 #if 0

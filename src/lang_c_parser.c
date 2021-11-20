@@ -1146,7 +1146,7 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 					LangC_Node* last_param;
 					result->type->params = LangC_ParseDeclAndSemicolonIfNeeded(ctx, &last_param, 8);
 					
-					if (result->type->params->kind == LangC_Node_BaseType_Void)
+					if (result->type->params->type->flags & LangC_Node_BaseType_Void)
 					{
 						// makes it easier to check later
 						result->type->params = NULL;

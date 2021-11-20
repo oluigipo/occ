@@ -125,6 +125,8 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 			.t_ulonglong = { 8, 7, true },
 			.t_double = { 8, 7, false },
 			.t_float = { 4, 3, false },
+			.t_ptr = { 8, 7, true },
+			.t_bool = { 1, 0, true },
 			
 			.char_bit = 8,
 			.index_sizet = 10,

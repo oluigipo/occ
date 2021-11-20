@@ -152,9 +152,6 @@ LangC_PragmaOncePPFile(LangC_Context* ctx, String fullpath)
 	{
 		if (file->hash == search_hash)
 		{
-			if (file->pragma_onced)
-				Unreachable();
-			
 			file->pragma_onced = true;
 			break;
 		}
@@ -354,7 +351,7 @@ LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_le
 		LangC_Token tok = {
 			.kind = LangC_TokenKind_IntLiteral,
 			.as_string = StrMake(mem, needed),
-			.leading_spaces = Str(""),
+			.leading_spaces = StrNull,
 			.value_int = line,
 		};
 		
@@ -371,7 +368,7 @@ LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_le
 		LangC_Token tok = {
 			.kind = LangC_TokenKind_StringLiteral,
 			.as_string = StrMake(mem, needed),
-			.leading_spaces = Str(""),
+			.leading_spaces = StrNull,
 			.value_str = file,
 		};
 		
@@ -906,6 +903,7 @@ LangC_IgnoreUntilEndOfIf(LangC_Context* ctx, LangC_Lexer* lex, bool32 already_ma
 	}
 	
 	out_of_the_loop:;
+	
 	LangC_TracePreprocessor(ctx, lex, 0);
 }
 

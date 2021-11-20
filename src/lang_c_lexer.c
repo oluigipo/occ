@@ -1,3 +1,6 @@
+// NOTE(ljre): This lexer won't check if UTF-8 codepoints are valid, though it will check for BOM
+//             at the beginning of the file.
+
 internal void LangC_NextToken(LangC_Lexer* lex);
 
 internal void
@@ -6,6 +9,10 @@ LangC_SetupLexer(LangC_Lexer* lex, const char* source, Arena* arena)
 	lex->col = 1;
 	if (lex->line == 0)
 		lex->line = 1;
+	
+	// NOTE(ljre): Ignore BOM.
+	if (lex->head[0] == 0xEF && lex->head[1] == 0xBB && lex->head[2] == 0xBF)
+		lex->head += 3;
 	
 	lex->token.kind = LangC_TokenKind_Eof;
 	lex->head = lex->previous_head = source;
@@ -52,7 +59,8 @@ LangC_IsAlpha(char ch)
 internal inline bool32
 LangC_IsIdentChar(char ch)
 {
-	return ch == '_' || (ch >= '0' && ch <= '9') || LangC_IsAlpha(ch);
+	return ch == '_' || (ch >= '0' && ch <= '9') || LangC_IsAlpha(ch)
+		|| ch >= 128; // NOTE(ljre): This makes every multibyte UTF-8 codepoint a valid char for identifiers.
 }
 
 internal void
@@ -202,6 +210,7 @@ LangC_IgnoreWhitespaces(const char** p, bool32 newline)
 		if (!**p)
 			break;
 		
+		// NOTE(ljre): C++-style comments
 		if (**p == '/' && (*p)[1] == '/')
 		{
 			*p += 2;
@@ -209,17 +218,21 @@ LangC_IgnoreWhitespaces(const char** p, bool32 newline)
 			while (**p && (**p != '\n' || (*p)[-1] == '\\'))
 				++*p;
 		}
+		// NOTE(ljre): C-style comments
 		else if (**p == '/' && (*p)[1] == '*')
 		{
 			*p += 2;
 			
+			// TODO(ljre): Maybe nesting?
 			while (**p && !((*p)[-2] == '*' && (*p)[-1] == '/'))
 				++*p;
 		}
+		// NOTE(ljre): General whitespaces & newlines
 		else if (**p == ' ' || **p == '\t' || **p == '\r' || (newline && **p == '\n'))
 		{
 			++*p;
 		}
+		// NOTE(ljre): Treating a \ followed by a newline as a whitespace. Yes, this is incorrect by the standard.
 		else if (**p == '\\' && (*p)[1] == '\n')
 		{
 			*p += 2;
@@ -276,7 +289,7 @@ LangC_ValueOfEscaped(const char** ptr)
 		{
 			++*ptr;
 			
-			while (chars_in_hex > 0 &&
+			while (chars_in_hex --> 0 &&
 				   ((**ptr >= '0' && **ptr <= '9') ||
 					(**ptr >= 'a' && **ptr <= 'f') ||
 					(**ptr >= 'A' && **ptr <= 'F')))
@@ -559,7 +572,6 @@ LangC_NextToken(LangC_Lexer* lex)
 			}
 			
 			int32 eaten = (int32)(end - begin);
-			lex->token.as_string.size += eaten;
 			lex->head += eaten;
 		} break;
 		
@@ -571,6 +583,7 @@ LangC_NextToken(LangC_Lexer* lex)
 				
 				lex->token.value_str = LangC_TokenizeStringLiteral(lex);
 				lex->token.kind = LangC_TokenKind_WideStringLiteral;
+				break;
 			}
 			//else
 			

@@ -14,6 +14,7 @@ internal /* const */ LangC_Node LangC_basic_types_table[] = {
 	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Float, },
 	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Double, },
 	{ .kind = LangC_NodeKind_PointerType, .type = &(LangC_Node) { .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Void, }, },
+	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Bool, },
 	{ .kind = LangC_NodeKind_BaseType, .flags = LangC_Node_BaseType_Void, },
 };
 
@@ -32,7 +33,8 @@ internal /* const */ LangC_Node LangC_basic_types_table[] = {
 #define LangC_FLOAT (&LangC_basic_types_table[11])
 #define LangC_DOUBLE (&LangC_basic_types_table[12])
 #define LangC_PTR (&LangC_basic_types_table[13])
-#define LangC_VOID (&LangC_basic_types_table[14])
+#define LangC_BOOL (&LangC_basic_types_table[14])
+#define LangC_VOID (&LangC_basic_types_table[15])
 #define LangC_SIZE_T (&LangC_basic_types_table[ctx->abi->index_sizet])
 #define LangC_PTRDIFF_T (&LangC_basic_types_table[ctx->abi->index_ptrdifft])
 #define LangC_IsSimpleType(node) ((node) && (node) >= LangC_CHAR && (node) <= LangC_VOID)
@@ -242,6 +244,14 @@ internal bool32
 LangC_IsIncompleteType(LangC_Context* ctx, LangC_Node* type)
 {
 	return type->size == 0;
+}
+
+internal bool32
+LangC_IsVoidType(LangC_Context* ctx, LangC_Node* type)
+{
+	type = LangC_TypeFromTypename(ctx, type);
+	
+	return type->kind == LangC_NodeKind_BaseType && type->flags & LangC_Node_BaseType_Void;
 }
 
 // NOTE(ljre): Compares two types.
@@ -491,6 +501,8 @@ LangC_ResolveType(LangC_Context* ctx, LangC_Node* type, bool32* out_is_complete,
 							}
 						}
 						
+						sym->size = AlignUp(sym->size, sym->alignment_mask);
+						
 						type->size = sym->size;
 						type->alignment_mask = sym->alignment_mask;
 						
@@ -499,28 +511,54 @@ LangC_ResolveType(LangC_Context* ctx, LangC_Node* type, bool32* out_is_complete,
 					}
 				} break;
 				
+				case LangC_Node_BaseType_Void:
+				{
+					type->size = 0;
+					type->alignment_mask = 0;
+				} break;
+				
 				case LangC_Node_BaseType_Char: abitype = &ctx->abi->t_char; goto set_abi_type;
 				case LangC_Node_BaseType_Char | LangC_Node_BaseType_Signed: abitype = &ctx->abi->t_schar; goto set_abi_type;
 				case LangC_Node_BaseType_Char | LangC_Node_BaseType_Unsigned: abitype = &ctx->abi->t_uchar; goto set_abi_type;
 				
+				case LangC_Node_BaseType_Short | LangC_Node_BaseType_Signed | LangC_Node_BaseType_Int:
+				case LangC_Node_BaseType_Short | LangC_Node_BaseType_Int:
 				case LangC_Node_BaseType_Short | LangC_Node_BaseType_Signed:
-				case LangC_Node_BaseType_Short: abitype = &ctx->abi->t_short; goto set_abi_type;
-				case LangC_Node_BaseType_Short | LangC_Node_BaseType_Unsigned: abitype = &ctx->abi->t_ushort; goto set_abi_type;
+				case LangC_Node_BaseType_Short:
+				abitype = &ctx->abi->t_short; goto set_abi_type;
+				case LangC_Node_BaseType_Short | LangC_Node_BaseType_Unsigned | LangC_Node_BaseType_Int:
+				case LangC_Node_BaseType_Short | LangC_Node_BaseType_Unsigned:
+				abitype = &ctx->abi->t_ushort; goto set_abi_type;
 				
+				case LangC_Node_BaseType_Signed:
 				case LangC_Node_BaseType_Int | LangC_Node_BaseType_Signed:
-				case LangC_Node_BaseType_Int: abitype = &ctx->abi->t_int; goto set_abi_type;
-				case LangC_Node_BaseType_Int | LangC_Node_BaseType_Unsigned: abitype = &ctx->abi->t_uint; goto set_abi_type;
+				case LangC_Node_BaseType_Int:
+				abitype = &ctx->abi->t_int; goto set_abi_type;
+				case LangC_Node_BaseType_Unsigned:
+				case LangC_Node_BaseType_Int | LangC_Node_BaseType_Unsigned:
+				abitype = &ctx->abi->t_uint; goto set_abi_type;
 				
+				case LangC_Node_BaseType_Long | LangC_Node_BaseType_Signed | LangC_Node_BaseType_Int:
+				case LangC_Node_BaseType_Long | LangC_Node_BaseType_Int:
 				case LangC_Node_BaseType_Long | LangC_Node_BaseType_Signed:
-				case LangC_Node_BaseType_Long: abitype = &ctx->abi->t_long; goto set_abi_type;
-				case LangC_Node_BaseType_Long | LangC_Node_BaseType_Unsigned: abitype = &ctx->abi->t_ulong; goto set_abi_type;
+				case LangC_Node_BaseType_Long:
+				abitype = &ctx->abi->t_long; goto set_abi_type;
+				case LangC_Node_BaseType_Long | LangC_Node_BaseType_Unsigned | LangC_Node_BaseType_Int:
+				case LangC_Node_BaseType_Long | LangC_Node_BaseType_Unsigned:
+				abitype = &ctx->abi->t_ulong; goto set_abi_type;
 				
+				case LangC_Node_BaseType_LongLong | LangC_Node_BaseType_Signed | LangC_Node_BaseType_Int:
+				case LangC_Node_BaseType_LongLong | LangC_Node_BaseType_Int:
 				case LangC_Node_BaseType_LongLong | LangC_Node_BaseType_Signed:
-				case LangC_Node_BaseType_LongLong: abitype = &ctx->abi->t_longlong; goto set_abi_type;
-				case LangC_Node_BaseType_LongLong | LangC_Node_BaseType_Unsigned: abitype = &ctx->abi->t_ulonglong; goto set_abi_type;
+				case LangC_Node_BaseType_LongLong:
+				abitype = &ctx->abi->t_longlong; goto set_abi_type;
+				case LangC_Node_BaseType_LongLong | LangC_Node_BaseType_Unsigned | LangC_Node_BaseType_Int:
+				case LangC_Node_BaseType_LongLong | LangC_Node_BaseType_Unsigned:
+				abitype = &ctx->abi->t_ulonglong; goto set_abi_type;
 				
 				case LangC_Node_BaseType_Float:  abitype = &ctx->abi->t_float;  goto set_abi_type;
 				case LangC_Node_BaseType_Double: abitype = &ctx->abi->t_double; goto set_abi_type;
+				case LangC_Node_BaseType_Bool: abitype = &ctx->abi->t_bool; goto set_abi_type;
 				
 				default: Unreachable(); break;
 			}
@@ -529,6 +567,8 @@ LangC_ResolveType(LangC_Context* ctx, LangC_Node* type, bool32* out_is_complete,
 			{
 				type->size = abitype->size;
 				type->alignment_mask = abitype->alignment_mask;
+				
+				is_complete = true;
 			}
 		} break;
 		
@@ -591,7 +631,7 @@ LangC_ResolveType(LangC_Context* ctx, LangC_Node* type, bool32* out_is_complete,
 			
 			if (!c)
 			{
-				if (type->type->kind == LangC_NodeKind_BaseType && type->type->flags & LangC_Node_BaseType_Void)
+				if (LangC_IsVoidType(ctx, type->type))
 				{
 					type->type = NULL;
 				}
