@@ -1,8 +1,5 @@
 @echo off
 
-set CFLAGS=-std=c99 -Wall -Wno-logical-op-parentheses -Wno-switch -D_CRT_SECURE_NO_WARNINGS -Wno-parentheses
-set LDFLAGS=-fuse-ld=lld-link
-
-clang -g src/main.c -o "occ.exe" %CFLAGS% %LDFLAGS%
+clang -g src/main.c -o "occ.exe" -std=c99 -Wall -Wno-logical-op-parentheses -Wno-switch -Wno-parentheses -fuse-ld=lld
 
 @echo on
