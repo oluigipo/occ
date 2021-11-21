@@ -355,163 +355,152 @@ typedef LangC_Lexer;
 
 enum LangC_NodeKind
 {
-	LangC_NodeKind_Null = 0, // special
-	LangC_NodeKind_BaseType, // flags = LangC_Node_BaseType_*
-	LangC_NodeKind_FunctionType, // flags = LangC_Node_FunctionType_*
-	LangC_NodeKind_PointerType, // flags = 
-	LangC_NodeKind_ArrayType, // flags = 
-	LangC_NodeKind_VariableLengthArrayType, // flags = 
-	LangC_NodeKind_Ident,
-	LangC_NodeKind_Decl,
-	LangC_NodeKind_EmptyStmt,
-	LangC_NodeKind_IfStmt,
-	LangC_NodeKind_DoWhileStmt,
-	LangC_NodeKind_WhileStmt,
-	LangC_NodeKind_ForStmt,
-	LangC_NodeKind_SwitchStmt,
-	LangC_NodeKind_ReturnStmt,
-	LangC_NodeKind_GotoStmt,
-	LangC_NodeKind_CompoundStmt,
-	LangC_NodeKind_Expr,
-	LangC_NodeKind_IntConstant,
-	LangC_NodeKind_LIntConstant,
-	LangC_NodeKind_LLIntConstant,
-	LangC_NodeKind_UintConstant,
-	LangC_NodeKind_LUintConstant,
-	LangC_NodeKind_LLUintConstant,
-	LangC_NodeKind_FloatConstant,
-	LangC_NodeKind_DoubleConstant,
-	LangC_NodeKind_StringConstant,
-	LangC_NodeKind_WideStringConstant,
-	LangC_NodeKind_InitializerEntry,
-	LangC_NodeKind_EnumEntry,
-	LangC_NodeKind_Label,
-	LangC_NodeKind_CaseLabel,
-	LangC_NodeKind_Attribute,
+	LangC_NodeKind_Null = 0,
+	LangC_NodeKind__Category = 12,
+	LangC_NodeKind__CategoryMask = ~(LangC_NodeKind__Category-1),
+	
+	LangC_NodeKind_Type = 1 << LangC_NodeKind__Category,
+	
+	LangC_NodeKind_TypeBase__First,
+	LangC_NodeKind_TypeBaseChar = LangC_NodeKind_TypeBase__First,
+	LangC_NodeKind_TypeBaseInt,
+	LangC_NodeKind_TypeBaseFloat,
+	LangC_NodeKind_TypeBaseDouble,
+	LangC_NodeKind_TypeBaseVoid,
+	LangC_NodeKind_TypeBaseBool,
+	LangC_NodeKind_TypeBaseTypename,
+	LangC_NodeKind_TypeBaseStruct,
+	LangC_NodeKind_TypeBaseUnion,
+	LangC_NodeKind_TypeBaseEnum,
+	LangC_NodeKind_TypeBase__Last = LangC_NodeKind_TypeBaseEnum,
+	LangC_NodeKind_TypeBaseEnumEntry,
+	
+	LangC_NodeKind_TypeFunction,
+	LangC_NodeKind_TypePointer,
+	LangC_NodeKind_TypeArray,
+	
+	LangC_NodeKind_Decl = 2 << LangC_NodeKind__Category,
+	LangC_NodeKind_DeclStatic,
+	LangC_NodeKind_DeclExtern,
+	LangC_NodeKind_DeclAuto,
+	LangC_NodeKind_DeclTypedef,
+	LangC_NodeKind_DeclRegister,
+	
+	LangC_NodeKind_Stmt = 3 << LangC_NodeKind__Category,
+	LangC_NodeKind_StmtEmpty,
+	LangC_NodeKind_StmtExpr,
+	LangC_NodeKind_StmtIf,
+	LangC_NodeKind_StmtDoWhile,
+	LangC_NodeKind_StmtWhile,
+	LangC_NodeKind_StmtFor,
+	LangC_NodeKind_StmtSwitch,
+	LangC_NodeKind_StmtReturn,
+	LangC_NodeKind_StmtGoto,
+	LangC_NodeKind_StmtCompound,
+	LangC_NodeKind_StmtLabel,
+	LangC_NodeKind_StmtCase,
+	
+	LangC_NodeKind_ExprFactor = 4 << LangC_NodeKind__Category,
+	LangC_NodeKind_ExprIdent,
+	LangC_NodeKind_ExprInt,
+	LangC_NodeKind_ExprLInt,
+	LangC_NodeKind_ExprLLInt,
+	LangC_NodeKind_ExprUInt,
+	LangC_NodeKind_ExprULInt,
+	LangC_NodeKind_ExprULLInt,
+	LangC_NodeKind_ExprFloat,
+	LangC_NodeKind_ExprDouble,
+	LangC_NodeKind_ExprString,
+	LangC_NodeKind_ExprWideString,
+	LangC_NodeKind_ExprCompoundLiteral,
+	LangC_NodeKind_ExprInitializer,
+	LangC_NodeKind_ExprInitializerMember,
+	LangC_NodeKind_ExprInitializerIndex,
+	
+	LangC_NodeKind_Expr1 = 5 << LangC_NodeKind__Category,
+	LangC_NodeKind_Expr1Plus,
+	LangC_NodeKind_Expr1Negative,
+	LangC_NodeKind_Expr1Not,
+	LangC_NodeKind_Expr1LogicalNot,
+	LangC_NodeKind_Expr1Deref,
+	LangC_NodeKind_Expr1Ref,
+	LangC_NodeKind_Expr1PrefixInc,
+	LangC_NodeKind_Expr1PrefixDec,
+	LangC_NodeKind_Expr1PostfixInc,
+	LangC_NodeKind_Expr1PostfixDec,
+	LangC_NodeKind_Expr1Sizeof,
+	LangC_NodeKind_Expr1SizeofType,
+	LangC_NodeKind_Expr1Cast,
+	
+	LangC_NodeKind_Expr2 = 6 << LangC_NodeKind__Category,
+	LangC_NodeKind_Expr2Add,
+	LangC_NodeKind_Expr2Sub,
+	LangC_NodeKind_Expr2Mul,
+	LangC_NodeKind_Expr2Div,
+	LangC_NodeKind_Expr2Mod,
+	LangC_NodeKind_Expr2LThan,
+	LangC_NodeKind_Expr2GThan,
+	LangC_NodeKind_Expr2LEqual,
+	LangC_NodeKind_Expr2GEqual,
+	LangC_NodeKind_Expr2Equals,
+	LangC_NodeKind_Expr2NotEquals,
+	LangC_NodeKind_Expr2LeftShift,
+	LangC_NodeKind_Expr2RightShift,
+	LangC_NodeKind_Expr2And,
+	LangC_NodeKind_Expr2Or,
+	LangC_NodeKind_Expr2Xor,
+	LangC_NodeKind_Expr2LogicalAnd,
+	LangC_NodeKind_Expr2LogicalOr,
+	LangC_NodeKind_Expr2Assign,
+	LangC_NodeKind_Expr2AssignAdd,
+	LangC_NodeKind_Expr2AssignSub,
+	LangC_NodeKind_Expr2AssignMul,
+	LangC_NodeKind_Expr2AssignDiv,
+	LangC_NodeKind_Expr2AssignMod,
+	LangC_NodeKind_Expr2AssignLeftShift,
+	LangC_NodeKind_Expr2AssignRightShift,
+	LangC_NodeKind_Expr2AssignAnd,
+	LangC_NodeKind_Expr2AssignOr,
+	LangC_NodeKind_Expr2AssignXor,
+	LangC_NodeKind_Expr2Comma,
+	LangC_NodeKind_Expr2Call,
+	LangC_NodeKind_Expr2Index,
+	LangC_NodeKind_Expr2Access,
+	LangC_NodeKind_Expr2DerefAccess,
+	
+	LangC_NodeKind_Expr3 = 7 << LangC_NodeKind__Category,
+	LangC_NodeKind_Expr3Condition,
+	
+	LangC_NodeKind_Attribute = 8 << LangC_NodeKind__Category,
+	LangC_NodeKind_AttributePacked,
+	LangC_NodeKind_AttributeBitfield,
 }
 typedef LangC_NodeKind;
 
-// Flags for any kind of node
-enum
+enum LangC_NodeFlags
 {
-	LangC_Node_Poisoned = 1 << 31,
-	LangC_Node_Const = 1 << 30,
-	LangC_Node_Volatile = 1 << 29,
-	LangC_Node_Register = 1 << 28,
-	LangC_Node_Restrict = 1 << 27,
-	LangC_Node_Static = 1 << 26,
-	LangC_Node_Extern = 1 << 25,
-	LangC_Node_Auto = 1 << 24,
-	LangC_Node_Typedef = 1 << 23,
-	LangC_Node_Inline = 1 << 22,
-	LangC_Node_Implicit = 1 << 21,
+	LangC_NodeFlags_Poisoned = 1 << 15,
+	LangC_NodeFlags_Implicit = 1 << 14,
+	LangC_NodeFlags_Decayed = 1 << 13,
 	
-	LangC_Node_LowerBits = (1 << 21) - 1,
-};
-
-enum
-{
-	LangC_Node_FunctionType_VarArgs = 1,
-};
-
-enum
-{
-	LangC_Node_Attribute_Packed = 1,
-	LangC_Node_Attribute_Bitfield = 2,
-};
-
-enum
-{
-	LangC_Node_BaseType_Char = 1,
-	LangC_Node_BaseType_Int = 1 << 1,
-	LangC_Node_BaseType_Float = 1 << 2,
-	LangC_Node_BaseType_Double = 1 << 3,
-	LangC_Node_BaseType_Typename = 1 << 4,
-	LangC_Node_BaseType_Struct = 1 << 5,
-	LangC_Node_BaseType_Union = 1 << 6,
-	LangC_Node_BaseType_Enum = 1 << 7,
-	LangC_Node_BaseType_Void = 1 << 8,
-	LangC_Node_BaseType_Bool = 1 << 9,
+	// 000
+	LangC_NodeFlags_Volatile = 4,
+	LangC_NodeFlags_Restrict = 2,
+	LangC_NodeFlags_Const = 1,
 	
-	LangC_Node_BaseType_Signed = 1 << 10,
-	LangC_Node_BaseType_Unsigned = 1 << 11,
-	LangC_Node_BaseType_Long = 1 << 12,
-	LangC_Node_BaseType_Short = 1 << 13,
-	LangC_Node_BaseType_Complex = 1 << 14,
+	// 00
+	LangC_NodeFlags_VarArgs = 2,
+	LangC_NodeFlags_Inline = 1,
 	
-	// combination of Short and Long
-	LangC_Node_BaseType_LongLong = LangC_Node_BaseType_Long | LangC_Node_BaseType_Short,
-};
-
-enum
-{
-	// unary
-	LangC_Node_Expr__FirstUnary,
-	LangC_Node_Expr_Negative = LangC_Node_Expr__FirstUnary, // -expr
-	LangC_Node_Expr_Not, // ~expr
-	LangC_Node_Expr_LogicalNot, // !expr
-	LangC_Node_Expr_Deref, // *expr
-	LangC_Node_Expr_Ref, // &expr
-	LangC_Node_Expr_PrefixInc, // ++expr
-	LangC_Node_Expr_PrefixDec, // --expr
-	LangC_Node_Expr_PostfixInc, // expr++
-	LangC_Node_Expr_PostfixDec, // expr--
-	LangC_Node_Expr_Sizeof, // sizeof expr // sizeof (type)
-	
-	// binary
-	LangC_Node_Expr__FirstBinary,
-	LangC_Node_Expr_Add = LangC_Node_Expr__FirstBinary, // left + right
-	LangC_Node_Expr_Sub, // left - right
-	LangC_Node_Expr_Mul, // left * right
-	LangC_Node_Expr_Div, // left / right
-	LangC_Node_Expr_Mod, // left % right
-	LangC_Node_Expr_LThan, // left < right
-	LangC_Node_Expr_GThan, // left > right
-	LangC_Node_Expr_LEqual, // left <= right
-	LangC_Node_Expr_GEqual, // left >= right
-	LangC_Node_Expr_Equals, // left == right
-	LangC_Node_Expr_NotEquals, // left != right
-	LangC_Node_Expr_LeftShift, // left << right
-	LangC_Node_Expr_RightShift, // left >> right
-	LangC_Node_Expr_And, // left & right
-	LangC_Node_Expr_Or, // left | right
-	LangC_Node_Expr_Xor, // left ^ right
-	LangC_Node_Expr_LogicalAnd, // left && right
-	LangC_Node_Expr_LogicalOr, // left || right
-	LangC_Node_Expr_Assign, // left = right
-	LangC_Node_Expr_AssignAdd, // left += right
-	LangC_Node_Expr_AssignSub, // left -= right
-	LangC_Node_Expr_AssignMul, // left *= right
-	LangC_Node_Expr_AssignDiv, // left /= right
-	LangC_Node_Expr_AssignMod, // left %= right
-	LangC_Node_Expr_AssignLeftShift, // left <<= right
-	LangC_Node_Expr_AssignRightShift, // left >>= right
-	LangC_Node_Expr_AssignAnd, // left &= right
-	LangC_Node_Expr_AssignOr, // left |= right
-	LangC_Node_Expr_AssignXor, // left ^= right
-	LangC_Node_Expr_Comma, // left, right
-	
-	// NOTE(ljre): maybe???? cool GCC extension
-	//LangC_Node_Expr_Optional, // left ?: right
-	
-	// special
-	LangC_Node_Expr__FirstSpecial,
-	LangC_Node_Expr_Call = LangC_Node_Expr__FirstSpecial, // left(right, right->next, ...)
-	LangC_Node_Expr_Index, // left[right]
-	LangC_Node_Expr_Cast, // (type)expr
-	LangC_Node_Expr_Ternary, // left ? middle : right
-	LangC_Node_Expr_CompoundLiteral, // (type) { init, init->next, ... }
-	LangC_Node_Expr_Initializer, // { init, init->next, ... }
-	LangC_Node_Expr_Access, // expr.name
-	LangC_Node_Expr_DerefAccess, // expr->name
-};
-
-enum
-{
-	LangC_Node_InitializerEntry_JustValue = 0,
-	LangC_Node_InitializerEntry_ArrayIndex,
-	LangC_Node_InitializerEntry_Field,
-};
+	// 00_0000
+	LangC_NodeFlags_Signed = 1,
+	LangC_NodeFlags_Unsigned = 2,
+	LangC_NodeFlags_Long = 4,
+	LangC_NodeFlags_LongLong = 8,
+	LangC_NodeFlags_Short = 16,
+	LangC_NodeFlags_Complex = 32,
+}
+typedef LangC_NodeFlags;
 
 struct LangC_SymbolStack
 {
@@ -525,19 +514,19 @@ enum LangC_SymbolKind
 {
 	LangC_SymbolKind_Null = 0,
 	
-	LangC_SymbolKind_GlobalVar,
-	LangC_SymbolKind_GlobalStaticVar,
-	LangC_SymbolKind_GlobalVarDecl,
-	LangC_SymbolKind_GlobalFunction,
-	LangC_SymbolKind_GlobalFunctionDecl,
+	LangC_SymbolKind_Var,
+	LangC_SymbolKind_VarDecl,
+	LangC_SymbolKind_StaticVar,
+	LangC_SymbolKind_Function,
+	LangC_SymbolKind_FunctionDecl,
 	LangC_SymbolKind_Parameter,
 	LangC_SymbolKind_Field,
-	LangC_SymbolKind_LocalVar,
-	LangC_SymbolKind_LocalFunctionDecl,
 	LangC_SymbolKind_EnumConstant,
 	
 	LangC_SymbolKind_Typename,
-	LangC_SymbolKind_Struct,
+	
+	LangC_SymbolKind__OwnNamespace,
+	LangC_SymbolKind_Struct = LangC_SymbolKind__OwnNamespace,
 	LangC_SymbolKind_Union,
 	LangC_SymbolKind_Enum,
 }
@@ -548,13 +537,13 @@ struct LangC_Symbol
 	LangC_Symbol* next;
 	
 	LangC_Node* type;
+	LangC_Node* decl;
+	
 	String name;
 	uint64 name_hash;
 	
-	LangC_SymbolKind kind;
-	
 	uintsize size;
-	uint64 flags; // LangC_Node_* flags
+	LangC_SymbolKind kind; // 4 bytes of padding :(
 	
 	union
 	{
@@ -765,11 +754,13 @@ struct LangC_ABI
 {
 	union
 	{
+		// NOTE(ljre): You *can* assume that 'index+1' is 'index' but unsigned, but only for types that allow it.
+		
 		struct
 		{
 			LangC_ABIType t_char;
-			LangC_ABIType t_schar;
 			LangC_ABIType t_uchar;
+			LangC_ABIType t_schar;
 			LangC_ABIType t_short;
 			LangC_ABIType t_ushort;
 			LangC_ABIType t_int;

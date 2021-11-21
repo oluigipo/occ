@@ -11,7 +11,7 @@ LangC_SetupLexer(LangC_Lexer* lex, const char* source, Arena* arena)
 		lex->line = 1;
 	
 	// NOTE(ljre): Ignore BOM.
-	if (lex->head[0] == 0xEF && lex->head[1] == 0xBB && lex->head[2] == 0xBF)
+	if ((unsigned char)lex->head[0] == 0xEF && (unsigned char)lex->head[1] == 0xBB && (unsigned char)lex->head[2] == 0xBF)
 		lex->head += 3;
 	
 	lex->token.kind = LangC_TokenKind_Eof;
@@ -60,7 +60,7 @@ internal inline bool32
 LangC_IsIdentChar(char ch)
 {
 	return ch == '_' || (ch >= '0' && ch <= '9') || LangC_IsAlpha(ch)
-		|| ch >= 128; // NOTE(ljre): This makes every multibyte UTF-8 codepoint a valid char for identifiers.
+		|| (unsigned char)ch >= 128; // NOTE(ljre): This makes every multibyte UTF-8 codepoint a valid char for identifiers.
 }
 
 internal void
