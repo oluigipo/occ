@@ -227,6 +227,31 @@ LangC_CStringFromType(LangC_Context* ctx, LangC_Node* type)
 	return "";
 }
 
+internal const char*
+LangC_CStringFromNodeKind(LangC_NodeKind kind)
+{
+	static const char* const table[LangC_NodeKind__CategoryCount][33] = {
+		// TODO(ljre): Rest of the table.
+		//             Search doesn't need to be that fast since this function should only
+		//             be called when we are reporting warnings or errors.
+		
+		[(LangC_NodeKind_Expr2>>LangC_NodeKind__Category) - 1] = {
+			"+", "-", "*", "/", "%", "<", ">", "<=", ">=", "==", "!=",
+			"<<", ">>", "&", "|", "^", "&&", "||", "=", "+=", "-=", "*=",
+			"/=", "<<=", ">>=", "&=", "|=", "^=", ",", "function call()",
+			"indexing[]", ".", "->",
+		},
+	};
+	
+	uintsize cat = (kind>>LangC_NodeKind__Category) - 1;
+	uintsize index = kind & ~LangC_NodeKind__CategoryMask;
+	
+	Assert(cat < ArrayLength(table));
+	Assert(index < ArrayLength(table[cat]));
+	
+	return table[cat][index];
+}
+
 internal int32
 LangC_NodeCount(LangC_Node* node)
 {
@@ -242,14 +267,14 @@ LangC_NodeCount(LangC_Node* node)
 }
 
 internal int32
-LangC_RankOfType(LangC_Context* ctx, LangC_NodeKind kind)
+LangC_RankOfType(LangC_Context* ctx, LangC_Node* type)
 {
 	Assert(ArrayLength(LangC_basic_types_table) >= ArrayLength(ctx->abi->t));
 	
 	for (int32 i = 0; i < ArrayLength(ctx->abi->t); ++i)
 	{
 		const LangC_Node* node = &LangC_basic_types_table[i];
-		if (kind == node->kind)
+		if (type->kind == node->kind && (type->flags & node->flags) == node->flags)
 			return i;
 	}
 	
@@ -260,7 +285,7 @@ internal bool32
 LangC_IsNumericType(LangC_Context* ctx, LangC_Node* type)
 {
 	// TODO(ljre): is this enough?
-	return LangC_RankOfType(ctx, type->flags) != -1;
+	return LangC_RankOfType(ctx, type) != -1;
 }
 
 internal bool32
@@ -312,8 +337,8 @@ LangC_CompareTypes(LangC_Context* ctx, LangC_Node* left, LangC_Node* right)
 		case LangC_NodeKind_TypeBaseBool:
 		case LangC_NodeKind_TypeBaseEnum:
 		{
-			int32 left_rank = LangC_RankOfType(ctx, left->flags);
-			int32 right_rank = LangC_RankOfType(ctx, right->flags);
+			int32 left_rank = LangC_RankOfType(ctx, left);
+			int32 right_rank = LangC_RankOfType(ctx, right);
 			
 			if (left_rank == -1 || right_rank == -1)
 				return LangC_INVALID;
@@ -335,7 +360,7 @@ LangC_CompareTypes(LangC_Context* ctx, LangC_Node* left, LangC_Node* right)
 			}
 			else if (LangC_IsBaseType(right->kind))
 			{
-				int32 right_rank = LangC_RankOfType(ctx, right->flags);
+				int32 right_rank = LangC_RankOfType(ctx, right);
 				
 				if (right_rank == -1)
 					return LangC_INVALID;
@@ -560,6 +585,8 @@ LangC_ResolveType(LangC_Context* ctx, LangC_Node* type, bool32* out_is_complete,
 				abitype = &ctx->abi->t_long;
 			else if (type->flags & LangC_NodeFlags_Short)
 				abitype = &ctx->abi->t_short;
+			else
+				abitype = &ctx->abi->t_int;
 			
 			if (type->flags & LangC_NodeFlags_Unsigned)
 				abitype = abitype+1; // NOTE(ljre): 'abitype+1' is the same type, but unsigned.
@@ -567,7 +594,7 @@ LangC_ResolveType(LangC_Context* ctx, LangC_Node* type, bool32* out_is_complete,
 		
 		case LangC_NodeKind_TypeBaseFloat:  abitype = &ctx->abi->t_float;  goto set_abi_type;
 		case LangC_NodeKind_TypeBaseDouble: abitype = &ctx->abi->t_double; goto set_abi_type;
-		case LangC_NodeKind_TypeBaseBool: abitype = &ctx->abi->t_bool; goto set_abi_type;
+		case LangC_NodeKind_TypeBaseBool:   abitype = &ctx->abi->t_bool;   goto set_abi_type;
 		
 		case LangC_NodeKind_TypePointer:
 		{
@@ -721,7 +748,28 @@ LangC_DecayExpr(LangC_Context* ctx, LangC_Node* expr)
 internal LangC_Node*
 LangC_PromoteToAtLeast(LangC_Context* ctx, LangC_Node* expr, LangC_Node* type)
 {
-	// TODO
+	if (!expr)
+		return NULL;
+	
+	LangC_Node* result;
+	int32 cmp = LangC_CompareTypes(ctx, expr->type, type);
+	
+	if (cmp == LangC_INVALID)
+	{
+		result = NULL;
+	}
+	else if (cmp < 0)
+	{
+		result = LangC_CreateNodeFrom(ctx, expr, LangC_NodeKind_Expr1Cast);
+		result->type = type;
+		result->expr = expr;
+	}
+	else
+	{
+		result = expr;
+	}
+	
+	return result;
 }
 
 internal LangC_Node*
@@ -734,7 +782,7 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 			expr->left = LangC_ResolveExpr(ctx, expr->left);
 			LangC_Node* functype = expr->left->type;
 			
-			if (functype->kind == LangC_NodeKind_TypeFunction)
+			if (functype->kind == LangC_NodeKind_TypePointer)
 				functype = functype->type;
 			
 			if (functype->kind != LangC_NodeKind_TypeFunction)
@@ -755,12 +803,12 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 					
 					*arg = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, *arg));
 					
-					LangC_Node* c = LangC_AddCastToExprIfNeeded(ctx, *arg, funcargs);
+					LangC_Node* c = LangC_AddCastToExprIfNeeded(ctx, *arg, funcargs->type);
 					if (!c)
 					{
 						LangC_NodeError(ctx, *arg, "cannot convert from type '%s' to '%s' when passing argument to function.",
 										LangC_CStringFromType(ctx, (*arg)->type),
-										LangC_CStringFromType(ctx, funcargs));
+										LangC_CStringFromType(ctx, funcargs->type));
 					}
 					else
 					{
@@ -841,7 +889,7 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 			expr->middle = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->middle));
 			expr->right = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->right));
 			
-			LangC_Node* c = LangC_AddCastToExprIfNeeded(ctx, expr->left, LangC_INT);
+			LangC_Node* c = LangC_PromoteToAtLeast(ctx, expr->left, LangC_INT);
 			if (!c)
 			{
 				LangC_NodeError(ctx, expr->left, "condition is not of numeric type.");
@@ -906,9 +954,8 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 		} break;
 		
 		{
-			bool32 is_assign;
+			bool32 needs_to_be_numeric;
 			
-			case LangC_NodeKind_Expr2Assign:
 			case LangC_NodeKind_Expr2AssignAdd:
 			case LangC_NodeKind_Expr2AssignSub:
 			case LangC_NodeKind_Expr2AssignMul:
@@ -918,45 +965,69 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 			case LangC_NodeKind_Expr2AssignRightShift:
 			case LangC_NodeKind_Expr2AssignAnd:
 			case LangC_NodeKind_Expr2AssignOr:
-			case LangC_NodeKind_Expr2AssignXor: is_assign = true;
-			if (0)
-			{
-				case LangC_NodeKind_Expr2Add:
-				case LangC_NodeKind_Expr2Sub:
-				case LangC_NodeKind_Expr2Mul:
-				case LangC_NodeKind_Expr2Div:
-				case LangC_NodeKind_Expr2Mod:
-				case LangC_NodeKind_Expr2And:
-				case LangC_NodeKind_Expr2Or:
-				case LangC_NodeKind_Expr2Xor:
-				case LangC_NodeKind_Expr2LeftShift:
-				case LangC_NodeKind_Expr2RightShift:
-				is_assign = false;
-			}
+			case LangC_NodeKind_Expr2AssignXor: needs_to_be_numeric = true;
+			if (0) case LangC_NodeKind_Expr2Assign: needs_to_be_numeric = false;
 			
 			expr->left = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->left));
-			expr->left = LangC_PromoteToAtLeast(ctx, expr->left, LangC_INT);
 			
 			expr->right = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->right));
 			expr->right = LangC_PromoteToAtLeast(ctx, expr->right, LangC_INT);
 			
-			if (is_assign && !LangC_IsExprLValue(ctx, expr->left))
+			if (!LangC_IsExprLValue(ctx, expr->left))
 			{
 				LangC_NodeError(ctx, expr->left, "left-side of assignment needs to be a lvalue.");
 			}
 			
-			expr->type = expr->left->type;
-			
 			int32 cmp = LangC_CompareTypes(ctx, expr->left->type, expr->right->type);
 			if (cmp == LangC_INVALID)
 			{
-				LangC_NodeError(ctx, expr, "invalid operation with operands of type '%s' and '%s'.",
+				LangC_NodeError(ctx, expr, "invalid operation '%s' with operands of type '%s' and '%s'.",
+								LangC_CStringFromNodeKind(expr->kind),
 								LangC_CStringFromType(ctx, expr->left->type),
 								LangC_CStringFromType(ctx, expr->right->type));
 			}
 			else if (cmp < 0)
 			{
 				expr->type = expr->right->type;
+			}
+			else
+			{
+				expr->type = expr->left->type;
+			}
+		} break;
+		
+		case LangC_NodeKind_Expr2Add:
+		case LangC_NodeKind_Expr2Sub:
+		case LangC_NodeKind_Expr2Mul:
+		case LangC_NodeKind_Expr2Div:
+		case LangC_NodeKind_Expr2Mod:
+		case LangC_NodeKind_Expr2And:
+		case LangC_NodeKind_Expr2Or:
+		case LangC_NodeKind_Expr2Xor:
+		case LangC_NodeKind_Expr2LeftShift:
+		case LangC_NodeKind_Expr2RightShift:
+		{
+			expr->left = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->left));
+			expr->left = LangC_PromoteToAtLeast(ctx, expr->left, LangC_INT);
+			
+			expr->right = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->right));
+			expr->right = LangC_PromoteToAtLeast(ctx, expr->right, LangC_INT);
+			
+			int32 cmp = LangC_CompareTypes(ctx, expr->left->type, expr->right->type);
+			if (cmp == LangC_INVALID)
+			{
+				LangC_NodeError(ctx, expr, "invalid operation '%s' with operands of type '%s' and '%s'.",
+								LangC_CStringFromNodeKind(expr->kind),
+								LangC_CStringFromType(ctx, expr->left->type),
+								LangC_CStringFromType(ctx, expr->right->type));
+			}
+			else if (cmp < 0)
+			{
+				expr->type = expr->right->type;
+			}
+			else
+			{
+				expr->type = expr->left->type;
 			}
 		} break;
 		
@@ -1097,8 +1168,6 @@ LangC_ResolveExprOfType(LangC_Context* ctx, LangC_Node* expr, LangC_Node* type)
 internal void
 LangC_ResolveDecl(LangC_Context* ctx, LangC_Node* decl)
 {
-	Assert(decl->kind == LangC_NodeKind_Decl);
-	
 	LangC_SymbolKind sym_kind = LangC_SymbolKind_Var;
 	bool32 is_complete;
 	LangC_ResolveType(ctx, decl->type, &is_complete, false);
@@ -1285,7 +1354,7 @@ LangC_ResolveStmt(LangC_Context* ctx, LangC_Node* stmt)
 			if (stmt->expr)
 				stmt->expr = LangC_ResolveExpr(ctx, stmt->expr);
 			
-			cast = LangC_AddCastToExprIfNeeded(ctx, stmt->expr, LangC_INT);
+			cast = LangC_PromoteToAtLeast(ctx, stmt->expr, LangC_INT);
 			if (!cast)
 			{
 				LangC_NodeError(ctx, stmt->expr, (stmt->kind == LangC_NodeKind_StmtSwitch) ?
@@ -1313,7 +1382,7 @@ LangC_ResolveStmt(LangC_Context* ctx, LangC_Node* stmt)
 		{
 			stmt->expr = LangC_ResolveExpr(ctx, stmt->expr);
 			
-			cast = LangC_AddCastToExprIfNeeded(ctx, stmt->expr, LangC_INT);
+			cast = LangC_PromoteToAtLeast(ctx, stmt->expr, LangC_INT);
 			if (!cast)
 			{
 				LangC_NodeError(ctx, stmt->expr, "case expression should be of integer type.");
@@ -1346,7 +1415,7 @@ LangC_ResolveBlock(LangC_Context* ctx, LangC_Node* block)
 	
 	for (LangC_Node* stmt = block->stmt; stmt; stmt = stmt->next)
 	{
-		if ((stmt->kind & LangC_NodeKind__Category) == LangC_NodeKind_Decl)
+		if ((stmt->kind & LangC_NodeKind__CategoryMask) == LangC_NodeKind_Decl)
 			LangC_ResolveDecl(ctx, stmt);
 		else
 			LangC_ResolveStmt(ctx, stmt);
@@ -1360,13 +1429,12 @@ internal uintsize
 LangC_CalculateFunctionStackSize(LangC_Context* ctx, LangC_SymbolStack* scope)
 {
 	// TODO(ljre):
+	return 0;
 }
 
 internal void
 LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 {
-	Assert(decl->kind == LangC_NodeKind_Decl);
-	
 	LangC_ResolveType(ctx, decl->type, NULL, false);
 	
 	// TODO(ljre): Merging of multiple declarations specifics and attributes.

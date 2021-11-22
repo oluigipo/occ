@@ -10,12 +10,13 @@ LangC_SetupLexer(LangC_Lexer* lex, const char* source, Arena* arena)
 	if (lex->line == 0)
 		lex->line = 1;
 	
+	lex->head = source;
 	// NOTE(ljre): Ignore BOM.
 	if ((unsigned char)lex->head[0] == 0xEF && (unsigned char)lex->head[1] == 0xBB && (unsigned char)lex->head[2] == 0xBF)
 		lex->head += 3;
 	
 	lex->token.kind = LangC_TokenKind_Eof;
-	lex->head = lex->previous_head = source;
+	lex->previous_head = lex->head;
 	lex->arena = arena;
 }
 

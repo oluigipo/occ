@@ -357,10 +357,9 @@ enum LangC_NodeKind
 {
 	LangC_NodeKind_Null = 0,
 	LangC_NodeKind__Category = 12,
-	LangC_NodeKind__CategoryMask = ~(LangC_NodeKind__Category-1),
+	LangC_NodeKind__CategoryMask = ~((1<<LangC_NodeKind__Category)-1),
 	
 	LangC_NodeKind_Type = 1 << LangC_NodeKind__Category,
-	
 	LangC_NodeKind_TypeBase__First,
 	LangC_NodeKind_TypeBaseChar = LangC_NodeKind_TypeBase__First,
 	LangC_NodeKind_TypeBaseInt,
@@ -374,7 +373,6 @@ enum LangC_NodeKind
 	LangC_NodeKind_TypeBaseEnum,
 	LangC_NodeKind_TypeBase__Last = LangC_NodeKind_TypeBaseEnum,
 	LangC_NodeKind_TypeBaseEnumEntry,
-	
 	LangC_NodeKind_TypeFunction,
 	LangC_NodeKind_TypePointer,
 	LangC_NodeKind_TypeArray,
@@ -474,6 +472,8 @@ enum LangC_NodeKind
 	LangC_NodeKind_Attribute = 8 << LangC_NodeKind__Category,
 	LangC_NodeKind_AttributePacked,
 	LangC_NodeKind_AttributeBitfield,
+	
+	LangC_NodeKind__CategoryCount = 8,
 }
 typedef LangC_NodeKind;
 
@@ -484,9 +484,9 @@ enum LangC_NodeFlags
 	LangC_NodeFlags_Decayed = 1 << 13,
 	
 	// 000
-	LangC_NodeFlags_Volatile = 4,
-	LangC_NodeFlags_Restrict = 2,
-	LangC_NodeFlags_Const = 1,
+	LangC_NodeFlags_Volatile = 1024,
+	LangC_NodeFlags_Restrict = 512,
+	LangC_NodeFlags_Const = 256,
 	
 	// 00
 	LangC_NodeFlags_VarArgs = 2,
@@ -616,29 +616,17 @@ struct LangC_Node
 	// case expr: stmt
 	// (type) init
 	// { .left[middle] = right, .name = expr, expr, [middle] = right, }
-	LangC_Node* init;
-	LangC_Node* iter;
 	union
 	{
 		struct
 		{
-			LangC_Node* stmt;
-			LangC_Node* stmt2;
-			LangC_Node* expr;
+			union { LangC_Node* stmt,  * left,   * body; };
+			union { LangC_Node* stmt2, * middle, * params, *init; };
+			union { LangC_Node* expr,  * right; };
+			union { LangC_Node* iter; };
 		};
 		
-		struct
-		{
-			LangC_Node* left;
-			LangC_Node* middle;
-			LangC_Node* right;
-		};
-		
-		struct
-		{
-			LangC_Node* body;
-			LangC_Node* params;
-		};
+		LangC_Node* leafs[5];
 	};
 	
 	union

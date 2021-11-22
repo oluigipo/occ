@@ -22,7 +22,7 @@
 *    - Trace() macro so we can use Tracy :);
 *    - Flag (-W): Warnings flags;
 *    - Flag (-w): Suppress all warnings;
-*    - Redo 'LangC_Node';
+*    - Revision 'LangC_Node';
 *
 * IDEAS:
 *    - Flag (-Edecl): Output only declarations to output file;

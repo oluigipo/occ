@@ -93,6 +93,21 @@ LangC_CreateNode(LangC_Context* ctx, LangC_NodeKind kind)
 }
 
 internal void
+LangC_PoisonNode(LangC_Context* ctx, LangC_Node* node)
+{
+	if (node->flags & LangC_NodeFlags_Poisoned)
+		return;
+	
+	node->flags |= LangC_NodeFlags_Poisoned;
+	
+	for (int32 i = 0; i < ArrayLength(node->leafs); ++i)
+	{
+		if (node->leafs[i])
+			LangC_PoisonNode(ctx, node->leafs[i]);
+	}
+}
+
+internal void
 LangC_NodeError(LangC_Context* ctx, LangC_Node* node, const char* fmt, ...)
 {
 	// NOTE(ljre): If this node is already fucked up, no need to report more errors.
