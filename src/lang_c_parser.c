@@ -265,8 +265,8 @@ LangC_ParseStructBody(LangC_Context* ctx)
 	
 	if (should_eat_semicolon)
 	{
-		LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 		should_eat_semicolon = false;
+		LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 	}
 	
 	while (!LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_RightCurl))
@@ -285,8 +285,8 @@ LangC_ParseStructBody(LangC_Context* ctx)
 		
 		if (should_eat_semicolon)
 		{
-			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 			should_eat_semicolon = false;
+			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 		}
 		
 		last = new_last;
@@ -740,47 +740,6 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 	return result;
 }
 
-internal LangC_NodeKind LangC_token_to_op[LangC_TokenKind__Count] = {
-	[LangC_TokenKind_Comma] = LangC_NodeKind_Expr2Comma,
-	
-	[LangC_TokenKind_Assign] = LangC_NodeKind_Expr2Assign,
-	[LangC_TokenKind_PlusAssign] = LangC_NodeKind_Expr2AssignAdd,
-	[LangC_TokenKind_MinusAssign] = LangC_NodeKind_Expr2AssignSub,
-	[LangC_TokenKind_MulAssign] = LangC_NodeKind_Expr2AssignMul,
-	[LangC_TokenKind_DivAssign] = LangC_NodeKind_Expr2AssignDiv,
-	[LangC_TokenKind_LeftShiftAssign] = LangC_NodeKind_Expr2AssignLeftShift,
-	[LangC_TokenKind_RightShiftAssign] = LangC_NodeKind_Expr2AssignRightShift,
-	[LangC_TokenKind_AndAssign] = LangC_NodeKind_Expr2AssignAnd,
-	[LangC_TokenKind_OrAssign] = LangC_NodeKind_Expr2AssignOr,
-	[LangC_TokenKind_XorAssign] = LangC_NodeKind_Expr2AssignXor,
-	
-	[LangC_TokenKind_QuestionMark] = LangC_NodeKind_Expr3Condition,
-	
-	[LangC_TokenKind_LOr] = LangC_NodeKind_Expr2LogicalOr,
-	[LangC_TokenKind_LAnd] = LangC_NodeKind_Expr2LogicalAnd,
-	[LangC_TokenKind_Or] = LangC_NodeKind_Expr2Or,
-	[LangC_TokenKind_Xor] = LangC_NodeKind_Expr2Xor,
-	[LangC_TokenKind_And] = LangC_NodeKind_Expr2And,
-	
-	[LangC_TokenKind_Equals] = LangC_NodeKind_Expr2Equals,
-	[LangC_TokenKind_NotEquals] = LangC_NodeKind_Expr2NotEquals,
-	
-	[LangC_TokenKind_LThan] = LangC_NodeKind_Expr2LThan,
-	[LangC_TokenKind_GThan] = LangC_NodeKind_Expr2GThan,
-	[LangC_TokenKind_LEqual] = LangC_NodeKind_Expr2LEqual,
-	[LangC_TokenKind_GEqual] = LangC_NodeKind_Expr2GEqual,
-	
-	[LangC_TokenKind_LeftShift] = LangC_NodeKind_Expr2LeftShift,
-	[LangC_TokenKind_RightShift] = LangC_NodeKind_Expr2RightShift,
-	
-	[LangC_TokenKind_Plus] = LangC_NodeKind_Expr2Add,
-	[LangC_TokenKind_Minus] = LangC_NodeKind_Expr2Sub,
-	
-	[LangC_TokenKind_Mul] = LangC_NodeKind_Expr2Mul,
-	[LangC_TokenKind_Div] = LangC_NodeKind_Expr2Div,
-	[LangC_TokenKind_Mod] = LangC_NodeKind_Expr2Mod,
-};
-
 internal LangC_Node*
 LangC_ParseExpr(LangC_Context* ctx, int32 level, bool32 allow_init)
 {
@@ -1147,7 +1106,7 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 				else
 				{
 					LangC_Node* last_param;
-					newtype->params = LangC_ParseDeclAndSemicolonIfNeeded(ctx, &last_param, 8);
+					newtype->params = LangC_ParseDecl(ctx, &last_param, 8, NULL);
 					
 					while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma))
 					{
@@ -1158,7 +1117,7 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 						}
 						
 						LangC_Node* new_last_param;
-						last_param->next = LangC_ParseDeclAndSemicolonIfNeeded(ctx, &new_last_param, 8);
+						last_param->next = LangC_ParseDecl(ctx, &new_last_param, 8, NULL);
 						last_param = new_last_param;
 					}
 				}
@@ -1190,7 +1149,15 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 				if (paren_stack_size > 0)
 				{
 					LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
+					
 					head = paren_stack[--paren_stack_size];
+					
+					while (previous_head->type != head)
+					{
+						previous_head = previous_head->type;
+						Assert(previous_head);
+					}
+					
 					continue;
 				}
 			} /* fallthrough */
@@ -1213,12 +1180,13 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 //                 4 - allow multiple;
 //                 8 - decay;
 //
-// NOTE(ljre): IMPORTANT - 'out_should_eat_semicolon' is only assigned when it should be true, so you
-//                         should initialize it to 'false' before calling this function.
+// NOTE(ljre): IMPORTANT - 'out_should_eat_semicolon' is only assigned when it should be true and if
+//                         'options & 4' is set, so you should initialize it to 'false' before calling
+//                         this function.
 internal LangC_Node*
 LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32* out_should_eat_semicolon)
 {
-	Assert(out_should_eat_semicolon);
+	Assert(!(options & 4) || out_should_eat_semicolon);
 	
 	LangC_Node* decl = NULL;
 	if (!(options & 1))

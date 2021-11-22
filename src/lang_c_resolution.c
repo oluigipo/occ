@@ -416,17 +416,6 @@ LangC_IsExprLValue(LangC_Context* ctx, LangC_Node* expr)
 	switch (expr->kind)
 	{
 		case LangC_NodeKind_Expr1Deref:
-		case LangC_NodeKind_Expr2Assign:
-		case LangC_NodeKind_Expr2AssignAdd:
-		case LangC_NodeKind_Expr2AssignSub:
-		case LangC_NodeKind_Expr2AssignMul:
-		case LangC_NodeKind_Expr2AssignDiv:
-		case LangC_NodeKind_Expr2AssignMod:
-		case LangC_NodeKind_Expr2AssignLeftShift:
-		case LangC_NodeKind_Expr2AssignRightShift:
-		case LangC_NodeKind_Expr2AssignAnd:
-		case LangC_NodeKind_Expr2AssignOr:
-		case LangC_NodeKind_Expr2AssignXor:
 		case LangC_NodeKind_Expr2Index:
 		case LangC_NodeKind_ExprCompoundLiteral:
 		case LangC_NodeKind_Expr2Access:
