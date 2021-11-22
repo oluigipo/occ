@@ -746,6 +746,7 @@ struct LangC_ABI
 		
 		struct
 		{
+			LangC_ABIType t_bool;
 			LangC_ABIType t_char;
 			LangC_ABIType t_uchar;
 			LangC_ABIType t_schar;
@@ -760,7 +761,6 @@ struct LangC_ABI
 			LangC_ABIType t_float;
 			LangC_ABIType t_double;
 			LangC_ABIType t_ptr;
-			LangC_ABIType t_bool;
 		};
 		
 		LangC_ABIType t[15];

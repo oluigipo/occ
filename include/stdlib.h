@@ -23,50 +23,50 @@ typedef struct _lldiv_t {
 
 #define RAND_MAX 0x7fff
 
-int ___mb_cur_max_func(void);
+int __cdecl_ ___mb_cur_max_func(void);
 #define MB_CUR_MAX ___mb_cur_max_func()
 
-double atof(const char* nptr);
-int atoi(const char* nptr);
-long int atol(const char* nptr);
-long long int atoll(const char* nptr);
-double strtod(const char* restrict nptr, char** restrict endptr);
-float strtof(const char* restrict nptr, char** restrict endptr);
-long double strtold(const char* restrict nptr, char** restrict endptr);
-long int strtol(const char* restrict nptr, char** restrict endptr, int base);
-long long int strtoll(const char* restrict nptr, char** restrict endptr, int base);
-unsigned long int strtoul(const char* restrict nptr, char** restrict endptr, int base);
-unsigned long long int strtoull(const char* restrict nptr, char** restrict endptr, int base);
+double __cdecl_ atof(const char* nptr);
+int __cdecl_ atoi(const char* nptr);
+long int __cdecl_ atol(const char* nptr);
+long long int __cdecl_ atoll(const char* nptr);
+double __cdecl_ strtod(const char* restrict nptr, char** restrict endptr);
+float __cdecl_ strtof(const char* restrict nptr, char** restrict endptr);
+long double __cdecl_ strtold(const char* restrict nptr, char** restrict endptr);
+long int __cdecl_ strtol(const char* restrict nptr, char** restrict endptr, int base);
+long long int __cdecl_ strtoll(const char* restrict nptr, char** restrict endptr, int base);
+unsigned long int __cdecl_ strtoul(const char* restrict nptr, char** restrict endptr, int base);
+unsigned long long int __cdecl_ strtoull(const char* restrict nptr, char** restrict endptr, int base);
 
-int rand(void);
-void srand(unsigned int seed);
-void* calloc(size_t count, size_t size);
-void free(void* ptr);
-void* malloc(size_t size);
-void* realloc(void* ptr, size_t size);
+int __cdecl_ rand(void);
+void __cdecl_ srand(unsigned int seed);
+void* __cdecl_ calloc(size_t count, size_t size);
+void __cdecl_ free(void* ptr);
+void* __cdecl_ malloc(size_t size);
+void* __cdecl_ realloc(void* ptr, size_t size);
 
-void abort(void);
-int atexit(void (*func)(void));
-void exit(int status);
-void _Exit(int status);
+void __cdecl_ abort(void);
+int __cdecl_ atexit(void (*__cdecl_ func)(void));
+void __cdecl_ exit(int status);
+void __cdecl_ _Exit(int status);
 
-char* getenv(const char* name);
-int system(const char* string);
-void* bsearch(const void* key, const void* base, size_t count, size_t size, int (*compar)(const void*, const void*));
-void qsort(void* base, size_t count, size_t size, int (*compar)(const void*, const void*));
+char* __cdecl_ getenv(const char* name);
+int __cdecl_ system(const char* string);
+void* __cdecl_ bsearch(const void* key, const void* base, size_t count, size_t size, int (*__cdecl_ compar)(const void*, const void*));
+void __cdecl_ qsort(void* base, size_t count, size_t size, int (*__cdecl_ compar)(const void*, const void*));
 
-int abs(int j);
-long int labs(long int j);
-long long int llabs(long long int j);
+int __cdecl_ abs(int j);
+long int __cdecl_ labs(long int j);
+long long int __cdecl_ llabs(long long int j);
 
-div_t div(int numer, int denom);
-ldiv_t div(long int numer, long int denom);
-lldiv_t div(long long int numer, long long int denom);
+div_t __cdecl_ div(int numer, int denom);
+ldiv_t __cdecl_ div(long int numer, long int denom);
+lldiv_t __cdecl_ div(long long int numer, long long int denom);
 
-int mblen(const char* s, size_t n);
-int mbtowc(wchar_t* restrict pwc, const char* restrict s, size_t n);
-int wctomb(char* s, wchar_t wc);
-size_t mbstowcs(wchar_t* restrict pwcs, const char* restrict s, size_t n);
-size_t wcstombs(char* restrict s, const wchar_t* restrict pwcs, size_t n);
+int __cdecl_ mblen(const char* s, size_t n);
+int __cdecl_ mbtowc(wchar_t* restrict pwc, const char* restrict s, size_t n);
+int __cdecl_ wctomb(char* s, wchar_t wc);
+size_t __cdecl_ mbstowcs(wchar_t* restrict pwcs, const char* restrict s, size_t n);
+size_t __cdecl_ wcstombs(char* restrict s, const wchar_t* restrict pwcs, size_t n);
 
 #endif //__STDLIB_H

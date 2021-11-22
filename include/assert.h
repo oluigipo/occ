@@ -3,7 +3,7 @@
 
 #ifndef NDEBUG
 
-void _assert(const char* message, const char* file, unsigned int line);
+__cdecl_ void _assert(const char* message, const char* file, unsigned int line);
 #define assert(x) ((void)((x) ? 0 : (_assert(#x, __FILE__, __LINE__), 0)))
 
 #else //NDEBUG

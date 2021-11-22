@@ -10,7 +10,7 @@
 #endif
 
 #define NULL 0
-#define offsetof(T, field) __builtin_offsetof(T, field)
+#define offsetof(T, field) (&((T*)0)->field)
 
 #ifdef _WIN64
 typedef unsigned long long size_t;
@@ -23,5 +23,15 @@ typedef signed long ptrdiff_t;
 #endif // _WIN64
 
 typedef unsigned short wchar_t;
+
+#if defined(_WIN64) || defined(__linux__)
+#   define __cdecl_
+#else
+#   define __cdecl_ __cdecl
+#endif
+
+#if __STDC_VERSION__ < 199901L
+#   define restrict
+#endif
 
 #endif //__STDDEF_H

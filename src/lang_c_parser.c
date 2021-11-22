@@ -1073,6 +1073,9 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 	LangC_Node* head = result;
 	
 	head->type = base;
+	LangC_Node* paren_stack[64];
+	paren_stack[0] = NULL;
+	uintsize paren_stack_size = 0;
 	
 	for (;;)
 	{
@@ -1085,38 +1088,42 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 				LangC_Node* newtype = LangC_CreateNode(ctx, LangC_NodeKind_TypePointer);
 				newtype->type = head->type;
 				head->type = newtype;
-				head = newtype;
 			} continue;
 			
 			case LangC_TokenKind_Const:
 			{
 				LangC_NextToken(&ctx->lex);
 				
-				head->flags |= LangC_NodeFlags_Const;
+				head->type->flags |= LangC_NodeFlags_Const;
 			} continue;
 			
 			case LangC_TokenKind_Restrict:
 			{
 				LangC_NextToken(&ctx->lex);
 				
-				head->flags |= LangC_NodeFlags_Restrict;
+				head->type->flags |= LangC_NodeFlags_Restrict;
+			} continue;
+			
+			case LangC_TokenKind_LeftParen:
+			{
+				LangC_NextToken(&ctx->lex);
+				Assert(paren_stack_size < ArrayLength(paren_stack));
+				
+				paren_stack[paren_stack_size++] = head->type;
 			} continue;
 		}
 		
 		break;
 	}
 	
-	if (ctx->lex.token.kind == LangC_TokenKind_LeftParen)
-	{
-		LangC_NextToken(&ctx->lex);
-		head = LangC_ParseRestOfDecl(ctx, head, decl, type_only, is_global);
-		LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
-	}
-	else if (!type_only && ctx->lex.token.kind == LangC_TokenKind_Identifier)
+	if (!type_only && ctx->lex.token.kind == LangC_TokenKind_Identifier)
 	{
 		decl->name = ctx->lex.token.value_ident;
 		LangC_NextToken(&ctx->lex);
 	}
+	
+	LangC_Node* previous_head = head;
+	head = head->type;
 	
 	for (;;)
 	{
@@ -1126,23 +1133,27 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 			{
 				LangC_NextToken(&ctx->lex);
 				LangC_Node* newtype = LangC_CreateNode(ctx, LangC_NodeKind_TypeFunction);
-				newtype->type = result->type;
-				result->type = newtype;
+				
+				// NOTE(ljre): pointer magic.
+				newtype->type = head;
+				previous_head->type = newtype;
+				previous_head = head;
+				head = newtype;
 				
 				if (ctx->lex.token.kind == LangC_TokenKind_RightParen)
 				{
-					result->type->flags |= LangC_NodeFlags_VarArgs;
+					newtype->type->flags |= LangC_NodeFlags_VarArgs;
 				}
 				else
 				{
 					LangC_Node* last_param;
-					result->type->params = LangC_ParseDeclAndSemicolonIfNeeded(ctx, &last_param, 8);
+					newtype->params = LangC_ParseDeclAndSemicolonIfNeeded(ctx, &last_param, 8);
 					
 					while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma))
 					{
 						if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_VarArgs))
 						{
-							head->flags |= LangC_NodeFlags_VarArgs;
+							newtype->flags |= LangC_NodeFlags_VarArgs;
 							break;
 						}
 						
@@ -1159,22 +1170,41 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 			{
 				LangC_NextToken(&ctx->lex);
 				LangC_Node* newtype = LangC_CreateNode(ctx, LangC_NodeKind_TypeArray);
-				newtype->type = result->type;
-				result->type = newtype;
+				
+				// NOTE(ljre): more pointer magic.
+				newtype->type = head;
+				previous_head->type = newtype;
+				previous_head = head;
+				head = newtype;
 				
 				if (ctx->lex.token.kind != LangC_TokenKind_RightBrkt)
 				{
-					result->type->expr = LangC_ParseExpr(ctx, 0, false);
+					newtype->expr = LangC_ParseExpr(ctx, 0, false);
 				}
 				
 				LangC_EatToken(&ctx->lex, LangC_TokenKind_RightBrkt);
 			} continue;
+			
+			case LangC_TokenKind_RightParen:
+			{
+				if (paren_stack_size > 0)
+				{
+					LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
+					head = paren_stack[--paren_stack_size];
+					continue;
+				}
+			} /* fallthrough */
 		}
 		
 		break;
 	}
 	
-	return result->type; // ignore dummy node. only ->type field matters
+	if (paren_stack_size > 0)
+	{
+		LangC_LexerError(&ctx->lex, "expected closing ')' for declarator.");
+	}
+	
+	return result->type; // ignore dummy node
 }
 
 // NOTE(ljre): 'options': bitset
