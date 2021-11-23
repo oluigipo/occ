@@ -758,6 +758,7 @@ struct LangC_PPLoadedFile
 	LangC_PPLoadedFile* next;
 	uint64 hash;
 	const char* contents;
+	String path;
 	bool8 relative;
 	bool8 pragma_onced;
 };

@@ -2,7 +2,7 @@ internal void LangC_Preprocess2(LangC_Context* ctx, String path, const char* sou
 internal void LangC_PreprocessIfDef(LangC_Context* ctx, LangC_Lexer* lex, bool32 not);
 internal void LangC_PreprocessIf(LangC_Context* ctx, LangC_Lexer* lex);
 
-internal const char*
+internal LangC_PPLoadedFile*
 LangC_LoadFileFromDisk(LangC_Context* ctx, const char path[MAX_PATH_SIZE], uint64 calculated_hash, bool32 relative)
 {
 	const char* contents = OS_ReadWholeFile(path, NULL);
@@ -28,14 +28,22 @@ LangC_LoadFileFromDisk(LangC_Context* ctx, const char path[MAX_PATH_SIZE], uint6
 		file->hash = calculated_hash;
 		file->contents = contents;
 		file->relative = relative;
+		
+		uintsize len = strlen(path) + 1;
+		char* mem = Arena_Push(ctx->stage_arena, len);
+		memcpy(mem, path, len);
+		
+		file->path = StrMake(mem, len);
+		return file;
 	}
 	
-	return contents;
+	return NULL;
 }
 
 internal const char*
 LangC_TryToLoadFile(LangC_Context* ctx, String path, bool32 relative, String including_from, String* out_fullpath)
 {
+	// TODO(ljre): Trim the working directory from 'out_fullpath' when needed.
 	char fullpath[MAX_PATH_SIZE];
 	LangC_Preprocessor* const pp = &ctx->pp;
 	
@@ -77,21 +85,18 @@ LangC_TryToLoadFile(LangC_Context* ctx, String path, bool32 relative, String inc
 				if (file->pragma_onced)
 					return NULL;
 				
+				*out_fullpath = file->path;
 				return file->contents;
 			}
 			
 			file = file->next;
 		}
 		
-		const char* contents = LangC_LoadFileFromDisk(ctx, fullpath, search_hash, true);
-		if (contents)
+		file = LangC_LoadFileFromDisk(ctx, fullpath, search_hash, true);
+		if (file)
 		{
-			len = strlen(fullpath) + 1;
-			char* mem = Arena_Push(ctx->stage_arena, len);
-			memcpy(mem, fullpath, len);
-			
-			*out_fullpath = StrMake(mem, len);
-			return contents;
+			*out_fullpath = file->path;
+			return file->contents;
 		}
 	}
 	
@@ -120,21 +125,18 @@ LangC_TryToLoadFile(LangC_Context* ctx, String path, bool32 relative, String inc
 				if (file->pragma_onced)
 					return NULL;
 				
+				*out_fullpath = file->path;
 				return file->contents;
 			}
 			
 			file = file->next;
 		}
 		
-		const char* contents = LangC_LoadFileFromDisk(ctx, fullpath, search_hash, true);
-		if (contents)
+		file = LangC_LoadFileFromDisk(ctx, fullpath, search_hash, true);
+		if (file)
 		{
-			uintsize len = strlen(fullpath) + 1;
-			char* mem = Arena_Push(ctx->stage_arena, len);
-			memcpy(mem, fullpath, len);
-			
-			*out_fullpath = StrMake(mem, len);
-			return contents;
+			*out_fullpath = file->path;
+			return file->contents;
 		}
 	}
 	
