@@ -65,6 +65,20 @@
 
 internal int32 LangC_error_count = 0;
 
+// TODO(ljre): Maybe better this?
+struct LangC_Colors
+{
+	const char* reset;
+	const char* error;
+	const char* warning;
+	const char* paths;
+}
+typedef LangC_Colors;
+
+internal LangC_Colors LangC_colors = {
+	"", "", "", "", // NOTE(ljre): Default values.
+};
+
 internal void
 LangC_AddInputFile(StringList** first, StringList** last, String str)
 {

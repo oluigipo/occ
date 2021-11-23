@@ -1,19 +1,19 @@
 #define LangC_INVALID (-2)
-#define LangC_CHAR (&LangC_basic_types_table[0])
-#define LangC_SCHAR (&LangC_basic_types_table[1])
-#define LangC_UCHAR (&LangC_basic_types_table[2])
-#define LangC_SHORT (&LangC_basic_types_table[3])
-#define LangC_USHORT (&LangC_basic_types_table[4])
-#define LangC_INT (&LangC_basic_types_table[5])
-#define LangC_UINT (&LangC_basic_types_table[6])
-#define LangC_LINT (&LangC_basic_types_table[7])
-#define LangC_LUINT (&LangC_basic_types_table[8])
-#define LangC_LLINT (&LangC_basic_types_table[9])
-#define LangC_LLUINT (&LangC_basic_types_table[10])
-#define LangC_FLOAT (&LangC_basic_types_table[11])
-#define LangC_DOUBLE (&LangC_basic_types_table[12])
-#define LangC_PTR (&LangC_basic_types_table[13])
-#define LangC_BOOL (&LangC_basic_types_table[14])
+#define LangC_BOOL (&LangC_basic_types_table[0])
+#define LangC_CHAR (&LangC_basic_types_table[1])
+#define LangC_SCHAR (&LangC_basic_types_table[2])
+#define LangC_UCHAR (&LangC_basic_types_table[3])
+#define LangC_SHORT (&LangC_basic_types_table[4])
+#define LangC_USHORT (&LangC_basic_types_table[5])
+#define LangC_INT (&LangC_basic_types_table[6])
+#define LangC_UINT (&LangC_basic_types_table[7])
+#define LangC_LINT (&LangC_basic_types_table[8])
+#define LangC_LUINT (&LangC_basic_types_table[9])
+#define LangC_LLINT (&LangC_basic_types_table[10])
+#define LangC_LLUINT (&LangC_basic_types_table[11])
+#define LangC_FLOAT (&LangC_basic_types_table[12])
+#define LangC_DOUBLE (&LangC_basic_types_table[13])
+#define LangC_PTR (&LangC_basic_types_table[14])
 #define LangC_VOID (&LangC_basic_types_table[15])
 #define LangC_SIZE_T (&LangC_basic_types_table[ctx->abi->index_sizet])
 #define LangC_PTRDIFF_T (&LangC_basic_types_table[ctx->abi->index_ptrdifft])
@@ -23,6 +23,7 @@
 
 // NOTE(ljre): DO NOT MODIFY THESE OBJECTS. ACT AS IF THERE WAS CONST HERE.
 internal /* const */ LangC_Node LangC_basic_types_table[] = {
+	{ .kind = LangC_NodeKind_TypeBaseBool, },
 	{ .kind = LangC_NodeKind_TypeBaseChar, },
 	{ .kind = LangC_NodeKind_TypeBaseChar, .flags = LangC_NodeFlags_Signed, },
 	{ .kind = LangC_NodeKind_TypeBaseChar, .flags = LangC_NodeFlags_Unsigned, },
@@ -37,7 +38,6 @@ internal /* const */ LangC_Node LangC_basic_types_table[] = {
 	{ .kind = LangC_NodeKind_TypeBaseFloat, },
 	{ .kind = LangC_NodeKind_TypeBaseDouble, },
 	{ .kind = LangC_NodeKind_TypePointer, .type = LangC_VOID, },
-	{ .kind = LangC_NodeKind_TypeBaseBool, },
 	{ .kind = LangC_NodeKind_TypeBaseVoid, },
 };
 
@@ -527,7 +527,7 @@ LangC_CompareTypes(LangC_Context* ctx, LangC_Node* left, LangC_Node* right, int3
 				if (LangC_CompareTypes(ctx, left->type, right->type, 0, out_error) == 0)
 					return 0;
 				
-				return LangC_INVALID;
+				return 1;
 			}
 			else if (LangC_IsBaseType(right->kind))
 			{
@@ -1217,31 +1217,9 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 		
 		case LangC_NodeKind_Expr1Ref:
 		{
+			// NOTE(ljre): The unary '&' operator does *not* decay the expression.
 			expr->expr = LangC_ResolveExpr(ctx, expr->expr);
 			expr->type = LangC_CreatePointerType(ctx, expr->expr->type);
-			
-			if (0)
-			{
-				case LangC_NodeKind_Expr1PrefixInc:
-				case LangC_NodeKind_Expr1PrefixDec:
-				case LangC_NodeKind_Expr1PostfixInc:
-				case LangC_NodeKind_Expr1PostfixDec:
-				
-				expr->type = expr->expr->type;
-				
-				// TODO(ljre): Check if this is needed.
-				//LangC_PromoteToAtLeast(expr, LangC_INT);
-				
-				if (expr->type->kind == LangC_NodeKind_TypePointer &&
-					expr->type->type->kind == LangC_NodeKind_TypeFunction)
-				{
-					LangC_NodeError(ctx, expr, "cannot use ++ or -- operators on pointer-to-function object.");
-				}
-				else if (!LangC_IsNumericType(ctx, expr))
-				{
-					LangC_NodeError(ctx, expr, "++ and -- operators expects operand of numeric value.");
-				}
-			}
 			
 			if (!LangC_IsExprLValue(ctx, expr->expr))
 			{
@@ -1249,8 +1227,35 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 			}
 		} break;
 		
+		case LangC_NodeKind_Expr1PrefixInc:
+		case LangC_NodeKind_Expr1PrefixDec:
+		case LangC_NodeKind_Expr1PostfixInc:
+		case LangC_NodeKind_Expr1PostfixDec:
+		{
+			expr->type = expr->expr->type;
+			
+			if (!LangC_IsExprLValue(ctx, expr->expr))
+			{
+				LangC_NodeError(ctx, expr->expr, "operand is not a lvalue.");
+			}
+			
+			if (expr->type->kind == LangC_NodeKind_TypePointer &&
+				expr->type->type->kind == LangC_NodeKind_TypeFunction)
+			{
+				LangC_NodeError(ctx, expr, "cannot use ++ or -- operators on pointer-to-function object.");
+			}
+			else if (!LangC_IsNumericType(ctx, expr))
+			{
+				LangC_NodeError(ctx, expr, "++ and -- operators expects operand of numeric value.");
+			}
+			
+			// TODO(ljre): Check if this is needed.
+			//expr = LangC_PromoteToAtLeast(expr, LangC_INT);
+		} break;
+		
 		case LangC_NodeKind_Expr1Sizeof:
 		{
+			// NOTE(ljre): The 'sizeof' operator does *not* decay the expression.
 			expr->expr = LangC_ResolveExpr(ctx, expr->expr);
 			expr->type = LangC_SIZE_T;
 			

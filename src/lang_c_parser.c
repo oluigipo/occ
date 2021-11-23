@@ -123,7 +123,8 @@ LangC_NodeError(LangC_Context* ctx, LangC_Node* node, const char* fmt, ...)
 	if (lexfile->included_from)
 		LangC_PrintIncludeStack(lexfile->included_from, lexfile->included_line);
 	
-	Print("%.*s(%i:%i): error: ", StrFmt(lexfile->path), node->line, node->col);
+	Print("%s%.*s%s(%i:%i): %serror%s: ", LangC_colors.paths, StrFmt(lexfile->path), LangC_colors.reset,
+		  node->line, node->col, LangC_colors.error, LangC_colors.reset);
 	
 	va_list args;
 	va_start(args, fmt);
@@ -145,7 +146,9 @@ LangC_NodeWarning(LangC_Context* ctx, LangC_Node* node, LangC_Warning warning, c
 	if (lexfile->included_from)
 		LangC_PrintIncludeStackToArena(lexfile->included_from, lexfile->included_line, global_arena);
 	
-	Arena_Printf(global_arena, "%.*s(%i:%i): warning: ", StrFmt(node->lexfile->path), node->line, node->col);
+	Arena_Printf(global_arena, "%s%.*s%s(%i:%i): %swarning%s: ",
+				 LangC_colors.paths, StrFmt(node->lexfile->path), LangC_colors.reset,
+				 node->line, node->col, LangC_colors.warning, LangC_colors.reset);
 	
 	va_list args;
 	va_start(args, fmt);

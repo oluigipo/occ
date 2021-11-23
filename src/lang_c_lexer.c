@@ -70,7 +70,7 @@ LangC_PrintIncludeStack(LangC_LexerFile* file, int32 line)
 	if (file->included_from)
 		LangC_PrintIncludeStack(file->included_from, file->included_line);
 	
-	Print("%.*s(%i): in included file\n", StrFmt(file->path), line);
+	Print("%s%.*s%s(%i): in included file\n", LangC_colors.paths, StrFmt(file->path), LangC_colors.reset, line);
 }
 
 internal void
@@ -83,7 +83,8 @@ LangC_LexerError(LangC_Lexer* lex, const char* fmt, ...)
 	if (file->included_from)
 		LangC_PrintIncludeStack(file->included_from, file->included_line);
 	
-	Print("%.*s(%i:%i): error: ", StrFmt(file->path), lex->line, lex->col);
+	Print("%s%.*s%s(%i:%i): %serror%s: ", LangC_colors.paths, StrFmt(file->path), LangC_colors.reset,
+		  lex->line, lex->col, LangC_colors.error, LangC_colors.reset);
 	
 	va_list args;
 	va_start(args, fmt);
@@ -99,7 +100,7 @@ LangC_PrintIncludeStackToArena(LangC_LexerFile* file, int32 line, Arena* arena)
 	if (file->included_from)
 		LangC_PrintIncludeStackToArena(file->included_from, file->included_line, arena);
 	
-	Arena_Printf(arena, "%.*s(%i): in included file\n", StrFmt(file->path));
+	Arena_Printf(arena, "%s%.*s%s(%i): in included file\n", LangC_colors.paths, StrFmt(file->path), LangC_colors.reset, line);
 }
 
 internal void
@@ -114,7 +115,9 @@ LangC_LexerWarning(LangC_Lexer* lex, LangC_Warning warning, const char* fmt, ...
 		if (file->included_from)
 			LangC_PrintIncludeStackToArena(file->included_from, file->included_line, global_arena);
 		
-		Arena_Printf(global_arena, "%.*s(%i:%i): warning: ", StrFmt(file->path), lex->line, lex->col);
+		Arena_Printf(global_arena, "%s%.*s%s(%i:%i): %swarning%s: ",
+					 LangC_colors.paths, StrFmt(file->path), lex->line, lex->col,
+					 LangC_colors.reset, LangC_colors.warning, LangC_colors.reset);
 		
 		va_list args;
 		va_start(args, fmt);

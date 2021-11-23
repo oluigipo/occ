@@ -26,6 +26,11 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	String output_file = StrInit("a.out");
 	int32 mode = 0;
 	
+	LangC_colors.reset = "\x1B[0m";
+	LangC_colors.paths = "\x1B[93m";
+	LangC_colors.error = "\x1B[91m";
+	LangC_colors.warning = "\x1B[95m";
+	
 	//~ NOTE(ljre): Setup system include directory
 	{
 		static const char include[] = "include/";
