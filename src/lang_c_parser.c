@@ -1522,7 +1522,7 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 				}
 				else
 				{
-					base->flags |= LangC_NodeKind_TypeBaseVoid;
+					base->kind |= LangC_NodeKind_TypeBaseVoid;
 				}
 			} break;
 			

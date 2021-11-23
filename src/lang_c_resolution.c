@@ -219,12 +219,171 @@ LangC_CreateSymbol(LangC_Context* ctx, String name, LangC_SymbolKind kind, LangC
 	return result;
 }
 
+internal void
+LangC_WriteTypeToPersistentArena(LangC_Context* ctx, LangC_Node* type)
+{
+	int32 count = 0;
+	for (LangC_Node* it = type; it; it = it->type, ++count);
+	
+	LangC_Node** stack = Arena_Push(ctx->stage_arena, count * sizeof(*stack));
+	LangC_Node* it = type;
+	for (int32 i = 0; it; it = it->type, ++i)
+		stack[i] = it;
+	
+	// NOTE(ljre): Print base type
+	{
+		LangC_Node* base = type;
+		
+		while (!LangC_IsBaseType(base->kind))
+			base = base->type;
+		
+		if (base->flags & LangC_NodeFlags_Const)
+			Arena_PushMemory(ctx->persistent_arena, 6, "const ");
+		if (base->flags & LangC_NodeFlags_Volatile)
+			Arena_PushMemory(ctx->persistent_arena, 9, "volatile ");
+		
+		switch (base->kind)
+		{
+			case LangC_NodeKind_TypeBaseChar:
+			{
+				if (base->flags & LangC_NodeFlags_Signed)
+					Arena_PushMemory(ctx->persistent_arena, 7, "signed ");
+				else if (base->flags & LangC_NodeFlags_Unsigned)
+					Arena_PushMemory(ctx->persistent_arena, 9, "unsigned ");
+				
+				Arena_PushMemory(ctx->persistent_arena, 4, "char");
+			} break;
+			
+			case LangC_NodeKind_TypeBaseInt:
+			{
+				if (base->flags & LangC_NodeFlags_Unsigned)
+					Arena_PushMemory(ctx->persistent_arena, 9, "unsigned ");
+				
+				if (base->flags & LangC_NodeFlags_LongLong)
+					Arena_PushMemory(ctx->persistent_arena, 10, "long long ");
+				else if (base->flags & LangC_NodeFlags_Long)
+					Arena_PushMemory(ctx->persistent_arena, 5, "long ");
+				else if (base->flags & LangC_NodeFlags_Short)
+					Arena_PushMemory(ctx->persistent_arena, 6, "short ");
+				
+				Arena_PushMemory(ctx->persistent_arena, 3, "int");
+			} break;
+			
+			case LangC_NodeKind_TypeBaseFloat:
+			{
+				Arena_PushMemory(ctx->persistent_arena, 5, "float");
+			} break;
+			
+			case LangC_NodeKind_TypeBaseDouble:
+			{
+				Arena_PushMemory(ctx->persistent_arena, 6, "double");
+			} break;
+			
+			case LangC_NodeKind_TypeBaseVoid:
+			{
+				Arena_PushMemory(ctx->persistent_arena, 4, "void");
+			} break;
+			
+			case LangC_NodeKind_TypeBaseBool:
+			{
+				Arena_PushMemory(ctx->persistent_arena, 6, "_Bool");
+			} break;
+			
+			case LangC_NodeKind_TypeBaseTypename:
+			{
+				Arena_PushMemory(ctx->persistent_arena, StrFmt(base->name));
+			} break;
+			
+			if (0) case LangC_NodeKind_TypeBaseStruct: Arena_PushMemory(ctx->persistent_arena, 7, "struct ");
+			if (0) case LangC_NodeKind_TypeBaseUnion: Arena_PushMemory(ctx->persistent_arena, 6, "union ");
+			if (0) case LangC_NodeKind_TypeBaseEnum: Arena_PushMemory(ctx->persistent_arena, 5, "enum ");
+			{
+				if (base->name.size > 0)
+					Arena_PushMemory(ctx->persistent_arena, StrFmt(base->name));
+				else
+					Arena_PushMemory(ctx->persistent_arena, 11, "(anonymous)");
+			} break;
+		}
+	}
+	
+	// NOTE(ljre): Print prefixes
+	it = type;
+	for (int32 i = count - 2; i >= 0; it = it->type, --i)
+	{
+		LangC_Node* curr = stack[i];
+		LangC_Node* prev = stack[i+1];
+		
+		if (curr->kind != LangC_NodeKind_TypePointer)
+			continue;
+		
+		if (prev->kind == LangC_NodeKind_TypeArray || prev->kind == LangC_NodeKind_TypeFunction)
+			Arena_PushMemory(ctx->persistent_arena, 2, "(*");
+		else
+			Arena_PushMemory(ctx->persistent_arena, 1, "*");
+		
+		if (curr->flags & LangC_NodeFlags_Const)
+			Arena_PushMemory(ctx->persistent_arena, 6, " const");
+		if (curr->flags & LangC_NodeFlags_Volatile)
+			Arena_PushMemory(ctx->persistent_arena, 9, " volatile");
+	}
+	
+	// NOTE(ljre): Print postfixes
+	it = type;
+	for (int32 i = count - 1; i >= 0; it = it->type, --i)
+	{
+		LangC_Node* curr = stack[i];
+		LangC_Node* next = i > 0 ? stack[i-1] : NULL;
+		
+		switch (curr->kind)
+		{
+			case LangC_NodeKind_TypeFunction:
+			{
+				if (next && next->kind == LangC_NodeKind_TypePointer)
+					Arena_PushMemory(ctx->persistent_arena, 1, ")");
+				
+				Arena_PushMemory(ctx->persistent_arena, 1, "(");
+				for (LangC_Node* param = curr->params;
+					 param;
+					 (param = param->next) && Arena_PushMemory(ctx->persistent_arena, 2, ", "))
+				{
+					LangC_WriteTypeToPersistentArena(ctx, param->type);
+				}
+				Arena_PushMemory(ctx->persistent_arena, 1, ")");
+			} break;
+			
+			case LangC_NodeKind_TypeArray:
+			{
+				if (next && next->kind == LangC_NodeKind_TypePointer)
+					Arena_PushMemory(ctx->persistent_arena, 1, ")");
+				
+				Arena_PushMemory(ctx->persistent_arena, 1, "[");
+				
+				if (!curr->expr)
+				{
+					if (curr->expr->cannot_be_evaluated_at_compile_time)
+						Arena_PushMemory(ctx->persistent_arena, 3, "VLA");
+					else
+						Arena_Printf(ctx->persistent_arena, "%llu", curr->expr->value_uint);
+				}
+				
+				Arena_PushMemory(ctx->persistent_arena, 1, "]");
+			} break;
+			
+			default: continue;
+		}
+	}
+}
+
 internal const char*
 LangC_CStringFromType(LangC_Context* ctx, LangC_Node* type)
 {
 	// TODO(ljre): this is for warning and error messages.
+	char* result = Arena_End(ctx->persistent_arena);
 	
-	return "";
+	LangC_WriteTypeToPersistentArena(ctx, type);
+	Arena_PushMemory(ctx->persistent_arena, 1, "");
+	
+	return result;
 }
 
 internal const char*
@@ -244,7 +403,7 @@ LangC_CStringFromNodeKind(LangC_NodeKind kind)
 	};
 	
 	uintsize cat = (kind>>LangC_NodeKind__Category) - 1;
-	uintsize index = kind & ~LangC_NodeKind__CategoryMask;
+	uintsize index = (kind & ~LangC_NodeKind__CategoryMask) - 1;
 	
 	Assert(cat < ArrayLength(table));
 	Assert(index < ArrayLength(table[cat]));
@@ -305,9 +464,21 @@ LangC_IsVoidType(LangC_Context* ctx, LangC_Node* type)
 // NOTE(ljre): Compares two types.
 //             Returns 0 if both are the same type, 1 if 'left' is "bigger" than 'right', -1 if
 //             'right' is "bigger" than 'left', and -2 (aka LangC_INVALID) if both types are incompatible.
+//
+//            'options' bitset:
+//                1 - needs to assign 'right' to 'left';
+//                2 - needs to do basic arithmetic with 'left' and 'right';
+//                4 - needs to do arithmetic with 'left' and 'right';
+//
+//                NOTE: "basic arithmetic" means *only* operations we can do with pointers and integers, like
+//                      +, -, ++, and --.
+//
+//            'out_error' can be NULL.
 internal int32
-LangC_CompareTypes(LangC_Context* ctx, LangC_Node* left, LangC_Node* right)
+LangC_CompareTypes(LangC_Context* ctx, LangC_Node* left, LangC_Node* right, int32 options, bool32* out_error)
 {
+	// TODO(ljre): Make use of 'options' and 'out_error' to generate warnings or errors.
+	
 	left = LangC_TypeFromTypename(ctx, left);
 	right = LangC_TypeFromTypename(ctx, right);
 	
@@ -353,7 +524,7 @@ LangC_CompareTypes(LangC_Context* ctx, LangC_Node* left, LangC_Node* right)
 				if (right->type->kind == LangC_NodeKind_TypeBaseVoid || left->type->kind == LangC_NodeKind_TypeBaseVoid)
 					return 1;
 				
-				if (LangC_CompareTypes(ctx, left->type, right->type) == 0)
+				if (LangC_CompareTypes(ctx, left->type, right->type, 0, out_error) == 0)
 					return 0;
 				
 				return LangC_INVALID;
@@ -383,7 +554,7 @@ LangC_CompareTypes(LangC_Context* ctx, LangC_Node* left, LangC_Node* right)
 			
 			while (lparam && rparam)
 			{
-				if (LangC_CompareTypes(ctx, lparam->type, rparam->type) != 0)
+				if (LangC_CompareTypes(ctx, lparam->type, rparam->type, 0, out_error) != 0)
 					return LangC_INVALID;
 				
 				lparam = lparam->next;
@@ -400,7 +571,7 @@ LangC_CompareTypes(LangC_Context* ctx, LangC_Node* left, LangC_Node* right)
 		{
 			if (right->kind != LangC_NodeKind_TypeArray ||
 				right->length != left->length ||
-				LangC_CompareTypes(ctx, left->type, right->type) != 0)
+				LangC_CompareTypes(ctx, left->type, right->type, 0, out_error) != 0)
 				return LangC_INVALID;
 			
 			return 0;
@@ -641,28 +812,14 @@ LangC_ResolveType(LangC_Context* ctx, LangC_Node* type, bool32* out_is_complete,
 			bool32 c;
 			LangC_ResolveType(ctx, type->type, &c, false);
 			
-			if (!c)
-			{
-				if (LangC_IsVoidType(ctx, type->type))
-				{
-					type->type = NULL;
-				}
-				else
-				{
-					LangC_NodeError(ctx, type->type, "function cannot return incomplete type.");
-				}
-			}
-			else
+			if (c)
 			{
 				LangC_Node* param = type->params;
 				LangC_ResolveType(ctx, param->type, &c, false);
 				if (!c)
 				{
 					if (LangC_IsVoidType(ctx, param->type))
-					{
-						type->params = NULL; // NOTE(ljre): Function takes in no arguments.
 						break;
-					}
 					
 					LangC_NodeError(ctx, param->type, "function parameter cannot be of incomplete type.");
 				}
@@ -676,6 +833,10 @@ LangC_ResolveType(LangC_Context* ctx, LangC_Node* type, bool32* out_is_complete,
 					if (!c)
 						LangC_NodeError(ctx, param->type, "function parameter cannot be of incomplete type.");
 				}
+			}
+			else if (!LangC_IsVoidType(ctx, type->type))
+			{
+				LangC_NodeError(ctx, type->type, "function cannot return incomplete type.");
 			}
 		} break;
 	}
@@ -698,7 +859,7 @@ LangC_AddCastToExprIfNeeded(LangC_Context* ctx, LangC_Node* expr, LangC_Node* ty
 {
 	LangC_Node* result;
 	
-	int32 cmp = LangC_CompareTypes(ctx, type, expr->type);
+	int32 cmp = LangC_CompareTypes(ctx, type, expr->type, 0, NULL);
 	if (cmp == LangC_INVALID)
 	{
 		result = NULL;
@@ -741,7 +902,7 @@ LangC_PromoteToAtLeast(LangC_Context* ctx, LangC_Node* expr, LangC_Node* type)
 		return NULL;
 	
 	LangC_Node* result;
-	int32 cmp = LangC_CompareTypes(ctx, expr->type, type);
+	int32 cmp = LangC_CompareTypes(ctx, expr->type, type, 0, NULL);
 	
 	if (cmp == LangC_INVALID)
 	{
@@ -829,32 +990,36 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 			}
 			else
 			{
-				int32 cmp = LangC_CompareTypes(ctx, expr->left->type, expr->right->type);
+				bool32 error = false;
+				int32 cmp = LangC_CompareTypes(ctx, expr->left->type, expr->right->type, 2, &error);
 				
-				// NOTE(ljre): Swap, make sure pointer is 'expr->left'.
-				if (cmp <= 0)
+				if (!error)
 				{
-					LangC_Node* temp = expr->left;
-					expr->left = expr->right;
-					expr->right = temp;
-				}
-				
-				if (expr->left->type->kind != LangC_NodeKind_TypePointer)
-				{
-					LangC_NodeError(ctx, expr, "expected a pointer type when indexing.");
-				}
-				else if (expr->right->type->kind == LangC_NodeKind_TypePointer)
-				{
-					// TODO(ljre): maybe void* + T*?
-					LangC_NodeError(ctx, expr, "expected a numeric type when indexing.");
-				}
-				else if (LangC_IsIncompleteType(ctx, expr->left->type->type))
-				{
-					LangC_NodeError(ctx, expr, "cannot deref pointer to incomplete type.");
-				}
-				else
-				{
-					expr->type = expr->left->type->type;
+					// NOTE(ljre): Swap, make sure pointer is 'expr->left'.
+					if (cmp <= 0)
+					{
+						LangC_Node* temp = expr->left;
+						expr->left = expr->right;
+						expr->right = temp;
+					}
+					
+					if (expr->left->type->kind != LangC_NodeKind_TypePointer)
+					{
+						LangC_NodeError(ctx, expr, "expected a pointer type when indexing.");
+					}
+					else if (expr->right->type->kind == LangC_NodeKind_TypePointer)
+					{
+						// TODO(ljre): maybe void* + T*?
+						LangC_NodeError(ctx, expr, "expected a numeric type when indexing.");
+					}
+					else if (LangC_IsIncompleteType(ctx, expr->left->type->type))
+					{
+						LangC_NodeError(ctx, expr, "cannot deref pointer to incomplete type.");
+					}
+					else
+					{
+						expr->type = expr->left->type->type;
+					}
 				}
 			}
 		} break;
@@ -862,7 +1027,7 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 		case LangC_NodeKind_Expr1Cast:
 		{
 			expr->expr = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->expr));
-			int32 cmp = LangC_CompareTypes(ctx, expr->expr->type, expr->type);
+			int32 cmp = LangC_CompareTypes(ctx, expr->expr->type, expr->type, 0, NULL);
 			
 			if (cmp == LangC_INVALID)
 			{
@@ -884,7 +1049,7 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 				LangC_NodeError(ctx, expr->left, "condition is not of numeric type.");
 			}
 			
-			int32 cmp = LangC_CompareTypes(ctx, expr->middle->type, expr->right->type);
+			int32 cmp = LangC_CompareTypes(ctx, expr->middle->type, expr->right->type, 0, NULL);
 			if (cmp == LangC_INVALID)
 			{
 				LangC_NodeError(ctx, expr, "both sides of ternary operator are incompatible.");
@@ -943,19 +1108,32 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 		} break;
 		
 		{
-			bool32 needs_to_be_numeric;
+			// 0: it's just an assignment
+			// 1: + and -
+			// 2: anything else
+			int32 arithmetic_level;
 			
-			case LangC_NodeKind_Expr2AssignAdd:
-			case LangC_NodeKind_Expr2AssignSub:
-			case LangC_NodeKind_Expr2AssignMul:
-			case LangC_NodeKind_Expr2AssignDiv:
-			case LangC_NodeKind_Expr2AssignMod:
-			case LangC_NodeKind_Expr2AssignLeftShift:
-			case LangC_NodeKind_Expr2AssignRightShift:
-			case LangC_NodeKind_Expr2AssignAnd:
-			case LangC_NodeKind_Expr2AssignOr:
-			case LangC_NodeKind_Expr2AssignXor: needs_to_be_numeric = true;
-			if (0) case LangC_NodeKind_Expr2Assign: needs_to_be_numeric = false;
+			case LangC_NodeKind_Expr2Assign:
+			arithmetic_level = 0;
+			
+			if (0)
+			{
+				case LangC_NodeKind_Expr2AssignAdd:
+				case LangC_NodeKind_Expr2AssignSub:
+				arithmetic_level = 1;
+			}
+			if (0)
+			{
+				case LangC_NodeKind_Expr2AssignMul:
+				case LangC_NodeKind_Expr2AssignDiv:
+				case LangC_NodeKind_Expr2AssignMod:
+				case LangC_NodeKind_Expr2AssignLeftShift:
+				case LangC_NodeKind_Expr2AssignRightShift:
+				case LangC_NodeKind_Expr2AssignAnd:
+				case LangC_NodeKind_Expr2AssignOr:
+				case LangC_NodeKind_Expr2AssignXor:
+				arithmetic_level = 2;
+			}
 			
 			expr->left = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->left));
 			
@@ -967,56 +1145,73 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 				LangC_NodeError(ctx, expr->left, "left-side of assignment needs to be a lvalue.");
 			}
 			
-			int32 cmp = LangC_CompareTypes(ctx, expr->left->type, expr->right->type);
-			if (cmp == LangC_INVALID)
+			expr->type = expr->left->type;
+			
+			bool32 error = false;
+			int32 cmp = LangC_CompareTypes(ctx, expr->left->type, expr->right->type, 1 << arithmetic_level, &error);
+			if (!error)
 			{
-				LangC_NodeError(ctx, expr, "invalid operation '%s' with operands of type '%s' and '%s'.",
-								LangC_CStringFromNodeKind(expr->kind),
-								LangC_CStringFromType(ctx, expr->left->type),
-								LangC_CStringFromType(ctx, expr->right->type));
-			}
-			else if (cmp < 0)
-			{
-				expr->type = expr->right->type;
-			}
-			else
-			{
-				expr->type = expr->left->type;
+				if (cmp == LangC_INVALID)
+				{
+					if (arithmetic_level > 0)
+						LangC_NodeError(ctx, expr, "invalid operation '%s' with operands of type '%s' and '%s'.",
+										LangC_CStringFromNodeKind(expr->kind),
+										LangC_CStringFromType(ctx, expr->left->type),
+										LangC_CStringFromType(ctx, expr->right->type));
+					else
+						LangC_NodeError(ctx, expr, "cannot assign object of type '%s' to object of type '%s'.",
+										LangC_CStringFromType(ctx, expr->right->type),
+										LangC_CStringFromType(ctx, expr->left->type));
+				}
+				else if (cmp < 0)
+				{
+					expr->type = expr->right->type;
+				}
 			}
 		} break;
 		
-		case LangC_NodeKind_Expr2Add:
-		case LangC_NodeKind_Expr2Sub:
-		case LangC_NodeKind_Expr2Mul:
-		case LangC_NodeKind_Expr2Div:
-		case LangC_NodeKind_Expr2Mod:
-		case LangC_NodeKind_Expr2And:
-		case LangC_NodeKind_Expr2Or:
-		case LangC_NodeKind_Expr2Xor:
-		case LangC_NodeKind_Expr2LeftShift:
-		case LangC_NodeKind_Expr2RightShift:
 		{
+			case LangC_NodeKind_Expr2Add:
+			case LangC_NodeKind_Expr2Sub:
+			bool32 is_simple_arithmetic = true;
+			
+			if (0)
+			{
+				case LangC_NodeKind_Expr2Mul:
+				case LangC_NodeKind_Expr2Div:
+				case LangC_NodeKind_Expr2Mod:
+				case LangC_NodeKind_Expr2And:
+				case LangC_NodeKind_Expr2Or:
+				case LangC_NodeKind_Expr2Xor:
+				case LangC_NodeKind_Expr2LeftShift:
+				case LangC_NodeKind_Expr2RightShift:
+				is_simple_arithmetic = false;
+			}
+			
 			expr->left = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->left));
 			expr->left = LangC_PromoteToAtLeast(ctx, expr->left, LangC_INT);
 			
 			expr->right = LangC_DecayExpr(ctx, LangC_ResolveExpr(ctx, expr->right));
 			expr->right = LangC_PromoteToAtLeast(ctx, expr->right, LangC_INT);
 			
-			int32 cmp = LangC_CompareTypes(ctx, expr->left->type, expr->right->type);
-			if (cmp == LangC_INVALID)
+			expr->type = expr->left->type;
+			
+			bool32 error = false;
+			int32 cmp = LangC_CompareTypes(ctx, expr->left->type, expr->right->type,
+										   is_simple_arithmetic ? 2 : 4, &error);
+			if (!error)
 			{
-				LangC_NodeError(ctx, expr, "invalid operation '%s' with operands of type '%s' and '%s'.",
-								LangC_CStringFromNodeKind(expr->kind),
-								LangC_CStringFromType(ctx, expr->left->type),
-								LangC_CStringFromType(ctx, expr->right->type));
-			}
-			else if (cmp < 0)
-			{
-				expr->type = expr->right->type;
-			}
-			else
-			{
-				expr->type = expr->left->type;
+				if (cmp == LangC_INVALID)
+				{
+					LangC_NodeError(ctx, expr, "invalid operation '%s' with operands of type '%s' and '%s'.",
+									LangC_CStringFromNodeKind(expr->kind),
+									LangC_CStringFromType(ctx, expr->left->type),
+									LangC_CStringFromType(ctx, expr->right->type));
+				}
+				else if (cmp < 0)
+				{
+					expr->type = expr->right->type;
+				}
 			}
 		} break;
 		
@@ -1037,7 +1232,12 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 				// TODO(ljre): Check if this is needed.
 				//LangC_PromoteToAtLeast(expr, LangC_INT);
 				
-				if (!LangC_IsNumericType(ctx, expr))
+				if (expr->type->kind == LangC_NodeKind_TypePointer &&
+					expr->type->type->kind == LangC_NodeKind_TypeFunction)
+				{
+					LangC_NodeError(ctx, expr, "cannot use ++ or -- operators on pointer-to-function object.");
+				}
+				else if (!LangC_IsNumericType(ctx, expr))
 				{
 					LangC_NodeError(ctx, expr, "++ and -- operators expects operand of numeric value.");
 				}
@@ -1107,7 +1307,7 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 			
 			if (!sym)
 			{
-				LangC_NodeError(ctx, expr, "unknown identifier '%*s'.", StrFmt(expr->name));
+				LangC_NodeError(ctx, expr, "unknown identifier '%.*s'.", StrFmt(expr->name));
 			}
 			else
 			{
@@ -1447,7 +1647,7 @@ LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 				
 				if (old_decl)
 				{
-					if (0 != LangC_CompareTypes(ctx, decl->type, old_decl->type))
+					if (0 != LangC_CompareTypes(ctx, decl->type, old_decl->type, 0, NULL))
 					{
 						LangC_NodeError(ctx, decl, "type of previous function declaration is incompatible.");
 					}
@@ -1468,7 +1668,19 @@ LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 				if (decl->body)
 				{
 					sym->kind = LangC_SymbolKind_Function;
+					
+					LangC_PushSymbolStack(ctx);
+					for (LangC_Node* param = decl->type->params; param; param = param->next)
+					{
+						if (param->name.size > 0)
+						{
+							LangC_CreateSymbol(ctx, param->name, LangC_SymbolKind_Parameter, param->type, param);
+						}
+					}
+					
 					sym->locals = LangC_ResolveBlock(ctx, decl->body);
+					LangC_PopSymbolStack(ctx);
+					
 					sym->stack_needed = LangC_CalculateFunctionStackSize(ctx, sym->locals);
 				}
 			}
@@ -1481,7 +1693,7 @@ LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 				if (old_sym)
 				{
 					// TODO(ljre): Array semantics
-					if (0 != LangC_CompareTypes(ctx, old_sym->type, decl->type))
+					if (0 != LangC_CompareTypes(ctx, old_sym->type, decl->type, 0, NULL))
 					{
 						LangC_NodeError(ctx, decl, "type of previous function declaration is incompatible.");
 					}
@@ -1508,7 +1720,7 @@ LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 			if (old_sym)
 			{
 				// TODO(ljre): Array semantics
-				if (0 != LangC_CompareTypes(ctx, old_sym->type, decl->type))
+				if (0 != LangC_CompareTypes(ctx, old_sym->type, decl->type, 0, NULL))
 				{
 					LangC_NodeError(ctx, decl, "type of previous function declaration is incompatible.");
 				}
@@ -1549,7 +1761,7 @@ LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 				if (old_sym)
 				{
 					// TODO(ljre): Array semantics
-					if (0 != LangC_CompareTypes(ctx, old_sym->type, decl->type))
+					if (0 != LangC_CompareTypes(ctx, old_sym->type, decl->type, 0, NULL))
 					{
 						LangC_NodeError(ctx, decl, "type of previous function declaration is incompatible.");
 					}

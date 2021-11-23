@@ -51,6 +51,8 @@ int main(int argc, char* argv[])
 		f, v
 	};
 	
+	pp[1] = &argc;
+	
 	LOG("address of 'f' is %p\n", pp[0]);
 	LOG("this is line " STR2(__LINE__) "!\n");
 }

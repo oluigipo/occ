@@ -360,8 +360,8 @@ enum LangC_NodeKind
 	LangC_NodeKind__CategoryMask = ~((1<<LangC_NodeKind__Category)-1),
 	
 	LangC_NodeKind_Type = 1 << LangC_NodeKind__Category,
-	LangC_NodeKind_TypeBase__First,
-	LangC_NodeKind_TypeBaseChar = LangC_NodeKind_TypeBase__First,
+	LangC_NodeKind_TypeBaseChar,
+	LangC_NodeKind_TypeBase__First = LangC_NodeKind_TypeBaseChar,
 	LangC_NodeKind_TypeBaseInt,
 	LangC_NodeKind_TypeBaseFloat,
 	LangC_NodeKind_TypeBaseDouble,
