@@ -4,18 +4,18 @@ internal void
 LangC_DefaultDriver_PrintHelp(void)
 {
 	Print("Our C Compiler -- help:\n"
-		  "usage: occ [FILE | FLAG] ...\n"
+		  "%C2usage:%C0 occ [FILE | FLAG] ...\n"
 		  "\n"
-		  "flags:\n"
-		  "\t[ -D<name> ]\n"
-		  "\t[ -D<name>=<value> ]\n"
-		  "\t[ -D <name> ]\n"
-		  "\t[ -D <name>=<value> ] Defines a macro.\n"
-		  "\t[ -E ] Runs the preprocessor on the single input file.\n"
-		  "\t[ -help ]\n"
-		  "\t[ --help ] Shows this help text and returns 1.\n"
-		  "\t[ -o<file>  ]\n"
-		  "\t[ -o <file> ] Changes the output file (defaults to \"a.out\").\n"
+		  "%C2flags:%C0\n"
+		  "%C1  -help            %C0 \n"
+		  "%C1  --help           %C0 Shows this help text and returns 1.\n"
+		  "\n"
+		  "%C1  -D<name>         %C0 \n"
+		  "%C1  -D<name>=<value> %C0 Defines a Macro.\n"
+		  "%C1  -E               %C0 Runs the preprocessor on the single input file.\n"
+		  "%C1  -I<dir>          %C0 \n"
+		  "%C1  -I <dir>         %C0 Adds an include directory.\n"
+		  "%C1  -o<file>         %C0 Changes the output file. (defaults to \"a.out\")\n"
 		  "\n");
 }
 
@@ -56,11 +56,6 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 			.index_ptrdifft = 9,
 		},
 	};
-	
-	LangC_colors.reset = "\x1B[0m";
-	LangC_colors.paths = "\x1B[93m";
-	LangC_colors.error = "\x1B[91m";
-	LangC_colors.warning = "\x1B[95m";
 	
 	//~ NOTE(ljre): Setup system include directory
 	{
@@ -199,8 +194,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	
 	Assert(input_files);
 	
-	//~ NOTE(ljre): Config
-	// NOTE(ljre): Default predefined macros.
+	//~ NOTE(ljre): Default predefined macros.
 	LangC_DefineMacro(ctx, Str("__STDC__ 1"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__STDC_HOSTED__ 1"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__STDC_VERSION__ 199901L"))->persistent = true;

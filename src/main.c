@@ -9,22 +9,27 @@
 
 #include "internal.h"
 
-internal Arena* global_arena;
-internal String global_my_path;
-
 internal void
 Print(const char* fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);
-	vfprintf(stdout, fmt, args);
+	char* mem = Arena_End(global_arena);
+	uintsize len = Arena_VPrintf(global_arena, fmt, args);
 	va_end(args);
+	
+	fwrite(mem, 1, len, stdout);
+	global_arena->offset = (uint8*)mem - global_arena->memory;
 }
 
 internal void
 PrintVarargs(const char* fmt, va_list args)
 {
-	vfprintf(stdout, fmt, args);
+	char* mem = Arena_End(global_arena);
+	uintsize len = Arena_VPrintf(global_arena, fmt, args);
+	
+	fwrite(mem, 1, len, stdout);
+	global_arena->offset = (uint8*)mem - global_arena->memory;
 }
 
 internal void
@@ -32,7 +37,7 @@ Panic(const char* str)
 {
 	fputs(str, stderr);
 	DebugBreak_();
-	exit(-1);
+	OS_Exit(-1);
 }
 
 internal void*

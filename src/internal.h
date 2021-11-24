@@ -117,7 +117,12 @@ internal void Panic(const char* str);
 
 #include "os.h"
 
-#include "internal_arena.h"
+internal const char* const* global_colors;
+
 #include "internal_utils.h"
+#include "internal_arena.h"
+
+internal String global_my_path;
+internal Arena* global_arena;
 
 #endif //INTERNAL_H

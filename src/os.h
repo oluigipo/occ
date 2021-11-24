@@ -10,6 +10,8 @@
 typedef void* OS_Thread;
 typedef void* OS_Mutex;
 
+internal void OS_Exit(int32 code);
+
 internal String OS_GetMyPath(void);
 internal const char* OS_ReadWholeFile(const char* path, uintsize* size);
 internal bool32 OS_WriteWholeFile(const char* path, const void* data, uintsize size);
@@ -39,6 +41,12 @@ internal void OS_DestroyMutex(OS_Mutex mtx);
 #if defined(_WIN32)
 #include <windows.h>
 #include <stdio.h>
+
+internal void
+OS_Exit(int32 code)
+{
+	ExitProcess(code);
+}
 
 internal String
 OS_GetMyPath(void)
@@ -242,6 +250,12 @@ OS_DestroyMutex(OS_Mutex mtx)
 #include <libgen.h>         // dirname
 #include <unistd.h>         // readlink
 #include <linux/limits.h>   // PATH_MAX
+
+internal void
+OS_Exit(int32 code)
+{
+	exit(code);
+}
 
 internal String
 OS_GetMyPath(void)

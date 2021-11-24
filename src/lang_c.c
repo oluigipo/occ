@@ -16,6 +16,7 @@
 *    - Flag (-w): Suppress all warnings;
 *    - Revision 'LangC_Node';
 *    - Worker Threads for multiple input files;
+*    - Flag (???): Disable colorful log;
 *
 * IDEAS:
 *    - Flag (-Edecl): Output only declarations to output file;
@@ -57,20 +58,6 @@
 #include "lang_c_definitions.h"
 
 internal int32 LangC_error_count = 0;
-
-// TODO(ljre): Maybe better this?
-struct LangC_Colors
-{
-	const char* reset;
-	const char* error;
-	const char* warning;
-	const char* paths;
-}
-typedef LangC_Colors;
-
-internal LangC_Colors LangC_colors = {
-	"", "", "", "", // NOTE(ljre): Default values.
-};
 
 internal void
 LangC_AddInputFile(StringList** first, StringList** last, String str)
@@ -152,6 +139,16 @@ LangC_Main(int32 argc, const char** argv)
 	Trace();
 	
 	int32 result = 0;
+	
+	static const char* const colors[] = {
+		"\x1B[0m", // RESET
+		"\x1B[93m", // PATHS
+		"\x1B[91m", // ERROR
+		"\x1B[95m", // WARNING
+		NULL,
+	};
+	
+	global_colors = colors;
 	
 	// TODO(ljre): cl.exe compiler driver just for testing.
 	result = LangC_DefaultDriver(argc, argv);

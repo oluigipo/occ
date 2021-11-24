@@ -91,10 +91,9 @@ Arena_VPrintf(Arena* arena, const char* fmt, va_list args)
 	va_list args_copy;
 	va_copy(args_copy, args);
 	
-	uintsize len = vsnprintf(NULL, 0, fmt, args_copy);
-	char* buf = Arena_PushAligned(arena, len + 1, 1);
-	vsnprintf(buf, len + 1, fmt, args);
-	arena->offset -= 1;
+	uintsize len = OurVPrintfSize(fmt, args_copy);
+	char* buf = Arena_PushAligned(arena, len, 1);
+	OurVPrintf(buf, len, fmt, args);
 	
 	va_end(args_copy);
 	
