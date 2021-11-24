@@ -116,13 +116,28 @@ OurStrCopy_(char* buf, const char* from, uintsize max)
 	return res;
 }
 
+// NOTE(ljre): A 'printf' replacement with simple custom features.
+//             IMPORTANT: use 'OurPrintfSize' to get the needed size for the buffer.
+//             IMPORTANT: these functions does *not* include the null-terminator at the end of the buffer.
+//
+//             %CN (uint32) sets the output color to 'global_colors[N]' if 'global_colors != NULL'
+//             %S  (uintsize, const char*) same as printf's %.*s
+//             %s  (const char*)
+//             %u  (uint32)
+//             %i  (int32)
+//             %U  (uint64)
+//             %I  (int64)
+//             %z  (uintsize)
+//             %f  (double)
+//
+//             Returns how many bytes where written to 'buf'.
 internal uintsize
 OurVPrintf(char* buf, uintsize len, const char* fmt, va_list args)
 {
 	char* outhead = buf;
 	char* outend = buf + len;
 	
-	while (outhead < outend && *fmt)
+	for (; outhead < outend && *fmt; ++fmt)
 	{
 		if (*fmt != '%')
 		{
@@ -135,10 +150,12 @@ OurVPrintf(char* buf, uintsize len, const char* fmt, va_list args)
 		{
 			case 'C':
 			{
-				uint32 color = *++fmt - '0';
-				if (global_colors)
-					outhead += OurStrCopy_(outhead, global_colors[color], outend - outhead);
-				++fmt;
+				if (*++fmt)
+				{
+					uint32 color = *fmt - '0';
+					if (global_colors)
+						outhead += OurStrCopy_(outhead, global_colors[color], outend - outhead);
+				}
 			} break;
 			
 			case 'S':
@@ -148,64 +165,60 @@ OurVPrintf(char* buf, uintsize len, const char* fmt, va_list args)
 				
 				len = (len > outend - outhead) ? outend - outhead : len;
 				outhead += OurStrCopy_(outhead, ptr, len);
-				++fmt;
 			} break;
 			
 			case 's':
 			{
 				const char* ptr = va_arg(args, const char*);
 				outhead += OurStrCopy_(outhead, ptr, outend - outhead);
-				++fmt;
 			} break;
 			
 			case 'u':
 			{
 				uint32 n = va_arg(args, uint32);
 				outhead += snprintf(outhead, outend - outhead, "%u", n);
-				++fmt;
 			} break;
 			
 			case 'i':
 			{
 				int32 n = va_arg(args, int32);
 				outhead += snprintf(outhead, outend - outhead, "%i", n);
-				++fmt;
 			} break;
 			
 			case 'U':
 			{
 				uint64 n = va_arg(args, uint64);
 				outhead += snprintf(outhead, outend - outhead, "%llu", n);
-				++fmt;
 			} break;
 			
 			case 'I':
 			{
 				int64 n = va_arg(args, int64);
 				outhead += snprintf(outhead, outend - outhead, "%lli", n);
-				++fmt;
 			} break;
 			
 			case 'z':
 			{
 				uintsize n = va_arg(args, uintsize);
 				outhead += snprintf(outhead, outend - outhead, "%zu", n);
-				++fmt;
 			} break;
 			
 			case 'f':
 			{
 				double n = va_arg(args, double);
 				outhead += snprintf(outhead, outend - outhead, "%f", n);
-				++fmt;
 			} break;
+			
+			case 0: goto out_of_the_loop;
 			
 			default:
 			{
-				*outhead++ = *fmt++;
+				*outhead++ = *fmt;
 			} break;
 		}
 	}
+	
+	out_of_the_loop:;
 	
 	return outhead - buf;
 }

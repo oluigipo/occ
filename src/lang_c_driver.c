@@ -202,28 +202,26 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	LangC_DefineMacro(ctx, Str("_WIN32 1"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("_WIN64 1"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__OCC__ 1"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__int64 long long"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__int32 int"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__int16 short"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__int8 char"))->persistent = true;
+	
+	// NOTE(ljre): Polyfills
+	//LangC_DefineMacro(ctx, Str("__int64 long long"))->persistent = true;
+	//LangC_DefineMacro(ctx, Str("__int32 int"))->persistent = true;
+	//LangC_DefineMacro(ctx, Str("__int16 short"))->persistent = true;
+	//LangC_DefineMacro(ctx, Str("__int8 char"))->persistent = true;
+	//LangC_DefineMacro(ctx, Str("__forceinline inline"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__inline inline"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__inline__ inline"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__forceinline inline"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__restrict restrict"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__restrict__ restrict"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__const const"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__const__ const"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__volatile volatile"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__volatile__ volatile"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__attribute(...)"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__attribute__(...)"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__declspec(...)"))->persistent = true;
+	LangC_DefineMacro(ctx, Str("__attribute __attribute__"))->persistent = true;
+	//LangC_DefineMacro(ctx, Str("__attribute__(...)"))->persistent = true;
+	//LangC_DefineMacro(ctx, Str("__declspec(...)"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__builtin_va_list void*"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__cdecl"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__stdcall"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__vectorcall"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__fastcall"))->persistent = true;
 	
 #if 0
 	// NOTE(ljre): MINGW macros

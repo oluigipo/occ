@@ -36,13 +36,18 @@ Arena_Create(uintsize size)
 }
 
 internal void
-Arena_Commit(Arena* arena)
+Arena_CommitAtLeast(Arena* arena, uintsize desired_offset)
 {
-	if (arena->commited + Arena_PAGE_SIZE > arena->reserved)
-		Unreachable();
-	
-	OS_CommitMemory(arena->memory + arena->commited, Arena_PAGE_SIZE);
-	arena->commited += Arena_PAGE_SIZE;
+	if (desired_offset > arena->commited)
+	{
+		uintsize to_commit = AlignUp(arena->commit - desired_offset, Arena_PAGE_SIZE-1);
+		
+		if (arena->commited + to_commit > arena->reserved)
+			Unreachable();
+		
+		OS_CommitMemory(arena->memory + arena->commited, to_commit);
+		arena->commited += to_commit;
+	}
 }
 
 internal void*
@@ -53,33 +58,32 @@ Arena_PushAligned(Arena* arena, uintsize size, uintsize alignment)
 	void* ptr = arena->memory + arena->offset;
 	uintsize desired_size = arena->offset + size;
 	
-	while (desired_size > arena->commited)
-		Arena_Commit(arena);
+	Arena_CommitAtLeast(arena, desired_size);
 	
 	memset(ptr, 0, size);
 	arena->offset += size;
 	return ptr;
 }
 
-internal void*
+internal inline void*
 Arena_Push(Arena* arena, uintsize size)
 {
 	return Arena_PushAligned(arena, size, 8);
 }
 
-internal void
+internal inline void
 Arena_Clear(Arena* arena)
 {
 	arena->offset = 0;
 }
 
-internal void*
+internal inline void*
 Arena_End(Arena* arena)
 {
 	return arena->memory + arena->offset;
 }
 
-internal void*
+internal inline void*
 Arena_PushMemory(Arena* arena, uintsize size, const void* data)
 {
 	return memcpy(Arena_PushAligned(arena, size, 1), data, size);
@@ -109,6 +113,21 @@ Arena_Printf(Arena* arena, const char* fmt, ...)
 	va_end(list);
 	
 	return len;
+}
+
+internal const char*
+Arena_NullTerminateString(Arena* arena, String str)
+{
+	if (str.size == 0)
+		return "";
+	if (str.data[str.size-1] == 0)
+		return str.data;
+	
+	char* mem = Arena_PushAligned(arena, str.size+1, 1);
+	memcpy(mem, str.data, str.size);
+	str.data[str.size] = 0;
+	
+	return mem;
 }
 
 internal void

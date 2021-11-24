@@ -181,7 +181,7 @@ internal LangC_Macro*
 LangC_DefineMacro(LangC_Context* ctx, String definition)
 {
 	LangC_Preprocessor* const pp = &ctx->pp;
-	const char* def = NullTerminateString(definition);
+	const char* def = Arena_NullTerminateString(ctx->stage_arena, definition);
 	
 	const char* ident_begin = def;
 	const char* head = def;

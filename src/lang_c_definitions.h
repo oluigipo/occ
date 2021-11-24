@@ -56,12 +56,24 @@ enum LangC_TokenKind
 	// NOTE(ljre): GCC stuff
 	LangC_TokenKind_GccAttribute, // __attribute __attribute__
 	LangC_TokenKind_GccAsm, // __asm__ asm
+	LangC_TokenKind_GccExtension, // __extension__
+	LangC_TokenKind_GccTypeof, // __typeof__
+	LangC_TokenKind_GccAutoType, // __auto_type
 	
 	// NOTE(ljre): MSVC stuff
 	LangC_TokenKind_MsvcDeclspec, // __declspec
 	LangC_TokenKind_MsvcAsm, // __asm
+	LangC_TokenKind_MsvcForceinline, // __forceinline
+	LangC_TokenKind_MsvcCdecl, // __cdecl
+	LangC_TokenKind_MsvcStdcall, // __stdcall
+	LangC_TokenKind_MsvcVectorcall, // __vectorcall
+	LangC_TokenKind_MsvcFastcall, // __fastcall
+	LangC_TokenKind_MsvcInt8, // __int8
+	LangC_TokenKind_MsvcInt16, // __int16
+	LangC_TokenKind_MsvcInt32, // __int32
+	LangC_TokenKind_MsvcInt64, // __int64
 	
-	LangC_TokenKind__LastKeyword = LangC_TokenKind_MsvcAsm,
+	LangC_TokenKind__LastKeyword = LangC_TokenKind_MsvcInt64,
 	
 	//- NOTE(ljre): Rest
 	// NOTE(ljre): those 3 below shall be in order
@@ -175,10 +187,24 @@ internal const char* LangC_token_str_table[LangC_TokenKind__Count] = {
 	[LangC_TokenKind_While] = "while",
 	[LangC_TokenKind_Bool] = "bool",
 	[LangC_TokenKind_Complex] = "complex",
+	
 	[LangC_TokenKind_GccAttribute] = "__attribute__",
 	[LangC_TokenKind_GccAsm] = "__asm__",
+	[LangC_TokenKind_GccExtension] = "__extension__",
+	[LangC_TokenKind_GccTypeof] = "__typeof__",
+	[LangC_TokenKind_GccAutoType] = "__auto_type",
+	
 	[LangC_TokenKind_MsvcDeclspec] = "__declspec",
 	[LangC_TokenKind_MsvcAsm] = "__asm",
+	[LangC_TokenKind_MsvcForceinline] = "__forceinline",
+	[LangC_TokenKind_MsvcCdecl] = "__cdecl",
+	[LangC_TokenKind_MsvcStdcall] = "__stdcall",
+	[LangC_TokenKind_MsvcVectorcall] = "__vectorcall",
+	[LangC_TokenKind_MsvcFastcall] = "__fastcall",
+	[LangC_TokenKind_MsvcInt8] = "__int8",
+	[LangC_TokenKind_MsvcInt16] = "__int16",
+	[LangC_TokenKind_MsvcInt32] = "__int32",
+	[LangC_TokenKind_MsvcInt64] = "__int64",
 	
 	[LangC_TokenKind_IntLiteral] = "(int literal)",
 	[LangC_TokenKind_LIntLiteral] = "(long literal)",
