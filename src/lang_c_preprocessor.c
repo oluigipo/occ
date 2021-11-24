@@ -100,7 +100,7 @@ LangC_TryToLoadFile(LangC_Context* ctx, String path, bool32 relative, String inc
 		}
 	}
 	
-	for (int32 i = 0; i < ctx->options->include_dirs_count; ++i)
+	for (int32 i = ctx->options->include_dirs_count - 1; i >= 0 ; --i)
 	{
 		String include_dir = ctx->options->include_dirs[i];
 		include_dir = IgnoreNullTerminator(include_dir);

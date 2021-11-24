@@ -4,7 +4,7 @@
 #if defined(_WIN32)
 #   define MAX_PATH_SIZE 32767
 #elif defined(__linux__)
-#   define MAX_PATH_SIZE (PATH_MAX+1)
+#   define MAX_PATH_SIZE (4096+1)
 #endif
 
 typedef void* OS_Thread;
@@ -264,7 +264,7 @@ OS_GetMyPath(void)
 }
 
 internal const char*
-OS_ReadWholeFile(const char* path)
+OS_ReadWholeFile(const char* path, uintsize* out_size)
 {
 	FILE* file = fopen(path, "rb");
 	if (!file)
@@ -277,9 +277,25 @@ OS_ReadWholeFile(const char* path)
 	char* data = PushMemory(size+1);
 	size = fread(data, 1, size, file);
 	data[size] = 0;
+	*out_size = size+1;
 	
 	fclose(file);
 	return data;
+}
+
+internal bool32
+OS_WriteWholeFile(const char* path, const void* data, uintsize size)
+{
+	TraceName(StrFrom(path));
+	
+	FILE* file = fopen(path, "wb");
+	if (!file)
+		return false;
+	
+	bool32 success = (fwrite(data, 1, size, file) == size);
+	fclose(file);
+	
+	return success;
 }
 
 internal void
@@ -298,6 +314,12 @@ internal void*
 OS_CommitMemory(void* ptr, uintsize size)
 {
 	return ptr; // memory is commited automatically
+}
+
+internal void
+OS_FreeMemory(void* ptr, uintsize size)
+{
+	munmap(ptr, size);
 }
 
 #endif //__linux__

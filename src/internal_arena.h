@@ -1,7 +1,7 @@
 #ifndef INTERNAL_ARENA_H
 #define INTERNAL_ARENA_H
 
-#define Arena_PAGE_SIZE Megabytes(1)
+#define Arena_PAGE_SIZE Megabytes(32)
 
 struct alignas(16) Arena typedef Arena;
 struct Arena

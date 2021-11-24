@@ -1172,7 +1172,7 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 		
 		{
 			case LangC_NodeKind_Expr2Add:
-			case LangC_NodeKind_Expr2Sub:
+			case LangC_NodeKind_Expr2Sub:;
 			bool32 is_simple_arithmetic = true;
 			
 			if (0)
@@ -1741,6 +1741,8 @@ LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 			{
 				sym = LangC_CreateSymbol(ctx, decl->name, kind, decl->type, decl);
 			}
+			
+			(void)sym;
 		} break;
 		
 		case LangC_NodeKind_DeclExtern:
@@ -1777,6 +1779,8 @@ LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 				{
 					sym = LangC_CreateSymbol(ctx, decl->name, kind, decl->type, decl);
 				}
+				
+				(void)sym;
 			}
 		} break;
 		

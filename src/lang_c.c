@@ -1,28 +1,21 @@
 /*
 *
 * TODO:
-*    - Check for BOM at the beginning of the file;
 *    - Validate UTF-8 Codepoints;
-*    - Add more identifier-valid codepoints according to ISO 9899:1999;
-*    - Store files informations such as lines offsets and contents  in structs for warnings and errors;
-*    - ABI struct;
 *    - Parsing standard C99 (halfway through);
 *    - Type-checking;
 *    - Code analysis for warnings:
 *        - "a<<b + 10", misleading spacing between operations;
 *        - constness;
 *    - Codegen with Succ3s's backend;
-*    - Flag (-I): Add include directory;
-*    - Flag (-D): Define a macro;
 *    - Flag (-U): Undefine a macro;
 *    - Flag (-v): Print to stdout verbose log;
-*    - Warnings pipeline: Generate, filter, and print if no errors occured;
 *    - Flags parser;
 *    - Code analyzer: Generate useful warnings;
-*    - Trace() macro so we can use Tracy :);
 *    - Flag (-W): Warnings flags;
 *    - Flag (-w): Suppress all warnings;
 *    - Revision 'LangC_Node';
+*    - Worker Threads for multiple input files;
 *
 * IDEAS:
 *    - Flag (-Edecl): Output only declarations to output file;

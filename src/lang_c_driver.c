@@ -7,24 +7,55 @@ LangC_DefaultDriver_PrintHelp(void)
 		  "usage: occ [FILE | FLAG] ...\n"
 		  "\n"
 		  "flags:\n"
+		  "\t[ -D<name> ]\n"
+		  "\t[ -D<name>=<value> ]\n"
+		  "\t[ -D <name> ]\n"
+		  "\t[ -D <name>=<value> ] Defines a macro.\n"
+		  "\t[ -E ] Runs the preprocessor on the single input file.\n"
 		  "\t[ -help ]\n"
 		  "\t[ --help ] Shows this help text and returns 1.\n"
 		  "\t[ -o<file>  ]\n"
 		  "\t[ -o <file> ] Changes the output file (defaults to \"a.out\").\n"
-		  "\t[ -E ] Runs the preprocessor on the single input file.\n"
 		  "\n");
 }
 
 internal int32
 LangC_DefaultDriver(int32 argc, const char** argv)
 {
-	bool32 result = 0;
+	int32 result = 0;
 	
 	LangC_CompilerOptions options = { 0 };
 	StringList* input_files = NULL;
 	StringList* last_input_file = NULL;
 	String output_file = StrInit("a.out");
 	int32 mode = 0;
+	LangC_Context* ctx = &(LangC_Context) {
+		.options = &options,
+		.persistent_arena = Arena_Create(Gigabytes(32)),
+		.stage_arena = Arena_Create(Gigabytes(8)),
+		
+		.abi = &(LangC_ABI) {
+			.t_char = { 1, 0, true },
+			.t_schar = { 1, 0, false },
+			.t_uchar = { 1, 0, true },
+			.t_short = { 2, 1, false },
+			.t_ushort = { 2, 1, true },
+			.t_int = { 4, 3, false },
+			.t_uint = { 4, 3, true },
+			.t_long = { 4, 3, false },
+			.t_ulong = { 4, 3, true },
+			.t_longlong = { 8, 7, false },
+			.t_ulonglong = { 8, 7, true },
+			.t_double = { 8, 7, false },
+			.t_float = { 4, 3, false },
+			.t_ptr = { 8, 7, true },
+			.t_bool = { 1, 0, true },
+			
+			.char_bit = 8,
+			.index_sizet = 10,
+			.index_ptrdifft = 9,
+		},
+	};
 	
 	LangC_colors.reset = "\x1B[0m";
 	LangC_colors.paths = "\x1B[93m";
@@ -66,39 +97,97 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	
 	for (const char** arg = argv + 1; *arg; ++arg)
 	{
-		if (arg[0][0] == '-')
-		{
-			const char* flag = arg[0] + 1;
-			
-			if (MatchCString(flag, "o", 1))
-			{
-				if (flag[1])
-					output_file = StrFrom(flag + 1);
-				else if (arg[1])
-				{
-					const char* name = arg[1];
-					++arg;
-					output_file = StrFrom(name);
-				}
-				else
-				{
-					result = 1;
-					Print("error: expected file name after '-o' flag.\n");
-				}
-			}
-			else if (MatchCString(flag, "E", 1))
-			{
-				mode = 1;
-			}
-			else if (MatchCString(flag, "help", 5) || MatchCString(flag, "-help", 6))
-			{
-				LangC_DefaultDriver_PrintHelp();
-				return 1;
-			}
-		}
-		else
+		if (arg[0][0] != '-')
 		{
 			LangC_AddInputFile(&input_files, &last_input_file, StrFrom(arg[0]));
+			continue;
+		}
+		
+		const char* flag = arg[0] + 1;
+		
+		if (MatchCString(flag, "o", 1))
+		{
+			if (flag[1])
+				output_file = StrFrom(flag + 1);
+			else if (arg[1])
+			{
+				const char* name = arg[1];
+				++arg;
+				output_file = StrFrom(name);
+			}
+			else
+			{
+				result = 1;
+				Print("error: expected file name after '-o' flag.\n");
+			}
+		}
+		else if (MatchCString(flag, "E", 1))
+		{
+			mode = 1;
+		}
+		else if (MatchCString(flag, "I", 1))
+		{
+			++flag;
+			if (!*flag)
+			{
+				flag = *++arg;
+				if (!*flag)
+					continue;
+			}
+			
+			uintsize len = strlen(flag);
+			uintsize needed_len = len;
+			if (flag[len] != '/' || flag[len] != '\\')
+				needed_len += 1;
+			
+			char* dir = PushMemory(needed_len + 1);
+			memcpy(dir, flag, len);
+			
+			if (needed_len > len)
+				dir[len] = '/';
+			
+			for (int32 i = 0; i < len; ++i)
+			{
+				if (dir[i] == '\\')
+					dir[i] = '/';
+			}
+			
+			dir[needed_len] = 0;
+			
+			options.include_dirs[++options.include_dirs_count] = StrMake(dir, needed_len+1);
+		}
+		else if (MatchCString(flag, "D", 1))
+		{
+			++flag;
+			
+			if (!*flag)
+			{
+				flag = *++arg;
+				if (!*flag)
+					continue;
+			}
+			
+			const char* name_begin = flag;
+			while (LangC_IsIdentChar(*flag))
+				++flag;
+			const char* name_end = flag;
+			
+			if (*flag == '=')
+			{
+				const char* value_begin = ++flag;
+				char* mem = Arena_End(global_arena);
+				uintsize len = Arena_Printf(global_arena, "%.*s %s", name_end - name_begin, name_begin, value_begin);
+				LangC_DefineMacro(ctx, StrMake(mem, len));
+			}
+			else
+			{
+				LangC_DefineMacro(ctx, StrMake(name_begin, name_end - name_begin))->persistent = true;
+			}
+		}
+		else if (MatchCString(flag, "help", 5) || MatchCString(flag, "-help", 6))
+		{
+			LangC_DefaultDriver_PrintHelp();
+			return 1;
 		}
 	}
 	
@@ -111,34 +200,6 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	Assert(input_files);
 	
 	//~ NOTE(ljre): Config
-	LangC_Context* ctx = &(LangC_Context) {
-		.options = &options,
-		.persistent_arena = Arena_Create(Gigabytes(64)),
-		.stage_arena = Arena_Create(Gigabytes(2)),
-		
-		.abi = &(LangC_ABI) {
-			.t_char = { 1, 0, true },
-			.t_schar = { 1, 0, false },
-			.t_uchar = { 1, 0, true },
-			.t_short = { 2, 1, false },
-			.t_ushort = { 2, 1, true },
-			.t_int = { 4, 3, false },
-			.t_uint = { 4, 3, true },
-			.t_long = { 4, 3, false },
-			.t_ulong = { 4, 3, true },
-			.t_longlong = { 8, 7, false },
-			.t_ulonglong = { 8, 7, true },
-			.t_double = { 8, 7, false },
-			.t_float = { 4, 3, false },
-			.t_ptr = { 8, 7, true },
-			.t_bool = { 1, 0, true },
-			
-			.char_bit = 8,
-			.index_sizet = 10,
-			.index_ptrdifft = 9,
-		},
-	};
-	
 	// NOTE(ljre): Default predefined macros.
 	LangC_DefineMacro(ctx, Str("__STDC__ 1"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__STDC_HOSTED__ 1"))->persistent = true;

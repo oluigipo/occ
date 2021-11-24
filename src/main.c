@@ -8,7 +8,6 @@
 #include <string.h>
 
 #include "internal.h"
-#include "os.h"
 
 internal Arena* global_arena;
 internal String global_my_path;

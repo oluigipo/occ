@@ -68,7 +68,7 @@ typedef String;
 // NOTE(ljre): Compiler specifics
 #ifdef __clang__
 #   define Assume(x) __builtin_assume(x)
-#   define DebugBreak_() __debugbreak()
+#   define DebugBreak_() __builtin_debugtrap()
 #   define Likely(x) __builtin_expect(!!(x), 1)
 #   define Unlikely(x) __builtin_expect((x), 0)
 #   if !defined NDEBUG && defined TRACY_ENABLE

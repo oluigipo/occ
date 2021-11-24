@@ -1198,10 +1198,8 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 	LangC_Node* base = LangC_CreateNode(ctx, LangC_NodeKind_Type);
 	
 	beginning:;
-	bool32 at_least_one_base = false;
-	
 	// Parse Base Type
-	for (;; at_least_one_base = true)
+	for (;;)
 	{
 		switch (ctx->lex.token.kind)
 		{
