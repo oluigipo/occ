@@ -40,7 +40,7 @@ Arena_CommitAtLeast(Arena* arena, uintsize desired_offset)
 {
 	if (desired_offset > arena->commited)
 	{
-		uintsize to_commit = AlignUp(arena->commit - desired_offset, Arena_PAGE_SIZE-1);
+		uintsize to_commit = AlignUp(arena->commited - desired_offset, Arena_PAGE_SIZE-1);
 		
 		if (arena->commited + to_commit > arena->reserved)
 			Unreachable();
@@ -125,7 +125,7 @@ Arena_NullTerminateString(Arena* arena, String str)
 	
 	char* mem = Arena_PushAligned(arena, str.size+1, 1);
 	memcpy(mem, str.data, str.size);
-	str.data[str.size] = 0;
+	mem[str.size] = 0;
 	
 	return mem;
 }

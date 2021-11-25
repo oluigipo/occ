@@ -16,6 +16,7 @@
 *    - Flag (-w): Suppress all warnings;
 *    - Revision 'LangC_Node';
 *    - Worker Threads for multiple input files;
+*    - Thread-safe file cache;
 *    - Flag (???): Disable colorful log;
 *
 * IDEAS:
