@@ -618,7 +618,6 @@ struct LangC_Symbol
 		struct
 		{
 			LangC_SymbolStack* locals;
-			uintsize stack_needed;
 		};
 		
 		// NOTE(ljre): For struct/union
@@ -682,7 +681,8 @@ struct LangC_Node
 	// name: stmt
 	// case expr: stmt
 	// (type) init
-	// { .left[middle] = right, .name = expr, expr, [middle] = right, }
+	// { .name[middle] = right, [left].middle = right, expr, [left][middle] = right, }
+	// left.name
 	union
 	{
 		struct
@@ -866,6 +866,11 @@ struct LangC_Context
 	// NOTE(ljre): Warning list
 	LangC_QueuedWarning* queued_warning;
 	LangC_QueuedWarning* last_queued_warning;
+	
+	// NOTE(ljre): For finding the host statement of 'break' and 'continue'
+	LangC_Node* host_switch;
+	LangC_Node* host_break;
+	LangC_Node* host_continue;
 	
 	bool8 use_stage_arena_for_warnings;
 };

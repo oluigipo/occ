@@ -301,13 +301,9 @@ LangC_ParseDeclOrExpr(LangC_Context* ctx, LangC_Node** out_last, bool32 type_onl
 	LangC_Node* result = NULL;
 	
 	if (LangC_IsBeginningOfDeclOrType(ctx))
-	{
 		result = LangC_ParseDeclAndSemicolonIfNeeded(ctx, out_last, type_only);
-	}
 	else
-	{
 		result = LangC_ParseExpr(ctx, level, false);
-	}
 	
 	return result;
 }
@@ -316,6 +312,7 @@ internal LangC_Node*
 LangC_ParseInitializerField(LangC_Context* ctx)
 {
 	LangC_Node* result = NULL;
+	LangC_Node* head = NULL;
 	
 	for (;;)
 	{
@@ -324,25 +321,26 @@ LangC_ParseInitializerField(LangC_Context* ctx)
 			case LangC_TokenKind_Dot:
 			{
 				LangC_Node* newnode = LangC_CreateNode(ctx, LangC_NodeKind_ExprInitializerMember);
-				newnode->left = result;
+				if (head)
+					head = head->middle = newnode;
+				else
+					result = head = newnode;
 				
 				LangC_NextToken(&ctx->lex);
 				if (LangC_AssertToken(&ctx->lex, LangC_TokenKind_Identifier))
-				{
 					newnode->name = ctx->lex.token.value_ident;
-				}
-				
-				result = newnode;
 			} continue;
 			
 			case LangC_TokenKind_LeftBrkt:
 			{
 				LangC_Node* newnode = LangC_CreateNode(ctx, LangC_NodeKind_ExprInitializerIndex);
-				newnode->left = result;
+				if (head)
+					head = head->middle = newnode;
+				else
+					result = head = newnode;
 				
 				LangC_NextToken(&ctx->lex);
-				newnode->middle = LangC_ParseExpr(ctx, 0, false);
-				result = newnode;
+				newnode->left = LangC_ParseExpr(ctx, 0, false);
 				
 				LangC_EatToken(&ctx->lex, LangC_TokenKind_RightBrkt);
 			} continue;
@@ -356,9 +354,7 @@ LangC_ParseInitializerField(LangC_Context* ctx)
 					result->right = LangC_ParseExpr(ctx, 1, true);
 				}
 				else
-				{
 					result = LangC_ParseExpr(ctx, 1, true);
-				}
 			} break;
 		}
 		
