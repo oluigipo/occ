@@ -146,6 +146,7 @@ LangC_Main(int32 argc, const char** argv)
 		"\x1B[93m", // PATHS
 		"\x1B[91m", // ERROR
 		"\x1B[95m", // WARNING
+		"\x1B[92m", // GOOD/GREEN
 		NULL,
 	};
 	

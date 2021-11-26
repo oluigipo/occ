@@ -13,8 +13,7 @@ LangC_DefaultDriver_PrintHelp(void)
 		  "%C1  -D<name>         %C0 \n"
 		  "%C1  -D<name>=<value> %C0 Defines a Macro.\n"
 		  "%C1  -E               %C0 Runs the preprocessor on the single input file.\n"
-		  "%C1  -I<dir>          %C0 \n"
-		  "%C1  -I <dir>         %C0 Adds an include directory.\n"
+		  "%C1  -I<dir>          %C0 Adds an include directory.\n"
 		  "%C1  -o<file>         %C0 Changes the output file. (defaults to \"a.out\")\n"
 		  "\n");
 }
@@ -283,6 +282,9 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	//~ NOTE(ljre): Clean-up.
 	Arena_Destroy(ctx->stage_arena);
 	Arena_Destroy(ctx->persistent_arena);
+	
+	// TODO(ljre): Remove this.
+	Print("\nCompilation status: %C4OK!%C0\n");
 	
 	return result;
 }

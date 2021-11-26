@@ -170,7 +170,7 @@ OurVPrintf(char* buf, uintsize len, const char* fmt, va_list args)
 				uintsize len = va_arg(args, uintsize);
 				const char* ptr = va_arg(args, const char*);
 				
-				len = (len > outend - outhead) ? outend - outhead : len;
+				len = Min(len, outend - outhead);
 				outhead += OurStrCopy_(outhead, ptr, len);
 			} break;
 			

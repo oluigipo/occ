@@ -640,8 +640,55 @@ LangC_TryToEval(LangC_Context* ctx, LangC_Node* expr)
 	if (expr->cannot_be_evaluated_at_compile_time)
 		return;
 	
+	switch (expr->kind)
+	{
+		case LangC_NodeKind_ExprInt:
+		case LangC_NodeKind_ExprLInt:
+		case LangC_NodeKind_ExprLLInt:
+		case LangC_NodeKind_ExprUInt:
+		case LangC_NodeKind_ExprULInt:
+		case LangC_NodeKind_ExprULLInt:
+		case LangC_NodeKind_ExprFloat:
+		case LangC_NodeKind_ExprDouble:
+		{
+			return;
+		}
+		
+		case LangC_NodeKind_ExprIdent:
+		{
+			LangC_Symbol* sym = expr->symbol;
+			
+			if (sym)
+			{
+				switch (sym->kind)
+				{
+					case LangC_SymbolKind_EnumConstant: return;
+				}
+			}
+		} break;
+		
+		case LangC_NodeKind_Expr1Sizeof:
+		case LangC_NodeKind_Expr1SizeofType:
+		{
+			if (!(expr->flags & LangC_NodeFlags_Poisoned))
+			{
+				return;
+			}
+		} break;
+		
+		case LangC_NodeKind_Expr1Cast:
+		{
+			LangC_TryToEval(ctx, expr->expr);
+			
+			if (!expr->expr->cannot_be_evaluated_at_compile_time && LangC_IsNumericType(ctx, expr->type))
+			{
+				expr->value_uint = expr->expr->value_uint;
+				return;
+			}
+		} break;
+	}
+	
 	expr->cannot_be_evaluated_at_compile_time = true;
-	// TODO
 }
 
 internal void
@@ -1061,7 +1108,7 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 		
 		case LangC_NodeKind_ExprInitializer:
 		{
-			for (LangC_Node** it = &expr; *it; *it = (*it)->next)
+			for (LangC_Node** it = &expr->init; *it; *it = (*it)->next)
 			{
 				LangC_Node* node = *it;
 				
