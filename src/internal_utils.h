@@ -142,7 +142,7 @@ OurVPrintf(char* buf, uintsize len, const char* fmt, va_list args)
 	{
 		if (*fmt != '%')
 		{
-			*outhead++ = *fmt++;
+			*outhead++ = *fmt;
 			continue;
 		}
 		
