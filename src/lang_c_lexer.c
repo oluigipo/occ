@@ -517,7 +517,8 @@ LangC_NextToken(LangC_Lexer* lex)
 			const char* begin = lex->head;
 			const char* end = begin;
 			
-			while (LangC_IsNumeric(*end, base)) ++end;
+			while (LangC_IsNumeric(*end, base))
+				++end;
 			
 			if (*end == 'e' || *end == 'E')
 				goto parse_exponent;
@@ -526,10 +527,11 @@ LangC_NextToken(LangC_Lexer* lex)
 			{
 				++end;
 				
-				while (LangC_IsNumeric(*end, base)) ++end;
+				while (LangC_IsNumeric(*end, base))
+					++end;
 				
 				if (base == 2)
-					LangC_LexerError(lex, "error: floats cannot begin with '0b'.");
+					LangC_LexerError(lex, "floats cannot begin with '0b'.");
 				
 				if (*end == 'e' || *end == 'E' || (base == 16 && (*end == 'p' || *end == 'P')))
 				{
@@ -539,7 +541,8 @@ LangC_NextToken(LangC_Lexer* lex)
 					if (*end == '+' || *end == '-')
 						++end;
 					
-					while (LangC_IsNumeric(*end, 10)) ++end;
+					while (LangC_IsNumeric(*end, 10))
+						++end;
 				}
 				
 				if (*end == 'f' || *end == 'F')
@@ -562,9 +565,12 @@ LangC_NextToken(LangC_Lexer* lex)
 				bool32 is_unsig = false;
 				lex->token.kind = LangC_TokenKind_IntLiteral;
 				
-				if ((is_unsig = *end == 'u' || *end == 'U')) ++end, lex->token.kind = LangC_TokenKind_UintLiteral;
-				if (*end == 'l' || *end == 'L') ++end, lex->token.kind += 1;
-				if (*end == 'l' || *end == 'L') ++end, lex->token.kind += 1;
+				if ((is_unsig = *end == 'u' || *end == 'U'))
+					++end, lex->token.kind = LangC_TokenKind_UintLiteral;
+				if (*end == 'l' || *end == 'L')
+					++end, lex->token.kind += 1;
+				if (*end == 'l' || *end == 'L')
+					++end, lex->token.kind += 1;
 				
 				if (is_unsig)
 					lex->token.value_uint = strtoull(begin, NULL, base);
@@ -572,8 +578,7 @@ LangC_NextToken(LangC_Lexer* lex)
 					lex->token.value_int = strtoll(begin, NULL, base);
 			}
 			
-			int32 eaten = (int32)(end - begin);
-			lex->head += eaten;
+			lex->head = end;
 		} break;
 		
 		case 'L':
@@ -897,7 +902,7 @@ LangC_AssertToken(LangC_Lexer* lex, LangC_TokenKind kind)
 	if (lex->token.kind != kind)
 	{
 		result = false;
-		LangC_LexerError(lex, "expected '%s', but got '%.*s'.",
+		LangC_LexerError(lex, "expected '%s', but got '%S'.",
 						 LangC_token_str_table[kind], StrFmt(lex->token.as_string));
 	}
 	

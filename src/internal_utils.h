@@ -110,7 +110,7 @@ OurStrCopy_(char* buf, const char* from, uintsize max)
 {
 	uintsize res = 0;
 	
-	while (max-- > 0 && *from)
+	while (max --> 0 && *from)
 		*buf++ = *from++, ++res;
 	
 	return res;
@@ -129,6 +129,7 @@ OurStrCopy_(char* buf, const char* from, uintsize max)
 //             %I  (int64)
 //             %z  (uintsize)
 //             %f  (double)
+//             %c  (char)
 //
 //             Returns how many bytes where written to 'buf'.
 internal uintsize
@@ -156,6 +157,12 @@ OurVPrintf(char* buf, uintsize len, const char* fmt, va_list args)
 					if (global_colors)
 						outhead += OurStrCopy_(outhead, global_colors[color], outend - outhead);
 				}
+			} break;
+			
+			case 'c':
+			{
+				char c = va_arg(args, int);
+				*outhead++ = c;
 			} break;
 			
 			case 'S':
@@ -255,6 +262,12 @@ OurVPrintfSize(const char* fmt, va_list args)
 					result += strlen(global_colors[color]);
 			} break;
 			
+			case 'c':
+			{
+				va_arg(args, int);
+				++result;
+			} break;
+			
 			case 'S':
 			{
 				uintsize len = va_arg(args, uintsize);
@@ -323,6 +336,74 @@ OurPrintfSize(const char* fmt, ...)
 	uintsize result = OurVPrintfSize(fmt, args);
 	va_end(args);
 	return result;
+}
+
+#ifdef _MSC_VER
+#   include <intrin.h>
+#endif
+
+internal inline void*
+OurMemCopy(void* restrict dst, const void* restrict src, uintsize size)
+{
+#if defined(__clang__) || defined(__GNUC__)
+	__asm__ __volatile__("rep movsb"
+						 :"+D"(dst), "+S"(src), "+c"(size)
+						 :: "memory");
+#elif defined(_MSC_VER)
+	__movsb(dst, src, size);
+#else
+	uint8* d = dst;
+	const uint8* s = src;
+	while (size--)
+		*d++ = *s++;
+#endif
+	
+	return dst;
+}
+
+internal inline void*
+OurMemSet(void* restrict dst, uint8 byte, uintsize size)
+{
+#if defined(__clang__) || defined(__GNUC__)
+	__asm__ __volatile__("rep stosb"
+						 :"+D"(dst), "+a"(byte), "+c"(size)
+						 :: "memory");
+#elif defined(_MSC_VER)
+	__stosb(dst, byte, size);
+#else
+	uint8* d = dst;
+	while (size--)
+		*d++ = byte;
+#endif
+	
+	return dst;
+}
+
+internal double
+OurStrToDouble(const char* str, const char** out_end)
+{
+	// TODO(ljre)
+	return 0.0;
+}
+
+internal inline float
+OurStrToFloat(const char* str, const char** out_end)
+{
+	return (float)OurStrToDouble(str, out_end);
+}
+
+internal uint64
+OurStrToU64(const char* str, const char** out_end)
+{
+	// TODO(ljre)
+	return 0;
+}
+
+internal int64
+OurStrToI64(const char* str, const char** out_end)
+{
+	// TODO(ljre)
+	return 0;
 }
 
 #endif //INTERNAL_UTILS_H

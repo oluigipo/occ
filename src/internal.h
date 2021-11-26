@@ -36,6 +36,7 @@ typedef int16_t bool16;
 typedef int32_t bool32;
 typedef int64_t bool64;
 
+// NOTE(ljre): A 'String' is just an immutable slice of bytes. 'str.data[str.size-1]' can be NULL, but doesn't need to be.
 struct String
 {
 	uintsize size;
