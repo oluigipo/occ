@@ -423,6 +423,7 @@ enum LangC_NodeKind
 	LangC_NodeKind_StmtCompound,
 	LangC_NodeKind_StmtLabel,
 	LangC_NodeKind_StmtCase,
+	LangC_NodeKind_StmtGccAsm,
 	
 	LangC_NodeKind_ExprFactor = 4 << LangC_NodeKind__Category,
 	LangC_NodeKind_ExprIdent,
@@ -525,6 +526,11 @@ enum LangC_NodeFlags
 	LangC_NodeFlags_LongLong = 8,
 	LangC_NodeFlags_Short = 16,
 	LangC_NodeFlags_Complex = 32,
+	
+	// 000
+	LangC_NodeFlags_GccAsmVolatile = 1,
+	LangC_NodeFlags_GccAsmInline = 2,
+	LangC_NodeFlags_GccAsmGoto = 4,
 }
 typedef LangC_NodeFlags;
 
@@ -683,6 +689,7 @@ struct LangC_Node
 	// (type) init
 	// { .name[middle] = right, [left].middle = right, expr, [left][middle] = right, }
 	// left.name
+	// __asm__ flags ( leafs[0] : leafs[1] : leafs[2] : leafs[3] );
 	union
 	{
 		struct

@@ -169,6 +169,7 @@ internal LangC_Node* LangC_ParseExpr(LangC_Context* ctx, int32 level, bool32 all
 internal LangC_Node* LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32* out_should_eat_semicolon);
 internal LangC_Node* LangC_ParseDeclOrExpr(LangC_Context* ctx, LangC_Node** out_last, bool32 type_only, int32 level);
 internal LangC_Node* LangC_ParseDeclAndSemicolonIfNeeded(LangC_Context* ctx, LangC_Node** out_last, int32 options);
+internal bool32 LangC_ParsePossibleGnuAttribute(LangC_Context* ctx, LangC_Node* apply_to);
 
 internal bool32
 LangC_IsBeginningOfDeclOrType(LangC_Context* ctx)
@@ -218,6 +219,8 @@ LangC_ParseEnumBody(LangC_Context* ctx)
 		result->name = ctx->lex.token.value_ident;
 	}
 	
+	LangC_ParsePossibleGnuAttribute(ctx, result);
+	
 	if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Equals))
 	{
 		result->expr = LangC_ParseExpr(ctx, 1, false);
@@ -232,6 +235,8 @@ LangC_ParseEnumBody(LangC_Context* ctx)
 		{
 			new_node->name = ctx->lex.token.value_ident;
 		}
+		
+		LangC_ParsePossibleGnuAttribute(ctx, new_node);
 		
 		if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Equals))
 		{
@@ -799,6 +804,14 @@ LangC_ParseExpr(LangC_Context* ctx, int32 level, bool32 allow_init)
 	return result;
 }
 
+internal bool32
+LangC_ParsePossibleGnuAttribute(LangC_Context* ctx, LangC_Node* apply_to)
+{
+	// TODO(ljre):
+	
+	return false;
+}
+
 internal LangC_Node*
 LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 {
@@ -881,6 +894,21 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 		} break;
 		
+		case LangC_TokenKind_GccAttribute:
+		{
+			last = result = LangC_CreateNode(ctx, LangC_NodeKind_StmtEmpty);
+			LangC_ParsePossibleGnuAttribute(ctx, result);
+			
+			if (allow_decl && LangC_IsBeginningOfDeclOrType(ctx))
+			{
+				LangC_Node* attribs = result->attributes;
+				result = LangC_ParseDeclAndSemicolonIfNeeded(ctx, &last, 4);
+				result->attributes = attribs;
+			}
+			else
+				LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
+		} break;
+		
 		case LangC_TokenKind_Semicolon:
 		{
 			last = result = LangC_CreateNode(ctx, LangC_NodeKind_StmtEmpty);
@@ -937,17 +965,61 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 		} break;
 		
 		case LangC_TokenKind_MsvcAsm:
-		case LangC_TokenKind_GccAsm:
 		{
-			// TODO(ljre): Inline assembly
+			// TODO(ljre): Proper __asm parsing. WTF is this syntax??????????
 			last = result = LangC_CreateNode(ctx, LangC_NodeKind_StmtEmpty);
 			
 			LangC_NextToken(&ctx->lex);
-			LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Volatile);
-			LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftParen);
-			
-			while (ctx->lex.token.kind != LangC_TokenKind_RightParen)
+			if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_LeftCurl))
+			{
+				while (ctx->lex.token.kind != LangC_TokenKind_RightCurl)
+					LangC_NextToken(&ctx->lex);
+				
 				LangC_NextToken(&ctx->lex);
+			}
+			
+			LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Semicolon);
+		} break;
+		
+		case LangC_TokenKind_GccAsm:
+		{
+			last = result = LangC_CreateNode(ctx, LangC_NodeKind_StmtGccAsm);
+			
+			LangC_NextToken(&ctx->lex);
+			for (;; LangC_NextToken(&ctx->lex))
+			{
+				switch (ctx->lex.token.kind)
+				{
+					case LangC_TokenKind_Volatile: result->flags |= LangC_NodeFlags_GccAsmVolatile; continue;
+					case LangC_TokenKind_Inline: result->flags |= LangC_NodeFlags_GccAsmInline; continue;
+					case LangC_TokenKind_Goto: result->flags |= LangC_NodeFlags_GccAsmGoto; continue;
+				}
+				
+				break;
+			}
+			
+			LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftParen);
+			if (LangC_AssertToken(&ctx->lex, LangC_TokenKind_StringLiteral))
+			{
+				result->leafs[0] = LangC_ParseExprFactor(ctx, false);
+				
+				for (int32 i = 1; i <= 4; ++i)
+				{
+					if (!LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Colon))
+						break;
+					
+					if (ctx->lex.token.kind == LangC_TokenKind_StringLiteral ||
+						ctx->lex.token.kind == LangC_TokenKind_Identifier)
+					{
+						LangC_Node* head = result->leafs[i] = LangC_ParseExprFactor(ctx, false);
+						
+						while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma))
+						{
+							head = head->next = LangC_ParseExprFactor(ctx, false);
+						}
+					}
+				}
+			}
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
 		} break;
@@ -955,9 +1027,7 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 		default:
 		{
 			if (allow_decl && LangC_IsBeginningOfDeclOrType(ctx))
-			{
 				result = LangC_ParseDeclAndSemicolonIfNeeded(ctx, &last, 4);
-			}
 			else
 			{
 				last = result = LangC_ParseExpr(ctx, 0, false);
@@ -966,6 +1036,9 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 				{
 					result->kind = LangC_NodeKind_StmtLabel;
 					result->stmt = LangC_ParseStmt(ctx, NULL, false);
+					
+					if (result->stmt->kind == LangC_NodeKind_StmtEmpty)
+						result->attributes = result->stmt->attributes; // NOTE(ljre): For GCC __attribute__ only.
 				}
 				else
 				{
