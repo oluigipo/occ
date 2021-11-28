@@ -1,6 +1,61 @@
 #ifndef INTERNAL_UTILS_H
 #define INTERNAL_UTILS_H
 
+// NOTE(ljre): Functions prefixed with 'Our' are simple replacements of some CRT procedures
+//             with (maybe) some differences.
+
+#ifdef _MSC_VER
+#   include <intrin.h>
+#endif
+
+internal inline void*
+OurMemCopy(void* restrict dst, const void* restrict src, uintsize size)
+{
+#if defined(__clang__) || defined(__GNUC__)
+	__asm__ __volatile__("rep movsb"
+						 :"+D"(dst), "+S"(src), "+c"(size)
+						 :: "memory");
+#elif defined(_MSC_VER)
+	__movsb(dst, src, size);
+#else
+	uint8* d = dst;
+	const uint8* s = src;
+	while (size--)
+		*d++ = *s++;
+#endif
+	
+	return dst;
+}
+
+internal inline void*
+OurMemSet(void* restrict dst, uint8 byte, uintsize size)
+{
+#if defined(__clang__) || defined(__GNUC__)
+	__asm__ __volatile__("rep stosb"
+						 :"+D"(dst), "+a"(byte), "+c"(size)
+						 :: "memory");
+#elif defined(_MSC_VER)
+	__stosb(dst, byte, size);
+#else
+	uint8* d = dst;
+	while (size--)
+		*d++ = byte;
+#endif
+	
+	return dst;
+}
+
+internal inline uintsize
+OurStrLen(const char* restrict str)
+{
+	uintsize result = 0;
+	
+	while (*str++)
+		++result;
+	
+	return result;
+}
+
 struct StringList typedef StringList;
 struct StringList
 {
@@ -49,7 +104,7 @@ NullTerminateString(String str)
 		return str.data;
 	
 	char* result = PushMemory(str.size+1);
-	memcpy(result, str.data, str.size);
+	OurMemCopy(result, str.data, str.size);
 	result[str.size] = 0;
 	
 	return result;
@@ -106,11 +161,11 @@ CompareString(String a, String b)
 }
 
 internal uintsize
-OurStrCopy_(char* buf, const char* from, uintsize max)
+OurStrCopy_(char* restrict buf, const char* restrict from, uintsize max)
 {
 	uintsize res = 0;
 	
-	while (max --> 0 && *from)
+	while (*from && max --> 0)
 		*buf++ = *from++, ++res;
 	
 	return res;
@@ -240,6 +295,7 @@ OurPrintf(char* buf, uintsize len, const char* fmt, ...)
 	return result;
 }
 
+// NOTE(ljre): This function will return the maximum size OurPrintf is going to need.
 internal uintsize
 OurVPrintfSize(const char* fmt, va_list args)
 {
@@ -259,7 +315,7 @@ OurVPrintfSize(const char* fmt, va_list args)
 			{
 				uint32 color = *++fmt - '0';
 				if (global_colors)
-					result += strlen(global_colors[color]);
+					result += OurStrLen(global_colors[color]);
 			} break;
 			
 			case 'c':
@@ -273,13 +329,14 @@ OurVPrintfSize(const char* fmt, va_list args)
 				uintsize len = va_arg(args, uintsize);
 				const char* ptr = va_arg(args, const char*);
 				
-				result += strnlen(ptr, len);
+				result += len;
+				(void)ptr;
 			} break;
 			
 			case 's':
 			{
 				const char* ptr = va_arg(args, const char*);
-				result += strlen(ptr);
+				result += OurStrLen(ptr);
 			} break;
 			
 			case 'u':
@@ -336,47 +393,6 @@ OurPrintfSize(const char* fmt, ...)
 	uintsize result = OurVPrintfSize(fmt, args);
 	va_end(args);
 	return result;
-}
-
-#ifdef _MSC_VER
-#   include <intrin.h>
-#endif
-
-internal inline void*
-OurMemCopy(void* restrict dst, const void* restrict src, uintsize size)
-{
-#if defined(__clang__) || defined(__GNUC__)
-	__asm__ __volatile__("rep movsb"
-						 :"+D"(dst), "+S"(src), "+c"(size)
-						 :: "memory");
-#elif defined(_MSC_VER)
-	__movsb(dst, src, size);
-#else
-	uint8* d = dst;
-	const uint8* s = src;
-	while (size--)
-		*d++ = *s++;
-#endif
-	
-	return dst;
-}
-
-internal inline void*
-OurMemSet(void* restrict dst, uint8 byte, uintsize size)
-{
-#if defined(__clang__) || defined(__GNUC__)
-	__asm__ __volatile__("rep stosb"
-						 :"+D"(dst), "+a"(byte), "+c"(size)
-						 :: "memory");
-#elif defined(_MSC_VER)
-	__stosb(dst, byte, size);
-#else
-	uint8* d = dst;
-	while (size--)
-		*d++ = byte;
-#endif
-	
-	return dst;
 }
 
 internal double

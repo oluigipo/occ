@@ -56,6 +56,11 @@
 *    - Don't implement C2x lambdas (https://twitter.com/__phantomderp/status/1434306584465793028)
 */
 
+#define LangC_VERSION_MAJOR 0
+#define LangC_VERSION_MINOR 0
+#define LangC_VERSION_PATCH 1
+#define LangC_VERSION_STR StrMacro(LangC_VERSION_MAJOR) "." StrMacro(LangC_VERSION_MINOR) "." StrMacro(LangC_VERSION_PATCH)
+
 #include "lang_c_definitions.h"
 
 internal int32 LangC_error_count = 0;

@@ -62,6 +62,14 @@ typedef signed long long ptrdiff_t;
 typedef unsigned short wchar_t;
 
 
+
+# 32 "B:/occ/include/stddef.h"
+
+
+# 36 "B:/occ/include/stddef.h"
+
+
+
 # 5 "B:/occ/include/stdio.h" 2
 
 # 1 "B:/occ/include/stdarg.h" 1
@@ -176,6 +184,8 @@ int main(int argc, char* argv[])
 		f, v
 	};
 	
+	pp[1] = &argc;
+	
 	printf("address of 'f' is %p\n", pp[0]);
-	printf("this is line " "55" "!\n");
+	printf("this is line " "5" "!\n");
 }

@@ -3,7 +3,7 @@
 internal void
 LangC_DefaultDriver_PrintHelp(void)
 {
-	Print("Our C Compiler -- help:\n"
+	Print("Our C Compiler v" LangC_VERSION_STR " -- help:\n"
 		  "%C2usage:%C0 occ [FILE | FLAG] ...\n"
 		  "\n"
 		  "%C2flags:%C0\n"
@@ -74,8 +74,8 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 			uintsize len = last_slash_index+1 + sizeof include;
 			char* path = PushMemory(len + 1);
 			
-			memcpy(path, global_my_path.data, last_slash_index+1);
-			memcpy(path + last_slash_index+1, include, sizeof include);
+			OurMemCopy(path, global_my_path.data, last_slash_index+1);
+			OurMemCopy(path + last_slash_index+1, include, sizeof include);
 			path[len] = 0;
 			
 			options.include_dirs[0] = StrMake(path, len + 1);
@@ -129,13 +129,13 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 					continue;
 			}
 			
-			uintsize len = strlen(flag);
+			uintsize len = OurStrLen(flag);
 			uintsize needed_len = len;
 			if (flag[len] != '/' || flag[len] != '\\')
 				needed_len += 1;
 			
 			char* dir = PushMemory(needed_len + 1);
-			memcpy(dir, flag, len);
+			OurMemCopy(dir, flag, len);
 			
 			if (needed_len > len)
 				dir[len] = '/';
@@ -203,11 +203,10 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	LangC_DefineMacro(ctx, Str("__OCC__ 1"))->persistent = true;
 	
 	// NOTE(ljre): Polyfills
-	//LangC_DefineMacro(ctx, Str("__int64 long long"))->persistent = true;
-	//LangC_DefineMacro(ctx, Str("__int32 int"))->persistent = true;
-	//LangC_DefineMacro(ctx, Str("__int16 short"))->persistent = true;
-	//LangC_DefineMacro(ctx, Str("__int8 char"))->persistent = true;
-	//LangC_DefineMacro(ctx, Str("__forceinline inline"))->persistent = true;
+	LangC_DefineMacro(ctx, Str("__int64 long long"))->persistent = true;
+	LangC_DefineMacro(ctx, Str("__int32 int"))->persistent = true;
+	LangC_DefineMacro(ctx, Str("__int16 short"))->persistent = true;
+	LangC_DefineMacro(ctx, Str("__int8 char"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__inline inline"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__inline__ inline"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__restrict restrict"))->persistent = true;
@@ -217,6 +216,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	LangC_DefineMacro(ctx, Str("__volatile volatile"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__volatile__ volatile"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__attribute __attribute__"))->persistent = true;
+	//LangC_DefineMacro(ctx, Str("__forceinline inline"))->persistent = true;
 	//LangC_DefineMacro(ctx, Str("__attribute__(...)"))->persistent = true;
 	//LangC_DefineMacro(ctx, Str("__declspec(...)"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"))->persistent = true;
@@ -271,7 +271,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 			{
 				Print("%s", ctx->pre_source);
 			}
-			else if (!OS_WriteWholeFile(NullTerminateString(output_file), ctx->pre_source, strlen(ctx->pre_source)))
+			else if (!OS_WriteWholeFile(NullTerminateString(output_file), ctx->pre_source, OurStrLen(ctx->pre_source)))
 			{
 				Print("error: could not open output file.\n");
 				result = 1;

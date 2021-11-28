@@ -38,7 +38,7 @@ Arena_Create(uintsize size)
 internal void
 Arena_CommitAtLeast(Arena* arena, uintsize desired_offset)
 {
-	if (desired_offset > arena->commited)
+	if (Unlikely(desired_offset > arena->commited))
 	{
 		uintsize to_commit = AlignUp(arena->commited - desired_offset, Arena_PAGE_SIZE-1);
 		
@@ -60,7 +60,7 @@ Arena_PushAligned(Arena* arena, uintsize size, uintsize alignment)
 	
 	Arena_CommitAtLeast(arena, desired_size);
 	
-	memset(ptr, 0, size);
+	OurMemSet(ptr, 0, size);
 	arena->offset += size;
 	return ptr;
 }
@@ -86,7 +86,7 @@ Arena_End(Arena* arena)
 internal inline void*
 Arena_PushMemory(Arena* arena, uintsize size, const void* data)
 {
-	return memcpy(Arena_PushAligned(arena, size, 1), data, size);
+	return OurMemCopy(Arena_PushAligned(arena, size, 1), data, size);
 }
 
 internal uintsize
@@ -96,8 +96,12 @@ Arena_VPrintf(Arena* arena, const char* fmt, va_list args)
 	va_copy(args_copy, args);
 	
 	uintsize len = OurVPrintfSize(fmt, args_copy);
+	uintsize offset = arena->offset;
+	
 	char* buf = Arena_PushAligned(arena, len, 1);
-	OurVPrintf(buf, len, fmt, args);
+	
+	len = OurVPrintf(buf, len, fmt, args);
+	arena->offset = offset + len;
 	
 	va_end(args_copy);
 	
@@ -124,7 +128,7 @@ Arena_NullTerminateString(Arena* arena, String str)
 		return str.data;
 	
 	char* mem = Arena_PushAligned(arena, str.size+1, 1);
-	memcpy(mem, str.data, str.size);
+	OurMemCopy(mem, str.data, str.size);
 	mem[str.size] = 0;
 	
 	return mem;

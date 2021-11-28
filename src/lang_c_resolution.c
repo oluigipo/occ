@@ -719,7 +719,7 @@ LangC_ResolveType(LangC_Context* ctx, LangC_Node* type, bool32* out_is_complete,
 					type->symbol = sym;
 					
 					if (type->body)
-						LangC_NodeError(ctx, type->body, "redefinition of '%s %.*s'.",
+						LangC_NodeError(ctx, type->body, "redefinition of '%s %S'.",
 										kind == LangC_SymbolKind_Struct ? "struct" : "union",
 										StrFmt(type->name));
 					else
@@ -1401,7 +1401,7 @@ LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 			LangC_Symbol* sym = LangC_FindSymbolOfIdent(ctx, expr, 0);
 			
 			if (!sym)
-				LangC_NodeError(ctx, expr, "unknown identifier '%.*s'.", StrFmt(expr->name));
+				LangC_NodeError(ctx, expr, "unknown identifier '%S'.", StrFmt(expr->name));
 			else
 				expr->type = sym->type;
 		} break;
@@ -1896,7 +1896,7 @@ LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 		case LangC_NodeKind_DeclTypedef:
 		{
 			if (LangC_SymbolAlreadyDefinedInThisScope(ctx, decl->name, LangC_SymbolKind_Typename))
-				LangC_NodeError(ctx, decl, "redefinition of type '%.*s'.", StrFmt(decl->name));
+				LangC_NodeError(ctx, decl, "redefinition of type '%S'.", StrFmt(decl->name));
 			
 			if (decl->name.size > 0)
 				LangC_CreateSymbol(ctx, decl->name, LangC_SymbolKind_Typename, decl->type, decl);

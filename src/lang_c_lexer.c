@@ -83,7 +83,7 @@ LangC_LexerError(LangC_Lexer* lex, const char* fmt, ...)
 	if (file->included_from)
 		LangC_PrintIncludeStack(file->included_from, file->included_line);
 	
-	Print("%C1%S%C0(%i:%i): %C2error%C2: ", StrFmt(file->path), lex->line, lex->col);
+	Print("%C1%S%C0(%i:%i): %C2error%C0: ", StrFmt(file->path), lex->line, lex->col);
 	
 	va_list args;
 	va_start(args, fmt);
@@ -114,7 +114,7 @@ LangC_LexerWarning(LangC_Lexer* lex, LangC_Warning warning, const char* fmt, ...
 		if (file->included_from)
 			LangC_PrintIncludeStackToArena(file->included_from, file->included_line, global_arena);
 		
-		Arena_Printf(global_arena, "%C1%S%C0(%i:%i): %C3warning%C3: ", StrFmt(file->path), lex->line, lex->col);
+		Arena_Printf(global_arena, "%C1%S%C0(%i:%i): %C3warning%C0: ", StrFmt(file->path), lex->line, lex->col);
 		
 		va_list args;
 		va_start(args, fmt);

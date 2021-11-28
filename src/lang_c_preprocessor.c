@@ -31,7 +31,7 @@ LangC_LoadFileFromDisk(LangC_Context* ctx, const char path[MAX_PATH_SIZE], uint6
 		
 		uintsize len = strlen(path) + 1;
 		char* mem = Arena_Push(ctx->stage_arena, len);
-		memcpy(mem, path, len);
+		OurMemCopy(mem, path, len);
 		
 		file->path = StrMake(mem, len);
 		return file;
@@ -54,7 +54,7 @@ LangC_TryToLoadFile(LangC_Context* ctx, String path, bool32 relative, String inc
 		uintsize len = 0;
 		if (including_from.size > 0)
 		{
-			memcpy(fullpath, including_from.data, including_from.size);
+			OurMemCopy(fullpath, including_from.data, including_from.size);
 			
 			int32 last_slash_index = -1;
 			for (int32 i = 0; i < including_from.size; ++i)
@@ -72,7 +72,7 @@ LangC_TryToLoadFile(LangC_Context* ctx, String path, bool32 relative, String inc
 			len = last_slash_index + 1;
 		}
 		
-		memcpy(fullpath + len, path.data, path.size);
+		OurMemCopy(fullpath + len, path.data, path.size);
 		len += path.size;
 		
 		OS_ResolveFullPath(StrMake(fullpath, len), fullpath);
@@ -105,8 +105,8 @@ LangC_TryToLoadFile(LangC_Context* ctx, String path, bool32 relative, String inc
 		String include_dir = ctx->options->include_dirs[i];
 		include_dir = IgnoreNullTerminator(include_dir);
 		
-		memcpy(fullpath, include_dir.data, include_dir.size);
-		memcpy(fullpath + include_dir.size, path.data, path.size);
+		OurMemCopy(fullpath, include_dir.data, include_dir.size);
+		OurMemCopy(fullpath + include_dir.size, path.data, path.size);
 		
 		String p = {
 			.size = include_dir.size + path.size,
@@ -307,8 +307,6 @@ LangC_FindMacroParameter(LangC_MacroParameter* param_array, int32 param_count, S
 internal void
 LangC_TracePreprocessor(LangC_Context* ctx, LangC_Lexer* lex, uint32 flags)
 {
-	char str[2048];
-	int32 len;
 	Assert(flags < 16);
 	
 	static const char* const flag_table[] = {
@@ -331,11 +329,9 @@ LangC_TracePreprocessor(LangC_Context* ctx, LangC_Lexer* lex, uint32 flags)
 	};
 	
 	if (flags)
-		len = snprintf(str, sizeof str, "# %i \"%.*s\" %s\n", lex->line, StrFmt(lex->file->path), flag_table[flags]);
+		Arena_Printf(ctx->persistent_arena, "# %i \"%S\" %s\n", lex->line, StrFmt(lex->file->path), flag_table[flags]);
 	else
-		len = snprintf(str, sizeof str, "# %i \"%.*s\"\n", lex->line, StrFmt(lex->file->path));
-	
-	Arena_PushMemory(ctx->persistent_arena, len, str);
+		Arena_Printf(ctx->persistent_arena, "# %i \"%S\"\n", lex->line, StrFmt(lex->file->path));
 }
 
 internal void
@@ -365,7 +361,7 @@ LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_le
 	{
 		String file = parent_lex->file->path;
 		char* mem = Arena_End(ctx->stage_arena);
-		uintsize needed = Arena_Printf(ctx->stage_arena, "\"%.*s\"", StrFmt(file));
+		uintsize needed = Arena_Printf(ctx->stage_arena, "\"%S\"", StrFmt(file));
 		
 		LangC_Token tok = {
 			.kind = LangC_TokenKind_StringLiteral,
@@ -521,7 +517,7 @@ LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_le
 					char* buf = Arena_PushAligned(ctx->stage_arena, len+2, 1);
 					
 					buf[0] = '"';
-					memcpy(buf + 1, param->expands_to, len);
+					OurMemCopy(buf + 1, param->expands_to, len);
 					buf[len + 1] = '"';
 					
 					LangC_Token tok = {
@@ -581,8 +577,8 @@ LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_le
 					uintsize len = tok.as_string.size + other_tok.as_string.size + 1;
 					char* buf = Arena_Push(ctx->stage_arena, len);
 					
-					memcpy(buf, tok.as_string.data, tok.as_string.size);
-					memcpy(buf + tok.as_string.size, other_tok.as_string.data, other_tok.as_string.size);
+					OurMemCopy(buf, tok.as_string.data, tok.as_string.size);
+					OurMemCopy(buf + tok.as_string.size, other_tok.as_string.data, other_tok.as_string.size);
 					buf[tok.as_string.size + other_tok.as_string.size] = 0;
 					
 					// TODO(ljre): Check if result of concatenation should be expanded on the 4th step.
@@ -872,9 +868,7 @@ LangC_IgnoreUntilEndOfIf(LangC_Context* ctx, LangC_Lexer* lex, bool32 already_ma
 							goto out_of_the_loop;
 						}
 						else if (MatchCString("else", directive.data, directive.size))
-						{
 							nesting = 0;
-						}
 					}
 					
 					if (MatchCString("ifdef", directive.data, directive.size) ||
@@ -933,9 +927,7 @@ LangC_PreprocessIf(LangC_Context* ctx, LangC_Lexer* lex)
 	int32 result = LangC_EvalPreprocessorExpr(ctx, lex);
 	
 	if (result == 0)
-	{
 		LangC_IgnoreUntilEndOfIf(ctx, lex, false);
-	}
 }
 
 internal void
@@ -989,9 +981,7 @@ LangC_PreprocessInclude(LangC_Context* ctx, LangC_Lexer* lex)
 		LangC_TracePreprocessor(ctx, lex, 2);
 	}
 	else
-	{
-		LangC_LexerError(lex, "could not find file '%.*s' when including.", StrFmt(path));
-	}
+		LangC_LexerError(lex, "could not find file '%S' when including.", StrFmt(path));
 }
 
 internal void
@@ -1004,17 +994,17 @@ LangC_GeneratePlainPragma(LangC_Context* ctx, const char* begin, const char* end
 	{
 		if (*p == '"')
 		{
-			Arena_Printf(ctx->persistent_arena, "%.*s\\\"", p - begin, begin);
+			Arena_Printf(ctx->persistent_arena, "%S\\\"", p - begin, begin);
 			begin = p + 1;
 		}
 		else if (*p == '\\')
 		{
-			Arena_Printf(ctx->persistent_arena, "%.*s\\\\", p - begin, begin);
+			Arena_Printf(ctx->persistent_arena, "%S\\\\", p - begin, begin);
 			begin = p + 1;
 		}
 	}
 	
-	Arena_Printf(ctx->persistent_arena, "%.*s\")", p - begin, begin);
+	Arena_Printf(ctx->persistent_arena, "%S\")", p - begin, begin);
 }
 
 internal void
@@ -1054,7 +1044,7 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 				
 				if (lex->token.kind != LangC_TokenKind_Identifier)
 				{
-					LangC_LexerError(lex, "invalid preprocessor directive '%.*s'.", StrFmt(directive));
+					LangC_LexerError(lex, "invalid preprocessor directive '%S'.", StrFmt(directive));
 					LangC_IgnoreUntilNewline(lex);
 					break;
 				}
@@ -1138,7 +1128,7 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 						++end;
 					
 					uintsize len = end - begin;
-					LangC_LexerError(lex, ": %.*s", len, begin);
+					LangC_LexerError(lex, "\"%S\"", len, begin);
 					
 					lex->head = end;
 				}
@@ -1151,7 +1141,7 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 						++end;
 					
 					uintsize len = end - begin;
-					LangC_LexerWarning(lex, LangC_Warning_UserWarning, "%.*s", len, begin);
+					LangC_LexerWarning(lex, LangC_Warning_UserWarning, "\"%S\"", len, begin);
 					
 					lex->head = end;
 				}
@@ -1177,9 +1167,7 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 					}
 				}
 				else
-				{
-					LangC_LexerError(lex, "unknown pre-processor directive '%.*s'.", StrFmt(directive));
-				}
+					LangC_LexerError(lex, "unknown pre-processor directive '%S'.", StrFmt(directive));
 				
 				LangC_IgnoreUntilNewline(lex);
 				LangC_NextToken(lex);
@@ -1193,18 +1181,12 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 				LangC_Macro* macro;
 				
 				if (LangC_PeekIncomingToken(lex).kind == LangC_TokenKind_LeftParen)
-				{
 					macro = LangC_FindMacro(ctx, ident, 3);
-				}
 				else
-				{
 					macro = LangC_FindMacro(ctx, ident, 0);
-				}
 				
 				if (macro)
-				{
 					LangC_ExpandMacro(ctx, macro, lex, leading_spaces);
-				}
 				else
 				{
 					Arena_PushMemory(ctx->persistent_arena, ident.size, ident.data);
@@ -1253,7 +1235,7 @@ LangC_Preprocess(LangC_Context* ctx, String path)
 		LangC_Preprocess2(ctx, fullpath, ctx->source, NULL);
 	else
 	{
-		Print("error: could not open input file '%.*s'.\n", StrFmt(path));
+		Print("error: could not open input file '%S'.\n", StrFmt(path));
 		++LangC_error_count;
 	}
 	
