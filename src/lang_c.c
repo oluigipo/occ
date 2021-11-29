@@ -52,8 +52,6 @@
 *            - Example: struct A { int n; }; struct B { int pp; double k; }; -- here A is a subset of B;
 *            - Example: struct A { long n; }; struct B { int pp; double k; }; -- here A is *not* a subset of B;
 *
-* IMPORTANT:
-*    - Don't implement C2x lambdas (https://twitter.com/__phantomderp/status/1434306584465793028)
 */
 
 #define LangC_VERSION_MAJOR 0
@@ -72,13 +70,9 @@ LangC_AddInputFile(StringList** first, StringList** last, String str)
 	Assert(last);
 	
 	if (!*last)
-	{
 		*first = *last = PushMemory(sizeof **last);
-	}
 	else
-	{
 		*last = (*last)->next = PushMemory(sizeof **last);
-	}
 	
 	(*last)->value = str;
 }
@@ -103,13 +97,9 @@ LangC_PushWarning(LangC_Context* ctx, LangC_Warning warning, const char* message
 	LangC_QueuedWarning* newone = Arena_Push(arena, sizeof(LangC_QueuedWarning));
 	
 	if (!ctx->last_queued_warning)
-	{
 		ctx->queued_warning = ctx->last_queued_warning = newone;
-	}
 	else
-	{
 		ctx->last_queued_warning = ctx->last_queued_warning->next = newone;
-	}
 	
 	ctx->last_queued_warning->warning = warning;
 	ctx->last_queued_warning->to_print = message;
@@ -146,6 +136,7 @@ LangC_Main(int32 argc, const char** argv)
 	
 	int32 result = 0;
 	
+	// NOTE(ljre): Colors for 'OurPrintf'
 	static const char* const colors[] = {
 		"\x1B[0m", // RESET
 		"\x1B[93m", // PATHS

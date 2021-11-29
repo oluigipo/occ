@@ -295,7 +295,7 @@ OurPrintf(char* buf, uintsize len, const char* fmt, ...)
 	return result;
 }
 
-// NOTE(ljre): This function will return the maximum size OurPrintf is going to need.
+// NOTE(ljre): This function will return the maximum size OurPrintf is going to need, not *exactly* the same size.
 internal uintsize
 OurVPrintfSize(const char* fmt, va_list args)
 {

@@ -804,10 +804,10 @@ LangC_EvalPreprocessorExprBinary(LangC_Context* ctx, LangC_Lexer* lex, int32 lev
 			LangC_NextToken(lex);
 			
 			if (lookahead == LangC_TokenKind_QuestionMark) {
-				int32 if_true = LangC_EvalPreprocessorExprBinary(ctx, lex, 1);
+				int32 if_true = LangC_EvalPreprocessorExprBinary(ctx, lex, 0);
 				
 				LangC_EatToken(lex, LangC_TokenKind_Colon);
-				int32 if_false = LangC_EvalPreprocessorExprBinary(ctx, lex, level + 1);
+				int32 if_false = LangC_EvalPreprocessorExprBinary(ctx, lex, level - 1);
 				
 				right = right ? if_true : if_false;
 			} else {

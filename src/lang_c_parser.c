@@ -781,10 +781,10 @@ LangC_ParseExpr(LangC_Context* ctx, int32 level, bool32 allow_init)
 			if (lookahead == LangC_TokenKind_QuestionMark) {
 				tmp->kind = LangC_NodeKind_Expr3Condition;
 				tmp->left = right;
-				tmp->middle = LangC_ParseExpr(ctx, 1, false);
+				tmp->middle = LangC_ParseExpr(ctx, 0, false);
 				
 				LangC_EatToken(&ctx->lex, LangC_TokenKind_Colon);
-				tmp->right = LangC_ParseExpr(ctx, level + 1, false);
+				tmp->right = LangC_ParseExpr(ctx, level - 1, false);
 			} else {
 				tmp->kind = LangC_token_to_op[lookahead];
 				tmp->left = right;
@@ -1183,7 +1183,7 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 				head = newtype;
 				
 				if (ctx->lex.token.kind == LangC_TokenKind_RightParen)
-					newtype->type->flags |= LangC_NodeFlags_VarArgs;
+					newtype->flags |= LangC_NodeFlags_VarArgs;
 				else
 				{
 					LangC_Node* last_param;
