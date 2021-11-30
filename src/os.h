@@ -12,6 +12,7 @@ typedef void* OS_Mutex;
 
 internal void OS_Exit(int32 code);
 
+internal uint64 OS_Time(void);
 internal String OS_GetMyPath(void);
 internal const char* OS_ReadWholeFile(const char* path, uintsize* size);
 internal bool32 OS_WriteWholeFile(const char* path, const void* data, uintsize size);
@@ -46,6 +47,36 @@ internal void
 OS_Exit(int32 code)
 {
 	ExitProcess(code);
+}
+
+internal uint64
+OS_Time(void)
+{
+	// NOTE(ljre): *sigh*
+	// https://docs.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-rtltimetosecondssince1970
+	union
+	{
+		FILETIME filetime;
+		ULARGE_INTEGER largeint;
+	} now, then;
+	
+	SYSTEMTIME systime_now;
+	SYSTEMTIME systime_then = {
+		.wYear = 1970,
+		.wMonth = 1,
+		.wDayOfWeek = 4,
+		.wDay = 1,
+		// rest is 0
+	};
+	
+	GetSystemTime(&systime_now);
+	SystemTimeToFileTime(&systime_now, &now.filetime);
+	SystemTimeToFileTime(&systime_then, &then.filetime);
+	
+	uint64 result = now.largeint.QuadPart - then.largeint.QuadPart;
+	result /= 10000000;
+	
+	return result;
 }
 
 internal String

@@ -402,24 +402,48 @@ OurStrToDouble(const char* str, const char** out_end)
 	return 0.0;
 }
 
-internal inline float
-OurStrToFloat(const char* str, const char** out_end)
-{
-	return (float)OurStrToDouble(str, out_end);
-}
-
+// TODO(ljre): Check if this is correct
 internal uint64
-OurStrToU64(const char* str, const char** out_end)
+OurStrToU64(const char* str, const char** out_end, uint32 base)
 {
-	// TODO(ljre)
-	return 0;
-}
-
-internal int64
-OurStrToI64(const char* str, const char** out_end)
-{
-	// TODO(ljre)
-	return 0;
+	const uint8* buf = (const uint8*)str;
+	const uint8 case_mask = 0b11011111;
+	
+	uint64 result = 0;
+	
+	if (base > 10)
+	{
+		uint8 c;
+		uint8 max = 'A' + base-11;
+		
+		for (; c = *buf&case_mask, *buf; ++buf)
+		{
+			uint8 r;
+			if (c >= 'A' && c <= max)
+				r = c - 'A';
+			else if (c >= '0' && c <= '9')
+				r = c - '0';
+			else
+				break;
+			result += r;
+			result *= base;
+		}
+	}
+	else
+	{
+		uint8 max = '0' + base-1;
+		
+		for (; *buf >= '0' && *buf <= max; ++buf)
+		{
+			result *= base;
+			result += *buf - '0';
+		}
+	}
+	
+	if (out_end)
+		*out_end = (const char*)buf;
+	
+	return result;
 }
 
 #endif //INTERNAL_UTILS_H

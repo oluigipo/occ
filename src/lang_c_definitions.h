@@ -10,6 +10,8 @@ struct LangC_SymbolStack typedef LangC_SymbolStack;
 struct LangC_Symbol typedef LangC_Symbol;
 struct LangC_Node typedef LangC_Node;
 
+#define LangC_IsKeyword(kind) ((kind) >= LangC_TokenKind__FirstKeyword && (kind) <= LangC_TokenKind__LastKeyword)
+
 enum LangC_TokenKind
 {
 	LangC_TokenKind_Eof = 0,
@@ -490,6 +492,7 @@ enum LangC_NodeKind
 	
 	LangC_NodeKind_Attribute = 8 << LangC_NodeKind__Category,
 	LangC_NodeKind_AttributePacked,
+	LangC_NodeKind_AttributeAlignas,
 	LangC_NodeKind_AttributeBitfield,
 	
 	LangC_NodeKind__CategoryCount = 8,

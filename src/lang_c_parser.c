@@ -648,9 +648,7 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 			case LangC_TokenKind_Identifier:
 			{
 				if (LangC_IsBeginningOfDeclOrType(ctx))
-				{
 					LangC_LexerError(&ctx->lex, "unexpected typename.");
-				}
 				
 				LangC_UpdateNode(ctx, LangC_NodeKind_ExprIdent, head);
 				head->name = ctx->lex.token.value_ident;
@@ -821,7 +819,50 @@ LangC_ParseExpr(LangC_Context* ctx, int32 level, bool32 allow_init)
 internal bool32
 LangC_ParsePossibleGnuAttribute(LangC_Context* ctx, LangC_Node* apply_to)
 {
-	// TODO(ljre):
+	if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_GccAttribute))
+	{
+		LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftParen);
+		LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftParen);
+		
+		if (ctx->lex.token.kind != LangC_TokenKind_RightParen)
+		{
+			do
+			{
+				if (!LangC_IsKeyword(ctx->lex.token.kind) && ctx->lex.token.kind != LangC_TokenKind_Identifier)
+					break;
+				
+				LangC_Node* attrib = LangC_CreateNode(ctx, LangC_NodeKind_Attribute);
+				String name = ctx->lex.token.value_ident;
+				if (MatchCString("packed", StrFmt2(name)) || MatchCString("__packed__", StrFmt2(name)))
+				{
+					attrib->kind = LangC_NodeKind_AttributePacked;
+					
+					LangC_NextToken(&ctx->lex);
+				}
+				else if (MatchCString("aligned", StrFmt2(name)))
+				{
+					attrib->kind = LangC_NodeKind_AttributePacked;
+					
+					LangC_NextToken(&ctx->lex);
+					if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_LeftParen))
+					{
+						attrib->expr = LangC_ParseExpr(ctx, 0, false);
+						
+						LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
+					}
+				}
+				
+				attrib->next = apply_to->attributes;
+				apply_to->attributes = attrib;
+			}
+			while (!LangC_EatToken(&ctx->lex, LangC_TokenKind_Comma));
+		}
+		
+		LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
+		LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
+		
+		return true;
+	}
 	
 	return false;
 }
@@ -851,9 +892,7 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 			result->stmt = LangC_ParseStmt(ctx, NULL, false);
 			
 			if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Else))
-			{
 				result->stmt2 = LangC_ParseStmt(ctx, NULL, false);
-			}
 		} break;
 		
 		case LangC_TokenKind_While:
@@ -879,15 +918,11 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 			if (ctx->lex.token.kind != LangC_TokenKind_Semicolon)
-			{
 				result->expr = LangC_ParseExpr(ctx, 0, false);
-			}
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 			if (ctx->lex.token.kind != LangC_TokenKind_RightParen)
-			{
 				result->iter = LangC_ParseExpr(ctx, 0, false);
-			}
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
 			result->stmt = LangC_ParseStmt(ctx, NULL, false);
@@ -1229,13 +1264,11 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 				{
 					LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
 					
+					Assert(paren_stack_size > 0);
 					head = paren_stack[--paren_stack_size];
 					
 					while (previous_head->type != head)
-					{
 						previous_head = previous_head->type;
-						Assert(previous_head);
-					}
 					
 					continue;
 				}

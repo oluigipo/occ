@@ -47,7 +47,8 @@ typedef String;
 #define Str(str) (String) StrInit(str)
 #define StrFrom(cstr) (String) { .size = strlen(cstr), .data = (cstr) }
 #define StrInit(str) { .size = sizeof(str), .data = (str) }
-#define StrFmt(str) (int32)(str).size, (str).data
+#define StrFmt(str) (str).size, (str).data
+#define StrFmt2(str) (str).data, (str).size
 #define StrNull (String) { 0 }
 #define StrMake(str,len) (String) { .size = (len), .data = (str) }
 #define StrMacro_(x) #x
@@ -90,7 +91,7 @@ internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 #   define TraceName(x) ((void)0)
 #elif defined __GNUC__
 #   define Assume(x) do { if (!(x)) __builtin_unreachable(); } while (0)
-#   define DebugBreak_() __builtin_debugtrap()
+#   define DebugBreak_() __builtin_trap()
 #   define Likely(x) __builtin_expect(!!(x), 1)
 #   define Unlikely(x) __builtin_expect((x), 0)
 #   define Trace(x) ((void)0)
@@ -108,7 +109,7 @@ internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 #ifdef NDEBUG
 #   define Assert(x) Assume(x)
 #else
-#   define Assert(x) do { if (!(x)) { DebugBreak_(); Print("\n########## ASSERTION FAILURE\nFile: " __FILE__ "\nLine: " StrMacro(__LINE__) "\nExpression: " #x "\n"); } } while (0)
+#   define Assert(x) do { if (!(x)) { DebugBreak_(); Panic("\n########## ASSERTION FAILURE\nFile: " __FILE__ "\nLine: " StrMacro(__LINE__) "\nExpression: " #x "\n"); } } while (0)
 #endif
 
 internal void* PushMemory(uintsize size);

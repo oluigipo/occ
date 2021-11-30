@@ -1050,36 +1050,36 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 				}
 				
 				bool32 not = false;
-				if (MatchCString("include", directive.data, directive.size))
+				if (MatchCString("include", StrFmt2(directive)))
 				{
 					LangC_NextToken(lex);
 					LangC_PreprocessInclude(ctx, lex);
 				}
-				else if (MatchCString("ifdef", directive.data, directive.size) ||
-						 (not = MatchCString("ifndef", directive.data, directive.size)))
+				else if (MatchCString("ifdef", StrFmt2(directive)) ||
+						 (not = MatchCString("ifndef", StrFmt2(directive))))
 				{
 					LangC_NextToken(lex);
 					LangC_PreprocessIfDef(ctx, lex, not);
 				}
-				else if (MatchCString("if", directive.data, directive.size))
+				else if (MatchCString("if", StrFmt2(directive)))
 				{
 					LangC_NextToken(lex);
 					LangC_PreprocessIf(ctx, lex);
 				}
-				else if (MatchCString("elif", directive.data, directive.size) ||
-						 MatchCString("elifdef", directive.data, directive.size) ||
-						 MatchCString("elifndef", directive.data, directive.size) ||
-						 MatchCString("else", directive.data, directive.size))
+				else if (MatchCString("elif", StrFmt2(directive)) ||
+						 MatchCString("elifdef", StrFmt2(directive)) ||
+						 MatchCString("elifndef", StrFmt2(directive)) ||
+						 MatchCString("else", StrFmt2(directive)))
 				{
 					LangC_NextToken(lex);
 					LangC_IgnoreUntilEndOfIf(ctx, lex, true);
 				}
-				else if (MatchCString("endif", directive.data, directive.size))
+				else if (MatchCString("endif", StrFmt2(directive)))
 				{
 					LangC_NextToken(lex);
 					// NOTE(ljre): :P
 				}
-				else if (MatchCString("line", directive.data, directive.size))
+				else if (MatchCString("line", StrFmt2(directive)))
 				{
 					LangC_NextToken(lex);
 					
@@ -1090,7 +1090,7 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 					lex->line = line-1; // NOTE(ljre): :P
 					LangC_TracePreprocessor(ctx, lex, 0);
 				}
-				else if (MatchCString("define", directive.data, directive.size))
+				else if (MatchCString("define", StrFmt2(directive)))
 				{
 					const char* def = lex->head;
 					
@@ -1110,16 +1110,14 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 						LangC_DefineMacro(ctx, macro_def);
 					}
 				}
-				else if (MatchCString("undef", directive.data, directive.size))
+				else if (MatchCString("undef", StrFmt2(directive)))
 				{
 					LangC_NextToken(lex);
 					
 					if (LangC_AssertToken(lex, LangC_TokenKind_Identifier))
-					{
 						LangC_UndefineMacro(ctx, lex->token.value_ident);
-					}
 				}
-				else if (MatchCString("error", directive.data, directive.size))
+				else if (MatchCString("error", StrFmt2(directive)))
 				{
 					const char* begin = lex->head;
 					const char* end = lex->head;
@@ -1132,7 +1130,7 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 					
 					lex->head = end;
 				}
-				else if (MatchCString("warning", directive.data, directive.size))
+				else if (MatchCString("warning", StrFmt2(directive)))
 				{
 					const char* begin = lex->head;
 					const char* end = lex->head;
@@ -1145,7 +1143,7 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 					
 					lex->head = end;
 				}
-				else if (MatchCString("pragma", directive.data, directive.size))
+				else if (MatchCString("pragma", StrFmt2(directive)))
 				{
 					const char* begin = lex->head;
 					const char* end = lex->head;
@@ -1156,7 +1154,7 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 					LangC_NextToken(lex);
 					
 					if (lex->token.kind == LangC_TokenKind_Identifier &&
-						MatchCString("once", lex->token.value_ident.data, lex->token.value_ident.size))
+						MatchCString("once", StrFmt2(lex->token.value_ident)))
 					{
 						LangC_PragmaOncePPFile(ctx, path);
 					}

@@ -252,7 +252,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 				
 				LangC_FlushWarnings(ctx);
 				
-				ok = ok && LangC_GenerateCode(ctx); Arena_Clear(ctx->stage_arena);
+				ok = ok && LangC_GenerateCode(ctx, output_file); Arena_Clear(ctx->stage_arena);
 				// TODO
 			}
 		} break;
