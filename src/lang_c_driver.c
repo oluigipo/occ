@@ -56,6 +56,15 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 		},
 	};
 	
+	// NOTE(ljre): Last item is 'void', which has no ABIType
+	for (int32 i = 0; i < ArrayLength(LangC_basic_types_table)-1; ++i)
+	{
+		LangC_Node* node = &LangC_basic_types_table[i];
+		
+		node->size = ctx->abi->t[i].size;
+		node->alignment_mask = ctx->abi->t[i].alignment_mask;
+	}
+	
 	//~ NOTE(ljre): Setup system include directory
 	{
 		static const char include[] = "include/";
@@ -222,13 +231,14 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	LangC_DefineMacro(ctx, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__builtin_va_list void*"))->persistent = true;
 	
-#if 0
+#if 1
 	// NOTE(ljre): MINGW macros
-	LangC_DefineMacro(ctx, Str("__GNUC__"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__MINGW_ATTRIB_DEPRECATED_STR(x)"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__MINGW_ATTRIB_NONNULL(x)"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__MINGW_NOTHROW"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__extension__"))->persistent = true;
+	LangC_DefineMacro(ctx, Str("_MSC_VER 1910"))->persistent = true;
+	LangC_DefineMacro(ctx, Str("_MSC_FULL_VER 191025017"))->persistent = true;
+	//LangC_DefineMacro(ctx, Str("__MINGW_ATTRIB_DEPRECATED_STR(x)"))->persistent = true;
+	//LangC_DefineMacro(ctx, Str("__MINGW_ATTRIB_NONNULL(x)"))->persistent = true;
+	//LangC_DefineMacro(ctx, Str("__MINGW_NOTHROW"))->persistent = true;
+	//LangC_DefineMacro(ctx, Str("__mingw_ovr"))->persistent = true;
 #endif
 	
 	//~ NOTE(ljre): Build.

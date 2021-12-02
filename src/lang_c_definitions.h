@@ -494,6 +494,7 @@ enum LangC_NodeKind
 	LangC_NodeKind_AttributePacked,
 	LangC_NodeKind_AttributeAlignas,
 	LangC_NodeKind_AttributeBitfield,
+	LangC_NodeKind_AttributeCallconv,
 	
 	LangC_NodeKind__CategoryCount = 8,
 }
@@ -526,6 +527,12 @@ enum LangC_NodeFlags
 	LangC_NodeFlags_GccAsmVolatile = 1,
 	LangC_NodeFlags_GccAsmInline = 2,
 	LangC_NodeFlags_GccAsmGoto = 4,
+	
+	// 000
+	LangC_NodeFlags_MsvcCdecl = 1,
+	LangC_NodeFlags_MsvcStdcall = 2,
+	LangC_NodeFlags_MsvcVectorcall = 4,
+	LangC_NodeFlags_MsvcFastcall = 8,
 }
 typedef LangC_NodeFlags;
 
@@ -817,9 +824,9 @@ struct LangC_ABI
 		struct
 		{
 			LangC_ABIType t_bool;
+			LangC_ABIType t_schar;
 			LangC_ABIType t_char;
 			LangC_ABIType t_uchar;
-			LangC_ABIType t_schar;
 			LangC_ABIType t_short;
 			LangC_ABIType t_ushort;
 			LangC_ABIType t_int;
@@ -841,6 +848,49 @@ struct LangC_ABI
 	int8 index_ptrdifft;
 }
 typedef LangC_ABI;
+
+#define LangC_INVALID (-2)
+#define LangC_BOOL (&LangC_basic_types_table[0])
+#define LangC_CHAR (&LangC_basic_types_table[1])
+#define LangC_SCHAR (&LangC_basic_types_table[2])
+#define LangC_UCHAR (&LangC_basic_types_table[3])
+#define LangC_SHORT (&LangC_basic_types_table[4])
+#define LangC_USHORT (&LangC_basic_types_table[5])
+#define LangC_INT (&LangC_basic_types_table[6])
+#define LangC_UINT (&LangC_basic_types_table[7])
+#define LangC_LINT (&LangC_basic_types_table[8])
+#define LangC_LUINT (&LangC_basic_types_table[9])
+#define LangC_LLINT (&LangC_basic_types_table[10])
+#define LangC_LLUINT (&LangC_basic_types_table[11])
+#define LangC_FLOAT (&LangC_basic_types_table[12])
+#define LangC_DOUBLE (&LangC_basic_types_table[13])
+#define LangC_PTR (&LangC_basic_types_table[14])
+#define LangC_VOID (&LangC_basic_types_table[15])
+#define LangC_SIZE_T (&LangC_basic_types_table[ctx->abi->index_sizet])
+#define LangC_PTRDIFF_T (&LangC_basic_types_table[ctx->abi->index_ptrdifft])
+#define LangC_IsStructType(node) ((node) && (node)->kind == LangC_NodeKind_TypeBaseStruct)
+#define LangC_IsUnionType(node) ((node) && (node)->kind == LangC_NodeKind_TypeBaseUnion)
+
+// NOTE(ljre): You need to initialize the '.size' and '.alignment_mask' fields in the driver.
+// NOTE(ljre): DO NOT MODIFY THESE OBJECTS ANYWHERE ELSE
+internal /* const */ LangC_Node LangC_basic_types_table[] = {
+	{ .kind = LangC_NodeKind_TypeBaseBool, },
+	{ .kind = LangC_NodeKind_TypeBaseChar, },
+	{ .kind = LangC_NodeKind_TypeBaseChar, .flags = LangC_NodeFlags_Signed, },
+	{ .kind = LangC_NodeKind_TypeBaseChar, .flags = LangC_NodeFlags_Unsigned, },
+	{ .kind = LangC_NodeKind_TypeBaseInt, .flags = LangC_NodeFlags_Short, },
+	{ .kind = LangC_NodeKind_TypeBaseInt, .flags = LangC_NodeFlags_Short | LangC_NodeFlags_Unsigned, },
+	{ .kind = LangC_NodeKind_TypeBaseInt, },
+	{ .kind = LangC_NodeKind_TypeBaseInt, .flags = LangC_NodeFlags_Unsigned, },
+	{ .kind = LangC_NodeKind_TypeBaseInt, .flags = LangC_NodeFlags_Long, },
+	{ .kind = LangC_NodeKind_TypeBaseInt, .flags = LangC_NodeFlags_Long | LangC_NodeFlags_Unsigned, },
+	{ .kind = LangC_NodeKind_TypeBaseInt, .flags = LangC_NodeFlags_LongLong, },
+	{ .kind = LangC_NodeKind_TypeBaseInt, .flags = LangC_NodeFlags_LongLong | LangC_NodeFlags_Unsigned, },
+	{ .kind = LangC_NodeKind_TypeBaseFloat, },
+	{ .kind = LangC_NodeKind_TypeBaseDouble, },
+	{ .kind = LangC_NodeKind_TypePointer, .type = LangC_VOID, },
+	{ .kind = LangC_NodeKind_TypeBaseVoid, },
+};
 
 struct LangC_Context
 {

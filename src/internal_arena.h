@@ -24,7 +24,9 @@ Arena_Create(uintsize size)
 	Arena* arena = OS_ReserveMemory(size + sizeof *arena);
 	if (arena)
 	{
-		OS_CommitMemory(arena, sizeof *arena + Arena_PAGE_SIZE);
+		void* result = OS_CommitMemory(arena, sizeof *arena + Arena_PAGE_SIZE);
+		Assert(result);
+		(void)result;
 		
 		arena->reserved = size;
 		arena->commited = Arena_PAGE_SIZE;
@@ -45,7 +47,10 @@ Arena_CommitAtLeast(Arena* arena, uintsize desired_offset)
 		if (arena->commited + to_commit > arena->reserved)
 			Unreachable();
 		
-		OS_CommitMemory(arena->memory + arena->commited, to_commit);
+		void* result = OS_CommitMemory(arena->memory + arena->commited, to_commit);
+		Assert(result);
+		(void)result;
+		
 		arena->commited += to_commit;
 	}
 }

@@ -867,6 +867,25 @@ LangC_ParsePossibleGnuAttribute(LangC_Context* ctx, LangC_Node* apply_to)
 	return false;
 }
 
+internal bool32
+LangC_ParsePossibleMsvcDeclspec(LangC_Context* ctx, LangC_Node* apply_to)
+{
+	if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_MsvcDeclspec))
+	{
+		LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftParen);
+		
+		// TODO(ljre): Proper parsing
+		while (ctx->lex.token.kind != LangC_TokenKind_RightParen)
+			LangC_NextToken(&ctx->lex);
+		
+		LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
+		
+		return true;
+	}
+	
+	return false;
+}
+
 internal LangC_Node*
 LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 {
@@ -1181,6 +1200,23 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 				head->type->flags |= LangC_NodeFlags_Restrict;
 			} continue;
 			
+			// NOTE(ljre): MSVC calling convention keywords
+			{
+				LangC_NodeFlags flags;
+				
+				/**/ if (0) case LangC_TokenKind_MsvcCdecl: flags = LangC_NodeFlags_MsvcCdecl;
+				else if (0) case LangC_TokenKind_MsvcStdcall: flags = LangC_NodeFlags_MsvcStdcall;
+				else if (0) case LangC_TokenKind_MsvcVectorcall: flags = LangC_NodeFlags_MsvcVectorcall;
+				else if (0) case LangC_TokenKind_MsvcFastcall: flags = LangC_NodeFlags_MsvcFastcall;
+				
+				LangC_Node* attrib = LangC_CreateNode(ctx, LangC_NodeKind_AttributeCallconv);
+				attrib->flags |= flags;
+				attrib->next = head->type->attributes;
+				head->type->attributes = attrib;
+				
+				LangC_NextToken(&ctx->lex);
+			} continue;
+			
 			case LangC_TokenKind_LeftParen:
 			{
 				LangC_NextToken(&ctx->lex);
@@ -1210,6 +1246,14 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 			{
 				LangC_NextToken(&ctx->lex);
 				LangC_Node* newtype = LangC_CreateNode(ctx, LangC_NodeKind_TypeFunction);
+				
+				LangC_Node* attrib = head->attributes;
+				if (attrib && attrib->kind == LangC_NodeKind_AttributeCallconv)
+				{
+					newtype->attributes = attrib;
+					head->attributes = attrib->next;
+					attrib->next = NULL;
+				}
 				
 				// NOTE(ljre): pointer magic.
 				newtype->type = head;
@@ -1305,6 +1349,7 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 		decl = LangC_CreateNode(ctx, LangC_NodeKind_Decl);
 	
 	LangC_Node* base = LangC_CreateNode(ctx, LangC_NodeKind_Type);
+	LangC_Node* callconv = NULL;
 	
 	beginning:;
 	// Parse Base Type
@@ -1396,6 +1441,11 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 					base->kind = LangC_NodeKind_TypeBaseFloat;
 			} break;
 			
+			case LangC_TokenKind_GccExtension:
+			{
+				// TODO(ljre):
+			} break;
+			
 			case LangC_TokenKind_Int:
 			{
 				if (base->kind != LangC_NodeKind_Type)
@@ -1432,6 +1482,36 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 				}
 				else
 					base->flags |= LangC_NodeFlags_Long;
+			} break;
+			
+			case LangC_TokenKind_MsvcDeclspec:
+			{
+				if (options & 1)
+				{
+					LangC_LexerError(&ctx->lex, "expected a type.");
+					
+					LangC_Node dummy = { 0 };
+					LangC_ParsePossibleMsvcDeclspec(ctx, &dummy);
+					break;
+				}
+				
+				LangC_ParsePossibleMsvcDeclspec(ctx, decl);
+			} break;
+			
+			// NOTE(ljre): MSVC calling convention keywords
+			{
+				LangC_NodeFlags flags;
+				
+				/**/ if (0) case LangC_TokenKind_MsvcCdecl: flags = LangC_NodeFlags_MsvcCdecl;
+				else if (0) case LangC_TokenKind_MsvcStdcall: flags = LangC_NodeFlags_MsvcStdcall;
+				else if (0) case LangC_TokenKind_MsvcVectorcall: flags = LangC_NodeFlags_MsvcVectorcall;
+				else if (0) case LangC_TokenKind_MsvcFastcall: flags = LangC_NodeFlags_MsvcFastcall;
+				
+				if (!callconv)
+				{
+					callconv = LangC_CreateNode(ctx, LangC_NodeKind_AttributeCallconv);
+					callconv->flags |= flags;
+				}
 			} break;
 			
 			case LangC_TokenKind_Register:
@@ -1673,6 +1753,12 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 		}
 		
 		base->kind = LangC_NodeKind_TypeBaseInt;
+	}
+	
+	if (callconv && type->kind == LangC_NodeKind_TypeFunction)
+	{
+		callconv->next = type->attributes;
+		type->attributes = callconv;
 	}
 	
 	if (options & 8)

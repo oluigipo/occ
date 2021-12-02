@@ -868,7 +868,11 @@ LangC_IgnoreUntilEndOfIf(LangC_Context* ctx, LangC_Lexer* lex, bool32 already_ma
 							goto out_of_the_loop;
 						}
 						else if (MatchCString("else", directive.data, directive.size))
-							nesting = 0;
+						{
+							LangC_NextToken(lex);
+							
+							goto out_of_the_loop;
+						}
 					}
 					
 					if (MatchCString("ifdef", directive.data, directive.size) ||
@@ -912,6 +916,8 @@ LangC_PreprocessIfDef(LangC_Context* ctx, LangC_Lexer* lex, bool32 not)
 	{
 		String name = lex->token.value_ident;
 		result = (LangC_FindMacro(ctx, name, 2) != NULL) ^ not;
+		
+		LangC_NextToken(lex);
 	}
 	
 	if (!result)
@@ -982,29 +988,6 @@ LangC_PreprocessInclude(LangC_Context* ctx, LangC_Lexer* lex)
 	}
 	else
 		LangC_LexerError(lex, "could not find file '%S' when including.", StrFmt(path));
-}
-
-internal void
-LangC_GeneratePlainPragma(LangC_Context* ctx, const char* begin, const char* end)
-{
-	Arena_Printf(ctx->persistent_arena, "_Pragma(\"");
-	const char* p = begin;
-	
-	for (; p != end; ++p)
-	{
-		if (*p == '"')
-		{
-			Arena_Printf(ctx->persistent_arena, "%S\\\"", p - begin, begin);
-			begin = p + 1;
-		}
-		else if (*p == '\\')
-		{
-			Arena_Printf(ctx->persistent_arena, "%S\\\\", p - begin, begin);
-			begin = p + 1;
-		}
-	}
-	
-	Arena_Printf(ctx->persistent_arena, "%S\")", p - begin, begin);
 }
 
 internal void
@@ -1145,12 +1128,7 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 				}
 				else if (MatchCString("pragma", StrFmt2(directive)))
 				{
-					const char* begin = lex->head;
-					const char* end = lex->head;
-					
-					while (*end && *end != '\n')
-						++end;
-					
+					String leading = lex->token.leading_spaces;
 					LangC_NextToken(lex);
 					
 					if (lex->token.kind == LangC_TokenKind_Identifier &&
@@ -1160,8 +1138,8 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 					}
 					else
 					{
-						lex->head = end;
-						LangC_GeneratePlainPragma(ctx, begin, end);
+						Arena_Printf(ctx->persistent_arena, "#pragma%S", StrFmt(leading));
+						break;
 					}
 				}
 				else

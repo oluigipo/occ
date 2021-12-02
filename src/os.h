@@ -352,13 +352,17 @@ OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE])
 internal void*
 OS_ReserveMemory(uintsize size)
 {
-	return mmap(NULL, size, PROT_WRITE | PROT_READ, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+	void* result = mmap(NULL, size, PROT_NONE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+	if (result == MAP_FAILED)
+		result = NULL;
+	
+	return result;
 }
 
 internal void*
 OS_CommitMemory(void* ptr, uintsize size)
 {
-	return ptr; // memory is commited automatically
+	return mprotect(ptr, size PROT_READ | PROT_WRITE);
 }
 
 internal void
