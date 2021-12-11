@@ -119,7 +119,14 @@ internal void Panic(const char* str);
 
 #include "os.h"
 
-internal const char* const* global_colors;
+internal const char* const* global_colors = (const char* const[]) {
+	"\x1B[0m", // RESET
+	"\x1B[93m", // PATHS
+	"\x1B[91m", // ERROR
+	"\x1B[95m", // WARNING
+	"\x1B[92m", // GOOD/GREEN
+	NULL,
+};
 
 #include "internal_utils.h"
 #include "internal_arena.h"

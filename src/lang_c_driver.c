@@ -9,7 +9,6 @@ LangC_DefaultDriver_PrintHelp(void)
 		  "%C2flags:%C0\n"
 		  "%C1  -help            %C0 \n"
 		  "%C1  --help           %C0 Shows this help text and returns 1.\n"
-		  "\n"
 		  "%C1  -D<name>         %C0 \n"
 		  "%C1  -D<name>=<value> %C0 Defines a Macro.\n"
 		  "%C1  -E               %C0 Runs the preprocessor on the single input file.\n"
@@ -67,7 +66,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	
 	//~ NOTE(ljre): Setup system include directory
 	{
-		static const char include[] = "include/";
+		static const char include[] = "_include-mingw/";
 		
 		int32 last_slash_index = -1;
 		for (int32 i = 0; i < global_my_path.size; ++i)
@@ -179,7 +178,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 			{
 				const char* value_begin = ++flag;
 				char* mem = Arena_End(global_arena);
-				uintsize len = Arena_Printf(global_arena, "%.*s %s", name_end - name_begin, name_begin, value_begin);
+				uintsize len = Arena_Printf(global_arena, "%S %s", name_end - name_begin, name_begin, value_begin);
 				LangC_DefineMacro(ctx, StrMake(mem, len));
 			}
 			else
@@ -207,6 +206,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	LangC_DefineMacro(ctx, Str("__STDC_HOSTED__ 1"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__STDC_VERSION__ 199901L"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__x86_64 1"))->persistent = true;
+	LangC_DefineMacro(ctx, Str("__x86_64__ 1"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("_WIN32 1"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("_WIN64 1"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__OCC__ 1"))->persistent = true;

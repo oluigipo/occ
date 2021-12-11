@@ -48,7 +48,7 @@
 *            - macro __builtin_embed(path) expands to comma separated integers;
 *            - directive #embed "path", expands to { comma separated integers };
 *        - Make type 'T[N]' a subset of type 'T[M]' when N < M;
-*        - Make type 'struct A' a subset of type 'struct B' if the beginning of B is *the same* as A:
+*        - Make type 'struct A' a subset of 'struct B' if the beginning of B is *the same* as A (duck typing):
 *            - Example: struct A { int n; }; struct B { int pp; double k; }; -- here A is a subset of B;
 *            - Example: struct A { long n; }; struct B { int pp; double k; }; -- here A is *not* a subset of B;
 *
@@ -135,18 +135,6 @@ LangC_Main(int32 argc, const char** argv)
 	Trace();
 	
 	int32 result = 0;
-	
-	// NOTE(ljre): Colors for 'OurPrintf'
-	static const char* const colors[] = {
-		"\x1B[0m", // RESET
-		"\x1B[93m", // PATHS
-		"\x1B[91m", // ERROR
-		"\x1B[95m", // WARNING
-		"\x1B[92m", // GOOD/GREEN
-		NULL,
-	};
-	
-	global_colors = colors;
 	
 	// TODO(ljre): cl.exe compiler driver just for testing.
 	result = LangC_DefaultDriver(argc, argv);
