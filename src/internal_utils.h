@@ -111,6 +111,15 @@ NullTerminateString(String str)
 }
 
 internal String
+SliceString(String str, uintsize offset)
+{
+	str.data += offset;
+	str.size -= offset;
+	
+	return str;
+}
+
+internal String
 IgnoreNullTerminator(String str)
 {
 	while (str.size > 0 && !str.data[str.size-1])
@@ -158,6 +167,21 @@ CompareString(String a, String b)
 		return 0;
 	
 	return (int32)*s1 - (int32)*s2;
+}
+
+internal bool32
+StringStartsWith(String str, const char* prefix)
+{
+	const char* head = str.data;
+	const char* end = head + str.size;
+	
+	while (*prefix && head < end && *head == *prefix)
+	{
+		++head;
+		++prefix;
+	}
+	
+	return !*prefix;
 }
 
 internal uintsize

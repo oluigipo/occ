@@ -951,12 +951,46 @@ LangC_PromoteToAtLeast(LangC_Context* ctx, LangC_Node* expr, LangC_Node* type)
 }
 
 internal LangC_Node*
+LangC_ResolveBuiltinCall(LangC_Context* ctx, LangC_Node* expr)
+{
+	Assert(expr->left->kind == LangC_NodeKind_ExprIdent);
+	
+	String name = SliceString(expr->left->name, sizeof("__builtin_")-1);
+	
+	if (MatchCString("va_start", StrFmt2(name)))
+	{
+		// TODO(ljre)
+		
+		expr->type = LangC_CreateNodeFrom(ctx, expr, LangC_NodeKind_TypeBaseVoid);
+	}
+	else if (MatchCString("va_end", StrFmt2(name)))
+	{
+		// TODO(ljre)
+		
+		expr->type = LangC_CreateNodeFrom(ctx, expr, LangC_NodeKind_TypeBaseVoid);
+	}
+	else
+	{
+		LangC_NodeError(ctx, expr->left, "unknown builtin '%S'.", StrFmt(expr->left->name));
+	}
+	
+	return expr;
+}
+
+internal LangC_Node*
 LangC_ResolveExpr(LangC_Context* ctx, LangC_Node* expr)
 {
 	switch (expr->kind)
 	{
 		case LangC_NodeKind_Expr2Call:
 		{
+			if (expr->left->kind == LangC_NodeKind_ExprIdent &&
+				StringStartsWith(expr->left->name, "__builtin_"))
+			{
+				expr = LangC_ResolveBuiltinCall(ctx, expr);
+				break;
+			}
+			
 			expr->left = LangC_ResolveExpr(ctx, expr->left);
 			LangC_Node* functype = expr->left->type;
 			
