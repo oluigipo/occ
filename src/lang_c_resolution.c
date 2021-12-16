@@ -162,7 +162,9 @@ LangC_SymbolAlreadyDefinedInThisScope(LangC_Context* ctx, String name, LangC_Sym
 internal LangC_Node*
 LangC_TypeFromTypename(LangC_Context* ctx, LangC_Node* type)
 {
-	while (type->kind == LangC_NodeKind_TypeBaseTypename)
+	while (type->kind == LangC_NodeKind_TypeBaseTypename ||
+		   !type->body && type->symbol && (type->kind == LangC_NodeKind_TypeBaseStruct ||
+										   type->kind == LangC_NodeKind_TypeBaseUnion))
 	{
 		LangC_Symbol* sym = type->symbol;
 		Assert(sym);
@@ -473,7 +475,6 @@ LangC_CompareTypes(LangC_Context* ctx, LangC_Node* left, LangC_Node* right, int3
 		case LangC_NodeKind_TypeBaseStruct:
 		case LangC_NodeKind_TypeBaseUnion:
 		{
-			// NOTE(ljre): Just return invalid since they are not the same definition.
 			return LangC_INVALID;
 		} break;
 		
@@ -654,6 +655,17 @@ LangC_ResolveType(LangC_Context* ctx, LangC_Node* type, bool32* out_is_complete,
 	
 	LangC_SymbolKind kind = LangC_SymbolKind_Struct;
 	LangC_ABIType* abitype = NULL;
+	
+	if (type->symbol)
+	{
+		if (out_is_complete)
+			*out_is_complete = !LangC_IsIncompleteType(ctx, type->symbol->type);
+		
+		type->size = type->symbol->type->size;
+		type->alignment_mask = type->symbol->type->alignment_mask;
+		
+		return;
+	}
 	
 	switch (type->kind)
 	{
@@ -866,6 +878,11 @@ LangC_ResolveType(LangC_Context* ctx, LangC_Node* type, bool32* out_is_complete,
 		type->alignment_mask = abitype->alignment_mask;
 		
 		is_complete = true;
+	}
+	else if (type->symbol && !type->size)
+	{
+		type->size = type->symbol->type->size;
+		type->alignment_mask = type->symbol->type->alignment_mask;
 	}
 	
 	if (out_is_complete)
@@ -1795,7 +1812,7 @@ LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 					LangC_PopSymbolStack(ctx);
 				}
 			}
-			else
+			else if (decl->name.size > 0)
 			{
 				LangC_SymbolKind kind = LangC_SymbolKind_Var;
 				LangC_Symbol* old_sym = LangC_FindSymbol(ctx, decl->name, 0);
@@ -1824,31 +1841,34 @@ LangC_ResolveGlobalDecl(LangC_Context* ctx, LangC_Node* decl)
 			if (decl->type->kind == LangC_NodeKind_TypeFunction)
 				goto func_decl;
 			
-			LangC_SymbolKind kind = LangC_SymbolKind_StaticVar;
-			LangC_Symbol* old_sym = LangC_FindSymbol(ctx, decl->name, 0);
-			LangC_Symbol* sym;
-			
-			if (old_sym)
+			if (decl->name.size > 0)
 			{
-				// TODO(ljre): Array semantics
-				if (0 != LangC_CompareTypes(ctx, old_sym->type, decl->type, 0, NULL))
+				LangC_SymbolKind kind = LangC_SymbolKind_StaticVar;
+				LangC_Symbol* old_sym = LangC_FindSymbol(ctx, decl->name, 0);
+				LangC_Symbol* sym;
+				
+				if (old_sym)
 				{
-					LangC_NodeError(ctx, decl, "type of previous function declaration is incompatible.");
+					// TODO(ljre): Array semantics
+					if (0 != LangC_CompareTypes(ctx, old_sym->type, decl->type, 0, NULL))
+					{
+						LangC_NodeError(ctx, decl, "type of previous function declaration is incompatible.");
+					}
+					
+					if (old_sym->decl->kind != LangC_NodeKind_DeclStatic)
+					{
+						LangC_NodeError(ctx, decl, "linking mismatch with previous declaration of function.");
+					}
+					
+					sym = old_sym;
+				}
+				else
+				{
+					sym = LangC_CreateSymbol(ctx, decl->name, kind, decl->type, decl);
 				}
 				
-				if (old_sym->decl->kind != LangC_NodeKind_DeclStatic)
-				{
-					LangC_NodeError(ctx, decl, "linking mismatch with previous declaration of function.");
-				}
-				
-				sym = old_sym;
+				(void)sym;
 			}
-			else
-			{
-				sym = LangC_CreateSymbol(ctx, decl->name, kind, decl->type, decl);
-			}
-			
-			(void)sym;
 		} break;
 		
 		case LangC_NodeKind_DeclExtern:

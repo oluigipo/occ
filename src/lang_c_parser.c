@@ -1680,7 +1680,7 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 					break;
 				}
 				else if (options & 1)
-					LangC_LexerError(&ctx->lex, "'%.*s' is not a typename", StrFmt(ctx->lex.token.value_ident));
+					LangC_LexerError(&ctx->lex, "'%S' is not a typename", StrFmt(ctx->lex.token.value_ident));
 			} /* fallthrough */
 			
 			default: goto out_of_loop;
@@ -1721,7 +1721,7 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 				{
 					reported = true;
 					String name = ctx->lex.token.value_ident;
-					LangC_LexerError(&ctx->lex, "'%.*s' is not a typename", StrFmt(name));
+					LangC_LexerError(&ctx->lex, "'%S' is not a typename", StrFmt(name));
 					LangC_NextToken(&ctx->lex);
 					
 					goto beginning;
@@ -1730,7 +1730,7 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 			else if (LangC_IsBeginningOfDeclOrType(ctx))
 			{
 				reported = true;
-				LangC_LexerError(&ctx->lex, "'%.*s' is not a typename", StrFmt(decl->name));
+				LangC_LexerError(&ctx->lex, "'%S' is not a typename", StrFmt(decl->name));
 				
 				goto beginning;
 			}
@@ -1738,7 +1738,7 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 					 ctx->lex.token.kind == LangC_TokenKind_Mul)
 			{
 				reported = true;
-				LangC_LexerError(&ctx->lex, "'%.*s' is not a typename", StrFmt(decl->name));
+				LangC_LexerError(&ctx->lex, "'%S' is not a typename", StrFmt(decl->name));
 				
 				goto right_before_parsing_rest_of_decl;
 			}
@@ -1889,8 +1889,8 @@ LangC_ParseFile(LangC_Context* ctx)
 	{
 		switch (ctx->lex.token.kind)
 		{
-			case LangC_TokenKind_Identifier: Print("%.*s (ident)\n", StrFmt(ctx->lex.token.value_ident)); break;
-			case LangC_TokenKind_StringLiteral: Print("\"%.*s\"\n", StrFmt(ctx->lex.token.value_str)); break;
+			case LangC_TokenKind_Identifier: Print("%S (ident)\n", StrFmt(ctx->lex.token.value_ident)); break;
+			case LangC_TokenKind_StringLiteral: Print("\"%S\"\n", StrFmt(ctx->lex.token.value_str)); break;
 			default: Print("%s\n", LangC_token_str_table[ctx->lex.token.kind]); break;
 		}
 	}
