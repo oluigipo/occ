@@ -957,13 +957,13 @@ LangC_ResolveBuiltinCall(LangC_Context* ctx, LangC_Node* expr)
 	
 	String name = SliceString(expr->left->name, sizeof("__builtin_")-1);
 	
-	if (MatchCString("va_start", StrFmt2(name)))
+	if (MatchCString("va_start", name))
 	{
 		// TODO(ljre)
 		
 		expr->type = LangC_CreateNodeFrom(ctx, expr, LangC_NodeKind_TypeBaseVoid);
 	}
-	else if (MatchCString("va_end", StrFmt2(name)))
+	else if (MatchCString("va_end", name))
 	{
 		// TODO(ljre)
 		

@@ -311,7 +311,7 @@ LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_le
 	TraceName(macro->name);
 	
 	// NOTE(ljre): Handle special macros
-	if (MatchCString("__LINE__", macro->name.data, macro->name.size))
+	if (MatchCString("__LINE__", macro->name))
 	{
 		int32 line = parent_lex->line;
 		char* mem = Arena_End(ctx->stage_arena);
@@ -328,7 +328,7 @@ LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_le
 		LangC_NextToken(parent_lex);
 		return;
 	}
-	else if (MatchCString("__FILE__", macro->name.data, macro->name.size))
+	else if (MatchCString("__FILE__", macro->name))
 	{
 		String file = parent_lex->file->path;
 		char* mem = Arena_End(ctx->stage_arena);
@@ -619,7 +619,7 @@ LangC_EvalPreprocessorExprFactor(LangC_Context* ctx, LangC_Lexer* lex)
 		case LangC_TokenKind_Not:
 		{
 			LangC_NextToken(lex);
-			return -LangC_EvalPreprocessorExprFactor(ctx, lex);
+			return ~LangC_EvalPreprocessorExprFactor(ctx, lex);
 		} break;
 		
 		case LangC_TokenKind_LNot:
@@ -669,7 +669,7 @@ LangC_EvalPreprocessorExprFactor(LangC_Context* ctx, LangC_Lexer* lex)
 		{
 			String name = lex->token.value_ident;
 			
-			if (MatchCString("defined", name.data, name.size))
+			if (MatchCString("defined", name))
 			{
 				LangC_NextToken(lex);
 				bool32 has_paren = LangC_TryToEatToken(lex, LangC_TokenKind_LeftParen);
@@ -814,6 +814,12 @@ LangC_IgnoreUntilEndOfIf(LangC_Context* ctx, LangC_Lexer* lex, bool32 already_ma
 	{
 		switch (lex->token.kind)
 		{
+			case LangC_TokenKind_Eof:
+			{
+				LangC_LexerError(lex, "unclosed conditional pre-processor block.");
+				goto out_of_the_loop;
+			}
+			
 			case LangC_TokenKind_Hashtag:
 			{
 				LangC_NextToken(lex);
@@ -825,22 +831,22 @@ LangC_IgnoreUntilEndOfIf(LangC_Context* ctx, LangC_Lexer* lex, bool32 already_ma
 					
 					if (!already_matched && nesting == 1)
 					{
-						if (MatchCString("elifdef", directive.data, directive.size) ||
-							(MatchCString("elifndef", directive.data, directive.size) && (not = true)))
+						if (MatchCString("elifdef", directive) ||
+							(not = MatchCString("elifndef", directive)))
 						{
 							LangC_NextToken(lex);
 							LangC_PreprocessIfDef(ctx, lex, not);
 							
 							goto out_of_the_loop;
 						}
-						else if (MatchCString("elif", directive.data, directive.size))
+						else if (MatchCString("elif", directive))
 						{
 							LangC_NextToken(lex);
 							LangC_PreprocessIf(ctx, lex);
 							
 							goto out_of_the_loop;
 						}
-						else if (MatchCString("else", directive.data, directive.size))
+						else if (MatchCString("else", directive))
 						{
 							LangC_NextToken(lex);
 							
@@ -848,13 +854,13 @@ LangC_IgnoreUntilEndOfIf(LangC_Context* ctx, LangC_Lexer* lex, bool32 already_ma
 						}
 					}
 					
-					if (MatchCString("ifdef", directive.data, directive.size) ||
-						MatchCString("ifndef", directive.data, directive.size) ||
-						MatchCString("if", directive.data, directive.size))
+					if (MatchCString("ifdef", directive) ||
+						MatchCString("ifndef", directive) ||
+						MatchCString("if", directive))
 					{
 						++nesting;
 					}
-					else if (MatchCString("endif", directive.data, directive.size))
+					else if (MatchCString("endif", directive))
 					{
 						--nesting;
 						
@@ -1006,36 +1012,36 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 				}
 				
 				bool32 not = false;
-				if (MatchCString("include", StrFmt2(directive)))
+				if (MatchCString("include", directive))
 				{
 					LangC_NextToken(lex);
 					LangC_PreprocessInclude(ctx, lex);
 				}
-				else if (MatchCString("ifdef", StrFmt2(directive)) ||
-						 (not = MatchCString("ifndef", StrFmt2(directive))))
+				else if (MatchCString("ifdef", directive) ||
+						 (not = MatchCString("ifndef", directive)))
 				{
 					LangC_NextToken(lex);
 					LangC_PreprocessIfDef(ctx, lex, not);
 				}
-				else if (MatchCString("if", StrFmt2(directive)))
+				else if (MatchCString("if", directive))
 				{
 					LangC_NextToken(lex);
 					LangC_PreprocessIf(ctx, lex);
 				}
-				else if (MatchCString("elif", StrFmt2(directive)) ||
-						 MatchCString("elifdef", StrFmt2(directive)) ||
-						 MatchCString("elifndef", StrFmt2(directive)) ||
-						 MatchCString("else", StrFmt2(directive)))
+				else if (MatchCString("elif", directive) ||
+						 MatchCString("elifdef", directive) ||
+						 MatchCString("elifndef", directive) ||
+						 MatchCString("else", directive))
 				{
 					LangC_NextToken(lex);
 					LangC_IgnoreUntilEndOfIf(ctx, lex, true);
 				}
-				else if (MatchCString("endif", StrFmt2(directive)))
+				else if (MatchCString("endif", directive))
 				{
 					LangC_NextToken(lex);
 					// NOTE(ljre): :P
 				}
-				else if (MatchCString("line", StrFmt2(directive)))
+				else if (MatchCString("line", directive))
 				{
 					LangC_NextToken(lex);
 					
@@ -1046,7 +1052,7 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 					lex->line = line-1; // NOTE(ljre): :P
 					LangC_TracePreprocessor(ctx, lex, 0);
 				}
-				else if (MatchCString("define", StrFmt2(directive)))
+				else if (MatchCString("define", directive))
 				{
 					const char* def = lex->head;
 					
@@ -1066,14 +1072,14 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 						LangC_DefineMacro(ctx, macro_def);
 					}
 				}
-				else if (MatchCString("undef", StrFmt2(directive)))
+				else if (MatchCString("undef", directive))
 				{
 					LangC_NextToken(lex);
 					
 					if (LangC_AssertToken(lex, LangC_TokenKind_Identifier))
 						LangC_UndefineMacro(ctx, lex->token.value_ident);
 				}
-				else if (MatchCString("error", StrFmt2(directive)))
+				else if (MatchCString("error", directive))
 				{
 					const char* begin = lex->head;
 					const char* end = lex->head;
@@ -1086,7 +1092,7 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 					
 					lex->head = end;
 				}
-				else if (MatchCString("warning", StrFmt2(directive)))
+				else if (MatchCString("warning", directive))
 				{
 					const char* begin = lex->head;
 					const char* end = lex->head;
@@ -1099,13 +1105,13 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 					
 					lex->head = end;
 				}
-				else if (MatchCString("pragma", StrFmt2(directive)))
+				else if (MatchCString("pragma", directive))
 				{
 					String leading = lex->token.leading_spaces;
 					LangC_NextToken(lex);
 					
 					if (lex->token.kind == LangC_TokenKind_Identifier &&
-						MatchCString("once", StrFmt2(lex->token.value_ident)))
+						MatchCString("once", lex->token.value_ident))
 					{
 						LangC_PragmaOncePPFile(ctx, path);
 					}
@@ -1187,6 +1193,25 @@ LangC_Preprocess(LangC_Context* ctx, String path)
 		Print("error: could not open input file '%S'.\n", StrFmt(path));
 		++LangC_error_count;
 	}
+	
+#if 0
+	// NOTE(ljre): Generate 'defs.txt' file with macros definitions.
+	{
+		char* buffer = Arena_End(ctx->stage_arena);
+		
+		LangC_Macro* macros = Map_Objs_(&ctx->pp.obj_macros);
+		for (int32 i = 0; i < ctx->pp.obj_macros.count; ++i)
+			Arena_Printf(ctx->stage_arena, "#define %s\n", macros[i].def);
+		
+		macros = Map_Objs_(&ctx->pp.func_macros);
+		for (int32 i = 0; i < ctx->pp.func_macros.count; ++i)
+			Arena_Printf(ctx->stage_arena, "#define %s\n", macros[i].def);
+		
+		uintsize size = (char*)Arena_End(ctx->stage_arena) - buffer;
+		
+		OS_WriteWholeFile("defs.txt", buffer, size);
+	}
+#endif
 	
 	ctx->use_stage_arena_for_warnings = false;
 	

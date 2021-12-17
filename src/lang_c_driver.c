@@ -109,8 +109,9 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 		}
 		
 		const char* flag = arg[0] + 1;
+		String strflag = StrFrom(flag);
 		
-		if (MatchCString(flag, "o", 1))
+		if (StringStartsWith(strflag, "o"))
 		{
 			if (flag[1])
 				output_file = StrFrom(flag + 1);
@@ -126,11 +127,11 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 				Print("error: expected file name after '-o' flag.\n");
 			}
 		}
-		else if (MatchCString(flag, "E", 1))
+		else if (StringStartsWith(strflag, "E"))
 		{
 			mode = 1;
 		}
-		else if (MatchCString(flag, "I", 1))
+		else if (StringStartsWith(strflag, "I"))
 		{
 			++flag;
 			if (!*flag)
@@ -161,7 +162,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 			
 			options.include_dirs[++options.include_dirs_count] = StrMake(dir, needed_len+1);
 		}
-		else if (MatchCString(flag, "D", 1))
+		else if (StringStartsWith(strflag, "D"))
 		{
 			++flag;
 			
@@ -189,7 +190,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 				LangC_DefineMacro(ctx, StrMake(name_begin, name_end - name_begin))->persistent = true;
 			}
 		}
-		else if (MatchCString(flag, "help", 5) || MatchCString(flag, "-help", 6))
+		else if (StringStartsWith(strflag, "help") || StringStartsWith(strflag, "-help"))
 		{
 			LangC_DefaultDriver_PrintHelp();
 			return 1;

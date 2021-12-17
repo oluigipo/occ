@@ -618,7 +618,7 @@ LangC_NextToken(LangC_Lexer* lex)
 			{
 				for (int32 keyword = LangC_TokenKind__FirstKeyword; keyword <= LangC_TokenKind__LastKeyword; ++keyword)
 				{
-					if (MatchCString(LangC_token_str_table[keyword], ident.data, ident.size))
+					if (MatchCString(LangC_token_str_table[keyword], ident))
 					{
 						lex->token.kind = keyword;
 						break;

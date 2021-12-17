@@ -833,13 +833,13 @@ LangC_ParsePossibleGnuAttribute(LangC_Context* ctx, LangC_Node* apply_to)
 				
 				LangC_Node* attrib = LangC_CreateNode(ctx, LangC_NodeKind_Attribute);
 				String name = ctx->lex.token.value_ident;
-				if (MatchCString("packed", StrFmt2(name)) || MatchCString("__packed__", StrFmt2(name)))
+				if (MatchCString("packed", name) || MatchCString("__packed__", name))
 				{
 					attrib->kind = LangC_NodeKind_AttributePacked;
 					
 					LangC_NextToken(&ctx->lex);
 				}
-				else if (MatchCString("aligned", StrFmt2(name)))
+				else if (MatchCString("aligned", name))
 				{
 					attrib->kind = LangC_NodeKind_AttributePacked;
 					

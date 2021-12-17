@@ -11,6 +11,8 @@
 internal inline void*
 OurMemCopy(void* restrict dst, const void* restrict src, uintsize size)
 {
+	Trace();
+	
 #if defined(__clang__) || defined(__GNUC__)
 	__asm__ __volatile__("rep movsb"
 						 :"+D"(dst), "+S"(src), "+c"(size)
@@ -36,33 +38,6 @@ OurMemMove(void* dst, const void* src, uintsize size)
 	if (d - s < size && d - s > -(intsize)size)
 	{
 		// NOTE(ljre): Reserved Copy
-		d += size;
-		s += size;
-		
-		while (size--)
-			*--d = *--s;
-	}
-	else
-	{
-		OurMemCopy(dst, src, size);
-	}
-	
-	return dst;
-}
-
-internal inline void*
-OurMemMove8(void* dst, const void* src, uintsize size)
-{
-	Assume(AlignUp((uintsize)dst, 7) == (uintsize)dst && AlignUp((uintsize)src, 7) == (uintsize)src);
-	
-	uint64* d = dst;
-	const uint64* s = src;
-	
-	if (d - s < size && d - s > -(intsize)size)
-	{
-		// NOTE(ljre): Reserved Copy
-		size >>= 3;
-		
 		d += size;
 		s += size;
 		
@@ -179,18 +154,15 @@ IgnoreNullTerminator(String str)
 }
 
 internal bool32
-MatchCString(const char* a, const char* cmp, int32 cmp_len)
+MatchCString(const char* a, String cmp)
 {
-	while (cmp_len --> 0)
+	while (cmp.size --> 0)
 	{
-		if (*a++ != *cmp++)
+		if (*a++ != *cmp.data++)
 			return false;
 	}
 	
-	if (*a)
-		return false;
-	
-	return true;
+	return !(*a);
 }
 
 internal int32

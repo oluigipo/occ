@@ -48,7 +48,6 @@ typedef String;
 #define StrFrom(cstr) (String) { .size = strlen(cstr), .data = (cstr) }
 #define StrInit(str) { .size = sizeof(str), .data = (str) }
 #define StrFmt(str) (str).size, (str).data
-#define StrFmt2(str) (str).data, (str).size
 #define StrNull (String) { 0 }
 #define StrMake(str,len) (String) { .size = (len), .data = (str) }
 #define StrMacro_(x) #x

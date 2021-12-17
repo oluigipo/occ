@@ -1,6 +1,8 @@
 #ifndef INTERNAL_MAP_H
 #define INTERNAL_MAP_H
 
+//#define Map_OBJS_FIRST
+
 struct Map
 {
 	Arena* arena;
@@ -16,6 +18,22 @@ Map_ObjSize_(Map* map)
 	return AlignUp(map->obj_size, 7);
 }
 
+#ifdef Map_OBJS_FIRST
+
+internal inline uint64*
+Map_Hashes_(Map* map)
+{
+	return (uint64*)map->arena->memory + Map_ObjSize_(map) * map->capacity;
+}
+
+internal inline uint8*
+Map_Objs_(Map* map)
+{
+	return map->arena->memory;
+}
+
+#else
+
 internal inline uint64*
 Map_Hashes_(Map* map)
 {
@@ -28,11 +46,11 @@ Map_Objs_(Map* map)
 	return map->arena->memory + sizeof(uint64) * map->capacity;
 }
 
+#endif
+
 internal inline uintsize
 Map_FindHash_(Map* map, uint64 search_hash)
 {
-	Trace();
-	
 	if (map->count == 0)
 		return SIZE_MAX;
 	
@@ -57,19 +75,51 @@ Map_FindHash_(Map* map, uint64 search_hash)
 	return SIZE_MAX;
 }
 
+internal inline void
+Map_MemMove_(void* dst, const void* src, uintsize size)
+{
+	size >>= 3;
+	
+	uint64* d = dst;
+	uint64* end = dst;
+	const uint64* s = src;
+	
+	d += size;
+	s += size;
+	
+	while (d != end)
+		*--d = *--s;
+}
+
 internal void
 Map_Reserve(Map* map, uintsize newcap)
 {
+	Trace();
+	
 	if (newcap > map->capacity)
 	{
 		Arena_CommitAtLeast(map->arena, newcap * (Map_ObjSize_(map) + sizeof(uint64)));
 		
-		uint8* old_objs = Map_Objs_(map);
-		uintsize oldcap = map->capacity;
-		map->capacity = newcap;
-		uint8* new_objs = Map_Objs_(map);
+		void* old_mem;
+		void* new_mem;
+		uintsize old_cap;
+		uintsize size;
 		
-		OurMemMove(new_objs, old_objs, Map_ObjSize_(map) * oldcap);
+#ifdef Map_OBJS_FIRST
+		old_mem = Map_Hashes_(map);
+		old_cap = map->capacity;
+		size = sizeof(uint64);
+		map->capacity = newcap;
+		new_mem = Map_Hashes_(map);
+#else
+		old_mem = Map_Objs_(map);
+		old_cap = map->capacity;
+		size = Map_ObjSize_(map);
+		map->capacity = newcap;
+		new_mem = Map_Objs_(map);
+#endif
+		
+		OurMemMove(new_mem, old_mem, size * old_cap);
 	}
 }
 
@@ -117,12 +167,10 @@ Map_CreateEntry(Map* map, uint64 hash, void* obj)
 	uintsize remaining = map->count - index;
 	if (remaining > 0)
 	{
-		TraceName(Str("Moving forward"));
-		
-		OurMemMove8(hashes + index + 1, hashes + index, remaining * sizeof(uint64));
-		OurMemMove8(objs + (index+1) * objsize,
-					objs + (index  ) * objsize,
-					remaining * objsize);
+		Map_MemMove_(hashes + index + 1, hashes + index, remaining * sizeof(uint64));
+		Map_MemMove_(objs + (index+1) * objsize,
+					 objs + (index  ) * objsize,
+					 remaining * objsize);
 	}
 	
 	hashes[index] = hash;
@@ -180,6 +228,8 @@ Map_DeleteEntry(Map* map, uint64 hash)
 internal void*
 Map_FetchEntry(Map* map, uint64 hash)
 {
+	Trace();
+	
 	uintsize index = Map_FindHash_(map, hash);
 	
 	return (index != SIZE_MAX ?
@@ -190,6 +240,8 @@ Map_FetchEntry(Map* map, uint64 hash)
 internal void
 Map_SetEntry(Map* map, uint64 hash, void* obj)
 {
+	Trace();
+	
 	uintsize index = Map_FindHash_(map, hash);
 	uintsize objsize = Map_ObjSize_(map);
 	
