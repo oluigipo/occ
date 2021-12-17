@@ -55,6 +55,9 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 		},
 	};
 	
+	Map_Init(&ctx->pp.obj_macros, sizeof(LangC_Macro), sizeof(LangC_Macro) * 100000);
+	Map_Init(&ctx->pp.func_macros, sizeof(LangC_Macro), sizeof(LangC_Macro) * 10000);
+	
 	// NOTE(ljre): Last item is 'void', which has no ABIType
 	for (int32 i = 0; i < ArrayLength(LangC_basic_types_table)-1; ++i)
 	{

@@ -43,6 +43,8 @@ LangC_LoadFileFromDisk(LangC_Context* ctx, const char path[MAX_PATH_SIZE], uint6
 internal const char*
 LangC_TryToLoadFile(LangC_Context* ctx, String path, bool32 relative, String including_from, String* out_fullpath)
 {
+	TraceName(path);
+	
 	// TODO(ljre): Trim the working directory from 'out_fullpath' when needed.
 	char fullpath[MAX_PATH_SIZE];
 	LangC_Preprocessor* const pp = &ctx->pp;
@@ -196,58 +198,35 @@ LangC_DefineMacro(LangC_Context* ctx, String definition)
 	
 	bool32 is_func_like = (head[0] == '(');
 	
-	if (!pp->last_macro)
+	LangC_Macro obj = {
+		.def = def,
+		.name = name,
+	};
+	
+	uint64 hash = SimpleHash(name);
+	
+	if (Map_DeleteEntry(&pp->func_macros, hash) || Map_DeleteEntry(&pp->obj_macros, hash))
 	{
-		if (!pp->first_macro)
-			pp->first_macro = Arena_Push(ctx->stage_arena, sizeof *pp->first_macro);
-		
-		pp->last_macro = pp->first_macro;
+		// TODO(ljre): Warn macro redefinition
 	}
+	
+	void* result;
+	if (is_func_like)
+		result = Map_CreateEntry(&pp->func_macros, hash, &obj);
 	else
-	{
-		if (!pp->last_macro->next)
-			pp->last_macro->next = Arena_Push(ctx->stage_arena, sizeof *pp->last_macro->next);
-		
-		pp->last_macro->next->previous = pp->last_macro;
-		pp->last_macro = pp->last_macro->next;
-	}
+		result = Map_CreateEntry(&pp->obj_macros, hash, &obj);
 	
-	pp->last_macro->def = def;
-	pp->last_macro->name = name;
-	pp->last_macro->is_func_like = is_func_like;
-	
-	return pp->last_macro;
+	return result;
 }
 
 internal void
 LangC_UndefineMacro(LangC_Context* ctx, String name)
 {
 	LangC_Preprocessor* const pp = &ctx->pp;
+	uint64 hash = SimpleHash(name);
 	
-	if (!pp->first_macro)
-		return;
-	
-	if (CompareString(pp->first_macro->name, name) == 0)
-	{
-		if (!pp->first_macro->persistent)
-			pp->first_macro = pp->first_macro->next;
-		
-		return;
-	}
-	
-	LangC_Macro* current = pp->first_macro;
-	while (current->next && current->next != pp->last_macro)
-	{
-		if (CompareString(current->name, name) == 0)
-		{
-			if (!current->persistent)
-				current->next = current->next->next;
-			
-			break;
-		}
-		
-		current = current->next;
-	}
+	if (!Map_DeleteEntry(&pp->func_macros, hash))
+		Map_DeleteEntry(&pp->obj_macros, hash);
 }
 
 // NOTE(ljre): first of all, this function will never return a macro being expanded.
@@ -261,35 +240,27 @@ LangC_UndefineMacro(LangC_Context* ctx, String name)
 internal LangC_Macro*
 LangC_FindMacro(LangC_Context* ctx, String name, int32 type)
 {
+	TraceName(name);
 	Assert(type >= 0 && type <= 3);
 	LangC_Preprocessor* pp = &ctx->pp;
+	uint64 hash = SimpleHash(name);
 	
-	if (type == 3)
-	{
-		LangC_Macro* result = LangC_FindMacro(ctx, name, 1);
-		
-		if (!result)
-			result = LangC_FindMacro(ctx, name, 0);
-		
-		return result;
-	}
+	LangC_Macro* result = NULL;
 	
-	LangC_Macro* current = pp->last_macro;
-	if (current)
+	switch (type)
 	{
-		do
+		case 0: result = Map_FetchEntry(&pp->obj_macros, hash); break;
+		case 1: result = Map_FetchEntry(&pp->func_macros, hash); break;
+		
+		case 2: case 3:
 		{
-			if (!current->expanding &&
-				(type == 2 || current->is_func_like == type) &&
-				CompareString(current->name, name) == 0)
-			{
-				return current;
-			}
-		}
-		while (current != pp->first_macro && (current = current->previous));
+			result = Map_FetchEntry(&pp->func_macros, hash);
+			if (!result)
+				result = Map_FetchEntry(&pp->obj_macros, hash);
+		} break;
 	}
 	
-	return NULL;
+	return result;
 }
 
 internal LangC_MacroParameter*
@@ -382,13 +353,15 @@ LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_le
 	LangC_MacroParameter params[128];
 	int32 param_count = 0;
 	
+	bool8 is_func_like = Map_Owns(&ctx->pp.func_macros, macro);
+	
 	// NOTE(ljre): Ignore macro name
 	//while (LangC_IsIdentChar(*def_head))
 	//++def_head;
 	def_head += macro->name.size;
 	
 	// NOTE(ljre): Define parameters as macros
-	if (macro->is_func_like)
+	if (is_func_like)
 	{
 		LangC_NextToken(parent_lex); // eat macro name
 		LangC_EatToken(parent_lex, LangC_TokenKind_LeftParen);
@@ -505,7 +478,7 @@ LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_le
 				LangC_NextToken(lex);
 				
 				LangC_MacroParameter* param;
-				if (!macro->is_func_like ||
+				if (!is_func_like ||
 					!LangC_AssertToken(lex, LangC_TokenKind_Identifier) ||
 					!(param = LangC_FindMacroParameter(params, param_count, lex->token.value_ident)))
 				{

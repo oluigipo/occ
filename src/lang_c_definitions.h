@@ -770,12 +770,8 @@ struct LangC_TypeNode
 struct LangC_Macro typedef LangC_Macro;
 struct LangC_Macro
 {
-	LangC_Macro* next;
-	LangC_Macro* previous;
-	
-	const char* def;
 	String name;
-	bool8 is_func_like;
+	const char* def;
 	bool8 expanding;
 	bool8 persistent; // cant #undef it if true
 };
@@ -800,9 +796,8 @@ struct LangC_PPLoadedFile
 
 struct LangC_Preprocessor
 {
-	LangC_Macro* first_macro;
-	LangC_Macro* last_macro;
-	
+	Map obj_macros;
+	Map func_macros;
 	LangC_PPLoadedFile* loaded_files;
 }
 typedef LangC_Preprocessor;

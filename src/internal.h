@@ -74,7 +74,7 @@ typedef String;
 #   define Likely(x) __builtin_expect(!!(x), 1)
 #   define Unlikely(x) __builtin_expect((x), 0)
 #   if !defined NDEBUG && defined TRACY_ENABLE
-#       include "../../tracy/TracyC.h"
+#       include "../../../ext/tracy/TracyC.h"
 internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 #       define Trace() TracyCZone(_ctx __attribute((cleanup(___my_tracy_zone_end))),true); ((void)_ctx)
 #       define TraceName(x) Trace(); { String a = (x); TracyCZoneText(_ctx, a.data, a.size); }
@@ -130,6 +130,7 @@ internal const char* const* global_colors = (const char* const[]) {
 
 #include "internal_utils.h"
 #include "internal_arena.h"
+#include "internal_map.h"
 
 internal String global_my_path;
 internal Arena* global_arena;

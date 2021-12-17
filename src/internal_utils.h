@@ -28,6 +28,56 @@ OurMemCopy(void* restrict dst, const void* restrict src, uintsize size)
 }
 
 internal inline void*
+OurMemMove(void* dst, const void* src, uintsize size)
+{
+	uint8* d = dst;
+	const uint8* s = src;
+	
+	if (d - s < size && d - s > -(intsize)size)
+	{
+		// NOTE(ljre): Reserved Copy
+		d += size;
+		s += size;
+		
+		while (size--)
+			*--d = *--s;
+	}
+	else
+	{
+		OurMemCopy(dst, src, size);
+	}
+	
+	return dst;
+}
+
+internal inline void*
+OurMemMove8(void* dst, const void* src, uintsize size)
+{
+	Assume(AlignUp((uintsize)dst, 7) == (uintsize)dst && AlignUp((uintsize)src, 7) == (uintsize)src);
+	
+	uint64* d = dst;
+	const uint64* s = src;
+	
+	if (d - s < size && d - s > -(intsize)size)
+	{
+		// NOTE(ljre): Reserved Copy
+		size >>= 3;
+		
+		d += size;
+		s += size;
+		
+		while (size--)
+			*--d = *--s;
+	}
+	else
+	{
+		OurMemCopy(dst, src, size);
+	}
+	
+	return dst;
+}
+
+internal inline void*
 OurMemSet(void* restrict dst, uint8 byte, uintsize size)
 {
 #if defined(__clang__) || defined(__GNUC__)
