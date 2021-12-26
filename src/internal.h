@@ -78,7 +78,7 @@ internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 #       define Trace() TracyCZone(_ctx __attribute((cleanup(___my_tracy_zone_end))),true); ((void)_ctx)
 #       define TraceName(x) Trace(); { String a = (x); TracyCZoneText(_ctx, a.data, a.size); }
 #   else
-#       define Trace(x) ((void)0)
+#       define Trace() ((void)0)
 #       define TraceName(x) ((void)0)
 #   endif
 #elif defined _MSC_VER
@@ -129,6 +129,7 @@ internal const char* const* global_colors = (const char* const[]) {
 
 #include "internal_utils.h"
 #include "internal_arena.h"
+#include "internal_pool.h"
 #include "internal_map.h"
 
 internal String global_my_path;

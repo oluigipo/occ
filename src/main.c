@@ -46,6 +46,7 @@ PushMemory(uintsize size)
 	return Arena_Push(global_arena, size);
 }
 
+#include "ir.c"
 #include "lang_c.c"
 
 int main(int argc, char* argv[])

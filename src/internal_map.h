@@ -76,19 +76,12 @@ Map_FindHash_(Map* map, uint64 search_hash)
 }
 
 internal inline void
-Map_MemMove_(void* dst, const void* src, uintsize size)
+Map_MemMove_(uint64* dst, const uint64* src, uintsize count)
 {
-	size >>= 3;
+	//Assume(count > 0 && dst == src + 1);
 	
-	uint64* d = dst;
-	uint64* end = dst;
-	const uint64* s = src;
-	
-	d += size;
-	s += size;
-	
-	while (d != end)
-		*--d = *--s;
+	while (count--)
+		dst[count] = src[count];
 }
 
 internal void
@@ -119,7 +112,9 @@ Map_Reserve(Map* map, uintsize newcap)
 		new_mem = Map_Objs_(map);
 #endif
 		
-		OurMemMove(new_mem, old_mem, size * old_cap);
+		size = size * old_cap;
+		size >>= 3;
+		Map_MemMove_(new_mem, old_mem, size);
 	}
 }
 
@@ -167,10 +162,10 @@ Map_CreateEntry(Map* map, uint64 hash, void* obj)
 	uintsize remaining = map->count - index;
 	if (remaining > 0)
 	{
-		Map_MemMove_(hashes + index + 1, hashes + index, remaining * sizeof(uint64));
-		Map_MemMove_(objs + (index+1) * objsize,
-					 objs + (index  ) * objsize,
-					 remaining * objsize);
+		Map_MemMove_(hashes + index + 1, hashes + index, remaining);
+		Map_MemMove_((uint64*)(objs + (index+1) * objsize),
+					 (uint64*)(objs + (index  ) * objsize),
+					 (remaining * objsize) >> 3);
 	}
 	
 	hashes[index] = hash;

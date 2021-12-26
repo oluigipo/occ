@@ -8,6 +8,7 @@
 #   include <intrin.h>
 #endif
 
+// NOTE(ljre): This function *does* accept overlapping memory.
 internal inline void*
 OurMemCopy(void* restrict dst, const void* restrict src, uintsize size)
 {
@@ -29,25 +30,18 @@ OurMemCopy(void* restrict dst, const void* restrict src, uintsize size)
 	return dst;
 }
 
+// NOTE(ljre): For overlapping memory where 'dst > src'.
 internal inline void*
-OurMemMove(void* dst, const void* src, uintsize size)
+OurMemCopyReserved(void* dst, const void* src, uintsize size)
 {
 	uint8* d = dst;
 	const uint8* s = src;
 	
-	if (d - s < size && d - s > -(intsize)size)
-	{
-		// NOTE(ljre): Reserved Copy
-		d += size;
-		s += size;
-		
-		while (size--)
-			*--d = *--s;
-	}
-	else
-	{
-		OurMemCopy(dst, src, size);
-	}
+	d += size;
+	s += size;
+	
+	while (size--)
+		*--d = *--s;
 	
 	return dst;
 }
@@ -209,12 +203,12 @@ StringStartsWith(String str, const char* prefix)
 internal uintsize
 OurStrCopy_(char* restrict buf, const char* restrict from, uintsize max)
 {
-	uintsize res = 0;
+	char* old_buf = buf;
 	
 	while (*from && max --> 0)
-		*buf++ = *from++, ++res;
+		*buf++ = *from++;
 	
-	return res;
+	return buf - old_buf;
 }
 
 // NOTE(ljre): A 'printf' replacement with simple custom features.

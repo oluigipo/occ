@@ -60,8 +60,8 @@ long int __cdecl_ labs(long int j);
 long long int __cdecl_ llabs(long long int j);
 
 div_t __cdecl_ div(int numer, int denom);
-ldiv_t __cdecl_ div(long int numer, long int denom);
-lldiv_t __cdecl_ div(long long int numer, long long int denom);
+ldiv_t __cdecl_ ldiv(long int numer, long int denom);
+lldiv_t __cdecl_ lldiv(long long int numer, long long int denom);
 
 int __cdecl_ mblen(const char* s, size_t n);
 int __cdecl_ mbtowc(wchar_t* restrict pwc, const char* restrict s, size_t n);

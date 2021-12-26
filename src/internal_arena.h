@@ -42,7 +42,8 @@ Arena_CommitAtLeast(Arena* arena, uintsize desired_offset)
 {
 	if (Unlikely(desired_offset > arena->commited))
 	{
-		uintsize to_commit = AlignUp(arena->commited - desired_offset, Arena_PAGE_SIZE-1);
+		uintsize to_commit = AlignUp(desired_offset - arena->commited, Arena_PAGE_SIZE-1);
+		Assert(false);
 		
 		if (arena->commited + to_commit > arena->reserved)
 			Unreachable();

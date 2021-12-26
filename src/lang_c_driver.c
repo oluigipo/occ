@@ -200,7 +200,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	if (!last_input_file)
 	{
 		Print("error: no input files\n");
-		result = 1;
+		return 1;
 	}
 	
 	Assert(input_files);
@@ -211,6 +211,8 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	LangC_DefineMacro(ctx, Str("__STDC_VERSION__ 199901L"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__x86_64 1"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__x86_64__ 1"))->persistent = true;
+	LangC_DefineMacro(ctx, Str("_M_AMD64 1"))->persistent = true;
+	LangC_DefineMacro(ctx, Str("_M_X64 1"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("_WIN32 1"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("_WIN64 1"))->persistent = true;
 	LangC_DefineMacro(ctx, Str("__OCC__ 1"))->persistent = true;
@@ -266,7 +268,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 				
 				LangC_FlushWarnings(ctx);
 				
-				ok = ok && LangC_GenerateCode(ctx, output_file); Arena_Clear(ctx->stage_arena);
+				ok = ok && LangC_GenIr(ctx); Arena_Clear(ctx->stage_arena);
 				// TODO
 			}
 		} break;
@@ -298,7 +300,10 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	Arena_Destroy(ctx->persistent_arena);
 	
 	// TODO(ljre): Remove this.
-	Print("\nCompilation status: %C4OK!%C0\n");
+	if (result == 0)
+		Print("\nCompilation status: %C4OK!%C0\n");
+	else
+		Print("\nCompilation status: %C2Failed!%C0\n");
 	
 	return result;
 }
