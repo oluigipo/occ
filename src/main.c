@@ -59,7 +59,8 @@ int main(int argc, char* argv[])
 	
 	// NOTE(ljre): Setup basic stuff
 	global_arena = Arena_Create(Gigabytes(4));
-	global_my_path = OS_GetMyPath();
+	global_my_path.data = Arena_End(global_arena);
+	global_my_path.size = OS_GetMyPath(global_arena);
 	
 	// Testing
 	int32 result = LangC_Main(argc, (const char**)argv);

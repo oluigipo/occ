@@ -15,8 +15,9 @@ OurMemCopy(void* restrict dst, const void* restrict src, uintsize size)
 	Trace();
 	
 #if defined(__clang__) || defined(__GNUC__)
+	void* d = dst;
 	__asm__ __volatile__("rep movsb"
-						 :"+D"(dst), "+S"(src), "+c"(size)
+						 :"+D"(d), "+S"(src), "+c"(size)
 						 :: "memory");
 #elif defined(_MSC_VER)
 	__movsb(dst, src, size);
@@ -50,8 +51,9 @@ internal inline void*
 OurMemSet(void* restrict dst, uint8 byte, uintsize size)
 {
 #if defined(__clang__) || defined(__GNUC__)
+	void* d = dst;
 	__asm__ __volatile__("rep stosb"
-						 :"+D"(dst), "+a"(byte), "+c"(size)
+						 :"+D"(d), "+a"(byte), "+c"(size)
 						 :: "memory");
 #elif defined(_MSC_VER)
 	__stosb(dst, byte, size);

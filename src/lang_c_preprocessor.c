@@ -5,10 +5,11 @@ internal void LangC_PreprocessIf(LangC_Context* ctx, LangC_Lexer* lex);
 internal LangC_PPLoadedFile*
 LangC_LoadFileFromDisk(LangC_Context* ctx, const char path[MAX_PATH_SIZE], uint64 calculated_hash, bool32 relative)
 {
-	const char* contents = OS_ReadWholeFile(path, NULL);
+	const char* contents = Arena_End(global_arena);
+	uintsize len = OS_ReadWholeFile(path, global_arena);
 	LangC_Preprocessor* const pp = &ctx->pp;
 	
-	if (contents)
+	if (len)
 	{
 		LangC_PPLoadedFile* file;
 		
@@ -30,8 +31,7 @@ LangC_LoadFileFromDisk(LangC_Context* ctx, const char path[MAX_PATH_SIZE], uint6
 		file->relative = relative;
 		
 		uintsize len = strlen(path) + 1;
-		char* mem = Arena_Push(ctx->stage_arena, len);
-		OurMemCopy(mem, path, len);
+		char* mem = Arena_PushMemory(ctx->stage_arena, len, path);
 		
 		file->path = StrMake(mem, len);
 		return file;
@@ -77,7 +77,7 @@ LangC_TryToLoadFile(LangC_Context* ctx, String path, bool32 relative, String inc
 		OurMemCopy(fullpath + len, path.data, path.size);
 		len += path.size;
 		
-		OS_ResolveFullPath(StrMake(fullpath, len), fullpath);
+		OS_ResolveFullPath(StrMake(fullpath, len), fullpath, ctx->stage_arena);
 		uint64 search_hash = SimpleHashNullTerminated(fullpath);
 		
 		while (file)
@@ -115,7 +115,7 @@ LangC_TryToLoadFile(LangC_Context* ctx, String path, bool32 relative, String inc
 			.data = fullpath,
 		};
 		
-		OS_ResolveFullPath(p, fullpath);
+		OS_ResolveFullPath(p, fullpath, ctx->stage_arena);
 		
 		LangC_PPLoadedFile* file = pp->loaded_files;
 		uint64 search_hash = SimpleHashNullTerminated(fullpath);

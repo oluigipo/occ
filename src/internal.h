@@ -116,8 +116,6 @@ internal void Print(const char* fmt, ...);
 internal void PrintVarargs(const char* fmt, va_list args);
 internal void Panic(const char* str);
 
-#include "os.h"
-
 internal const char* const* global_colors = (const char* const[]) {
 	"\x1B[0m", // RESET
 	"\x1B[93m", // PATHS
@@ -127,10 +125,13 @@ internal const char* const* global_colors = (const char* const[]) {
 	NULL,
 };
 
-#include "internal_utils.h"
 #include "internal_arena.h"
+#include "os.h"
+#include "internal_utils.h"
 #include "internal_pool.h"
 #include "internal_map.h"
+
+#include "internal_arena.c"
 
 internal String global_my_path;
 internal Arena* global_arena;

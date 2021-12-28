@@ -13,10 +13,10 @@ typedef void* OS_Mutex;
 internal void OS_Exit(int32 code);
 
 internal uint64 OS_Time(void);
-internal String OS_GetMyPath(void);
-internal const char* OS_ReadWholeFile(const char* path, uintsize* size);
+internal uintsize OS_GetMyPath(Arena* arena);
+internal uintsize OS_ReadWholeFile(const char* path, Arena* arena);
 internal bool32 OS_WriteWholeFile(const char* path, const void* data, uintsize size);
-internal void OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE]);
+internal void OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE], Arena* scratch_arena);
 internal void* OS_ReserveMemory(uintsize size);
 internal void* OS_CommitMemory(void* ptr, uintsize size);
 internal void OS_FreeMemory(void* ptr, uintsize size);
@@ -40,8 +40,168 @@ internal void OS_DestroyMutex(OS_Mutex mtx);
 
 #ifdef OS_H_IMPLEMENTATION
 #if defined(_WIN32)
+
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+
+#if 0
+#ifndef WINAPI
+#   define WINAPI __stdcall
+#endif
+
+#define CP_UTF8 65001
+#define FILE_SHARE_READ 0x00000001
+#define GENERIC_READ (1u << 31)
+#define OPEN_EXISTING 3
+#define FILE_ATTRIBUTE_READONLY 1
+#define INVALID_HANDLE_VALUE NULL
+#define MEM_RESERVE 0x00002000
+#define MEM_COMMIT 0x00001000
+#define PAGE_READWRITE 0x04
+#define MEM_RELEASE 0x00008000
+#define INFINITE (-1)
+#define STILL_ACTIVE 259
+
+typedef uint32 UINT;
+typedef uint16 WORD;
+typedef uint32 DWORD;
+typedef unsigned long ULONG;
+typedef ULONG* ULONG_PTR;
+typedef unsigned long long ULONGLONG;
+typedef long LONG;
+typedef long long LONGLONG;
+typedef DWORD* LPDWORD;
+typedef int BOOL;
+typedef BOOL* LPBOOL;
+typedef void* HMODULE;
+typedef char* LPSTR;
+typedef wchar_t* LPWSTR;
+typedef const wchar_t* LPCWSTR;
+typedef const char* LPCCH;
+typedef const wchar_t* LPCWCH;
+typedef void* HANDLE;
+typedef void* LPVOID;
+typedef void* PVOID;
+typedef uintsize SIZE_T;
+typedef DWORD WINAPI THREAD_START_ROUTINE(LPVOID lpParameter);
+typedef THREAD_START_ROUTINE* LPTHREAD_START_ROUTINE;
+
+typedef struct _SYSTEMTIME {
+	WORD wYear;
+	WORD wMonth;
+	WORD wDayOfWeek;
+	WORD wDay;
+	WORD wHour;
+	WORD wMinute;
+	WORD wSecond;
+	WORD wMilliseconds;
+} SYSTEMTIME, *PSYSTEMTIME, *LPSYSTEMTIME;
+
+typedef struct _FILETIME {
+	DWORD dwLowDateTime;
+	DWORD dwHighDateTime;
+} FILETIME, *PFILETIME, *LPFILETIME;
+
+typedef union _ULARGE_INTEGER {
+	struct {
+		DWORD LowPart;
+		DWORD HighPart;
+	} DUMMYSTRUCTNAME;
+	struct {
+		DWORD LowPart;
+		DWORD HighPart;
+	} u;
+	ULONGLONG QuadPart;
+} ULARGE_INTEGER;
+
+typedef union _LARGE_INTEGER {
+	struct {
+		DWORD LowPart;
+		LONG  HighPart;
+	} DUMMYSTRUCTNAME;
+	struct {
+		DWORD LowPart;
+		LONG  HighPart;
+	} u;
+	LONGLONG QuadPart;
+} LARGE_INTEGER, *PLARGE_INTEGER;
+
+typedef struct _SECURITY_ATTRIBUTES {
+	DWORD  nLength;
+	LPVOID lpSecurityDescriptor;
+	BOOL   bInheritHandle;
+} SECURITY_ATTRIBUTES, *PSECURITY_ATTRIBUTES, *LPSECURITY_ATTRIBUTES;
+
+typedef struct _OVERLAPPED {
+	ULONG_PTR Internal;
+	ULONG_PTR InternalHigh;
+	union {
+		struct {
+			DWORD Offset;
+			DWORD OffsetHigh;
+		} DUMMYSTRUCTNAME;
+		PVOID Pointer;
+	} DUMMYUNIONNAME;
+	HANDLE    hEvent;
+} OVERLAPPED, *LPOVERLAPPED;
+
+typedef struct _SRWLOCK {
+	void* Ptr;
+} SRWLOCK, *PSRWLOCK, *LPSRWLOCK;
+
+void WINAPI ExitProcess(uint32 code);
+void WINAPI GetSystemTime(LPSYSTEMTIME lpSystemTime);
+BOOL WINAPI SystemTimeToFileTime(const SYSTEMTIME* lpSystemTime, LPFILETIME lpFileTime);
+DWORD WINAPI GetModuleFileNameA(HMODULE hModule, LPSTR lpFilename, DWORD nSize);
+DWORD WINAPI GetModuleFileNameW(HMODULE hModule, LPWSTR lpFilename, DWORD nSize);
+int WINAPI MultiByteToWideChar(UINT CodePage, DWORD dwFlags, LPCCH lpMultiByteStr, int cbMultiByte, LPWSTR lpWideCharStr, int cchWideChar);
+HANDLE WINAPI CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile);
+BOOL WINAPI GetFileSizeEx(HANDLE hFile, PLARGE_INTEGER lpFileSize);
+BOOL WINAPI CloseHandle(HANDLE hObject);
+BOOL WINAPI ReadFile(HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfBytesToRead, LPDWORD lpNumberOfBytesRead, LPOVERLAPPED lpOverlapped);
+DWORD WINAPI GetFullPathNameW(LPCWSTR lpFileName, DWORD nBufferLength, LPWSTR lpBuffer, LPWSTR* lpFilePart);
+int WINAPI WideCharToMultiByte(UINT CodePage, DWORD dwFlags, LPCWCH lpWideCharStr, int cchWideChar, LPSTR lpMultiByteStr, int cbMultiByte, LPCCH lpDefaultChar, LPBOOL lpUsedDefaultChar);
+LPVOID WINAPI VirtualAlloc(LPVOID lpAddress, SIZE_T dwSize, DWORD  flAllocationType, DWORD  flProtect);
+BOOL WINAPI VirtualFree(LPVOID lpAddress, SIZE_T dwSize, DWORD dwFreeType);
+HANDLE WINAPI CreateThread(LPSECURITY_ATTRIBUTES lpThreadAttributes,
+						   SIZE_T dwStackSize,
+						   LPTHREAD_START_ROUTINE lpStartAddress,
+						   LPVOID lpParameter,
+						   DWORD dwCreationFlags,
+						   LPDWORD lpThreadId);
+BOOL WINAPI TerminateThread(HANDLE hThread, DWORD dwExitCode);
+BOOL WINAPI GetExitCodeThread(HANDLE hThread, LPDWORD lpExitCode);
+DWORD WINAPI WaitForSingleObject(HANDLE hHandle, DWORD dwMilliseconds);
+void WINAPI InitializeSRWLock(PSRWLOCK SRWLock);
+LPVOID WINAPI HeapAlloc(HANDLE hHeap, DWORD dwFlags, SIZE_T dwBytes);
+HANDLE WINAPI GetProcessHeap(void);
+void WINAPI AcquireSRWLockShared(PSRWLOCK SRWLock);
+void WINAPI AcquireSRWLockExclusive(PSRWLOCK SRWLock);
+BOOL WINAPI TryAcquireSRWLockShared(PSRWLOCK SRWLock);
+BOOL WINAPI TryAcquireSRWLockExclusive(PSRWLOCK SRWLock);
+void WINAPI ReleaseSRWLockShared(PSRWLOCK SRWLock);
+void WINAPI ReleaseSRWLockExclusive(PSRWLOCK SRWLock);
+BOOL WINAPI HeapFree(HANDLE hHeap, DWORD dwFlags, LPVOID lpMem);
+#endif
+
 #include <stdio.h>
+
+internal int32
+OS_ConvertWcharToChar_(Arena* arena, wchar_t* wstr)
+{
+	int32 str_len = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, NULL, 0, NULL, NULL);
+	if (str_len == 0)
+		return 0;
+	
+	char* str = Arena_PushAligned(arena, str_len, 1);
+	WideCharToMultiByte(CP_UTF8, 0, wstr, -1, str, str_len, NULL, NULL);
+	str[str_len-1] = 0;
+	
+	OurMemCopy(wstr, str, str_len);
+	Arena_Pop(arena, str + str_len);
+	
+	return str_len;
+}
 
 internal void
 OS_Exit(int32 code)
@@ -79,45 +239,61 @@ OS_Time(void)
 	return result;
 }
 
-internal String
-OS_GetMyPath(void)
+internal uintsize
+OS_GetMyPath(Arena* arena)
 {
-	char* path = PushMemory(MAX_PATH_SIZE);
+	wchar_t* wpath = Arena_PushAligned(arena, MAX_PATH_SIZE * sizeof(*wpath), 1);
+	DWORD wpath_len = GetModuleFileNameW(NULL, wpath, MAX_PATH_SIZE);
+	if (wpath_len == 0 || wpath_len == MAX_PATH_SIZE)
+	{
+		Arena_Pop(arena, wpath);
+		return 0;
+	}
 	
-	DWORD len = GetModuleFileNameA(NULL, path, MAX_PATH_SIZE);
-	for (DWORD i = 0; i < len; ++i)
+	int32 path_len = OS_ConvertWcharToChar_(arena, wpath);
+	char* path = (char*)wpath;
+	
+	if (path_len == 0)
+	{
+		Arena_Pop(arena, wpath);
+		return 0;
+	}
+	
+	for (int32 i = 0; i < path_len-1; ++i)
 	{
 		if (path[i] == '\\')
 			path[i] = '/';
 	}
 	
-	return StrMake(path, len + 1);
+	return path_len;
 }
 
-internal const char*
-OS_ReadWholeFile(const char* path, uintsize* out_size)
+internal uintsize
+OS_ReadWholeFile(const char* path, Arena* arena)
 {
 	TraceName(StrFrom(path));
-	wchar_t wpath[MAX_PATH_SIZE];
-	int32 wpath_len = MultiByteToWideChar(CP_UTF8, 0, path, strlen(path), wpath, ArrayLength(wpath));
-	if (wpath_len <= 0 || wpath_len >= MAX_PATH_SIZE)
-		return NULL;
 	
-	wpath[wpath_len] = 0;
+	int32 wpath_len = MultiByteToWideChar(CP_UTF8, 0, path, -1, NULL, 0);
+	if (wpath_len <= 0 || wpath_len >= MAX_PATH_SIZE)
+		return 0;
+	
+	wchar_t* wpath = Arena_PushAligned(arena, wpath_len * sizeof(*wpath), 1);
+	MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, wpath_len);
 	
 	HANDLE file = CreateFileW(wpath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
 	if (file == INVALID_HANDLE_VALUE)
-		return NULL;
+		return 0;
 	
 	LARGE_INTEGER large_int;
 	if (!GetFileSizeEx(file, &large_int))
 	{
 		CloseHandle(file);
-		return NULL;
+		Arena_Pop(arena, wpath);
+		return 0;
 	}
 	
 	uintsize file_size = large_int.QuadPart;
-	char* file_data = PushMemory(file_size + 1);
+	char* file_data = Arena_PushAligned(arena, file_size + 1, 1);
 	
 	uintsize still_to_read = file_size;
 	char* p = file_data;
@@ -130,8 +306,8 @@ OS_ReadWholeFile(const char* path, uintsize* out_size)
 			did_read != to_read)
 		{
 			CloseHandle(file);
-			global_arena->offset -= file_size + 1;
-			return NULL;
+			Arena_Pop(arena, wpath);
+			return 0;
 		}
 		
 		still_to_read -= to_read;
@@ -142,9 +318,11 @@ OS_ReadWholeFile(const char* path, uintsize* out_size)
 	
 	p[0] = 0; // null terminated
 	
-	if (out_size)
-		*out_size = file_size;
-	return file_data;
+	OurMemCopy(wpath, file_data, file_size + 1);
+	file_data = (char*)wpath;
+	Arena_Pop(arena, file_data + file_size + 1);
+	
+	return file_size;
 }
 
 internal bool32
@@ -163,24 +341,33 @@ OS_WriteWholeFile(const char* path, const void* data, uintsize size)
 }
 
 internal void
-OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE])
+OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE], Arena* scratch_arena)
 {
-	wchar_t wpath[MAX_PATH_SIZE];
-	wchar_t fullpath[MAX_PATH_SIZE];
-	int32 i;
+	wchar_t* wpath;
+	wchar_t* wfullpath;
+	int32 len;
+	path = IgnoreNullTerminator(path);
 	
-	i = MultiByteToWideChar(CP_UTF8, 0, path.data, path.size, wpath, ArrayLength(wpath));
-	wpath[i] = 0;
+	len = MultiByteToWideChar(CP_UTF8, 0, path.data, path.size, NULL, 0);
+	if (len == 0)
+		return;
+	++len;
 	
-	GetFullPathNameW(wpath, ArrayLength(fullpath), fullpath, NULL);
-	i = WideCharToMultiByte(CP_UTF8, 0, fullpath, -1, out_buf, MAX_PATH_SIZE, NULL, NULL);
-	out_buf[i] = 0;
+	wpath = Arena_PushAligned(scratch_arena, len * sizeof(*wpath), 1);
+	MultiByteToWideChar(CP_UTF8, 0, path.data, path.size, wpath, len);
+	wpath[len-1] = 0;
+	
+	wfullpath = Arena_PushAligned(scratch_arena, MAX_PATH_SIZE * sizeof(*wfullpath), 1);
+	GetFullPathNameW(wpath, MAX_PATH_SIZE, wfullpath, NULL);
+	len = WideCharToMultiByte(CP_UTF8, 0, wfullpath, -1, out_buf, MAX_PATH_SIZE, NULL, NULL);
 	
 	for (char* it = out_buf; *it; ++it)
 	{
 		if (*it == '\\')
 			*it = '/';
 	}
+	
+	Arena_Pop(scratch_arena, wpath);
 }
 
 internal void*
