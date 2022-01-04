@@ -62,6 +62,8 @@ typedef String;
 #define internal static
 #define Max(a,b) ((a) > (b) ? (a) : (b))
 #define Min(a,b) ((a) < (b) ? (a) : (b))
+#define SizeofMember(Struct, name) sizeof(((Struct*)0)->name)
+#define SizeofPoly(Struct, name) (sizeof(Struct) + SizeofMember(Struct, member))
 
 // NOTE(ljre): Unreachable may be used in release builds.
 #define Unreachable() do { Panic("\nUnreachable code was reached, at '" __FILE__ "' line " StrMacro(__LINE__) ".\n"); } while (0)
@@ -90,7 +92,7 @@ internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 #   define TraceName(x) ((void)0)
 #elif defined __GNUC__
 #   define Assume(x) do { if (!(x)) __builtin_unreachable(); } while (0)
-#   define DebugBreak_() __builtin_trap()
+#   define DebugBreak_() __asm__ __volatile__ ("int $3")
 #   define Likely(x) __builtin_expect(!!(x), 1)
 #   define Unlikely(x) __builtin_expect((x), 0)
 #   define Trace(x) ((void)0)
@@ -130,6 +132,7 @@ internal const char* const* global_colors = (const char* const[]) {
 #include "internal_utils.h"
 #include "internal_pool.h"
 #include "internal_map.h"
+#include "internal_littlemap.h"
 
 #include "internal_arena.c"
 

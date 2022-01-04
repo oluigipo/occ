@@ -356,6 +356,8 @@ LangC_TokenizeStringLiteral(LangC_Lexer* lex)
 internal void
 LangC_NextToken(LangC_Lexer* lex)
 {
+	Trace();
+	
 	if (lex->waiting_token)
 	{
 		lex->token = lex->waiting_token->token;

@@ -161,6 +161,15 @@ MatchCString(const char* a, String cmp)
 	return !(*a);
 }
 
+internal inline int32
+CompareStringFast(String a, String b)
+{
+	if (a.size != b.size)
+		return (int32)a.size - (int32)b.size;
+	
+	return memcmp(a.data, b.data, a.size);
+}
+
 internal int32
 CompareString(String a, String b)
 {
