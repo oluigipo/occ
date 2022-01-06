@@ -1,115 +1,40 @@
-// NOTE(ljre): If 'decl_or_base' is not a declaration, it shall be a base type of a struct, union, or enum.
-internal LangC_TypeNode*
-LangC_DefineTypeNode(LangC_Context* ctx, LangC_Node* decl)
-{
-	Assert(decl);
-	
-	LangC_TypeNode* type = ctx->last_typenode;
-	if (!type)
-	{
-		if (!ctx->first_typenode)
-		{
-			ctx->first_typenode = Arena_Push(ctx->stage_arena, sizeof *ctx->first_typenode);
-		}
-		
-		type = ctx->last_typenode = ctx->first_typenode;
-		type->saved_last = NULL;
-		type->previous = NULL;
-	}
-	else if (!type->next)
-	{
-		type->next = Arena_Push(ctx->stage_arena, sizeof *type->next);
-		type->next->saved_last = type->saved_last;
-		type->next->previous = type;
-		
-		type = ctx->last_typenode = type->next;
-	}
-	
-	type->name = decl->name;
-	type->name_hash = SimpleHash(type->name);
-	
-	return type;
-}
-
-internal void
-LangC_PushTypeNodeScope(LangC_Context* ctx)
-{
-	if (ctx->last_typenode)
-	{
-		ctx->last_typenode->saved_last = ctx->last_typenode;
-	}
-}
-
-internal void
-LangC_PopTypeNodeScope(LangC_Context* ctx)
-{
-	if (ctx->last_typenode)
-	{
-		ctx->last_typenode = ctx->last_typenode->saved_last;
-		ctx->last_typenode->saved_last = (ctx->last_typenode->previous) ? ctx->last_typenode->previous->saved_last : NULL;
-	}
-}
-
-internal bool32
-LangC_TypeNodeExists(LangC_Context* ctx, String name)
-{
-	uint64 search_hash = SimpleHash(name);
-	
-	LangC_TypeNode* type = ctx->last_typenode;
-	if (type)
-	{
-		do
-		{
-			if (type->name_hash == search_hash)
-				return true;
-		}
-		while (type != ctx->first_typenode && (type = type->previous));
-	}
-	
-	return false;
-}
-
 internal inline void
-LangC_UpdateNode(LangC_Context* ctx, LangC_NodeKind kind, LangC_Node* result)
+LangC_UpdateNode(LangC_Context* ctx, LangC_AstKind kind, LangC_AstNode* node)
 {
-	Assert(result);
+	Assert(node);
 	
 	if (kind)
-		result->kind = kind;
-	result->line = ctx->lex.token.line;
-	result->col = ctx->lex.token.col;
-	result->lexfile = ctx->lex.file;
-	result->leading_spaces = ctx->lex.token.leading_spaces;
+		node->kind = kind;
+	node->line = ctx->lex.token.line;
+	node->col = ctx->lex.token.col;
+	node->lexfile = ctx->lex.file;
 }
 
 internal inline LangC_Node*
-LangC_CreateNode(LangC_Context* ctx, LangC_NodeKind kind)
+LangC_CreateNode(LangC_Context* ctx, LangC_AstKind kind, uintsize size)
 {
-	LangC_Node* result = Arena_Push(ctx->persistent_arena, sizeof *result);
-	
+	LangC_AstNode* result = Arena_Push(ctx->persistent_arena, size);
 	LangC_UpdateNode(ctx, kind, result);
 	
 	return result;
 }
 
 internal void
-LangC_PoisonNode(LangC_Context* ctx, LangC_Node* node)
+LangC_PoisonNode(LangC_Context* ctx, LangC_AstNode* node)
 {
-	if (node->flags & LangC_NodeFlags_Poisoned)
+	if (node->flags & LangC_AstFlags_Poisoned)
 		return;
 	
-	node->flags |= LangC_NodeFlags_Poisoned;
+	node->flags |= LangC_AstFlags_Poisoned;
 	
-	for (int32 i = 0; i < ArrayLength(node->leafs); ++i)
-	{
-		if (node->leafs[i])
-			LangC_PoisonNode(ctx, node->leafs[i]);
-	}
+	// TODO(ljre): Poison children.
 }
 
 internal void
-LangC_AppendNode(LangC_Context* ctx, LangC_Node** to, LangC_Node* node)
+LangC_AppendNode(LangC_Context* ctx, LangC_Node** to_, LangC_Node* node)
 {
+	LangC_AstNode** to = (void*)to_;
+	
 	if (!*to)
 		*to = node;
 	else
@@ -122,18 +47,20 @@ LangC_AppendNode(LangC_Context* ctx, LangC_Node** to, LangC_Node* node)
 }
 
 internal void
-LangC_NodeError(LangC_Context* ctx, LangC_Node* node, const char* fmt, ...)
+LangC_NodeError(LangC_Context* ctx, LangC_Node* node_, const char* fmt, ...)
 {
+	LangC_AstNode* node = node_;
+	
 	// NOTE(ljre): If this node is already fucked up, no need to report more errors.
-	if (node->flags & LangC_NodeFlags_Poisoned)
+	if (node->flags & LangC_AstFlags_Poisoned)
 		return;
 	
-	LangC_error_count++;
+	ctx->error_count++;
+	LangC_PoisonNode(ctx, node);
 	
-	node->flags |= LangC_NodeFlags_Poisoned;
 	LangC_LexerFile* lexfile = node->lexfile;
-	
 	Print("\n");
+	
 	if (lexfile->included_from)
 		LangC_PrintIncludeStack(lexfile->included_from, lexfile->included_line);
 	
@@ -147,11 +74,12 @@ LangC_NodeError(LangC_Context* ctx, LangC_Node* node, const char* fmt, ...)
 }
 
 internal void
-LangC_NodeWarning(LangC_Context* ctx, LangC_Node* node, LangC_Warning warning, const char* fmt, ...)
+LangC_NodeWarning(LangC_Context* ctx, LangC_Node* node_, LangC_Warning warning, const char* fmt, ...)
 {
 	if (!LangC_IsWarningEnabled(ctx, warning))
 		return;
 	
+	LangC_AstNode* node = node_;
 	LangC_LexerFile* lexfile = node->lexfile;
 	char* buf = Arena_End(global_arena);
 	
@@ -171,19 +99,46 @@ LangC_NodeWarning(LangC_Context* ctx, LangC_Node* node, LangC_Warning warning, c
 	LangC_PushWarning(ctx, warning, buf);
 }
 
-internal bool32
-LangC_IsBaseType(LangC_NodeKind kind)
+internal LangC_SymbolScope*
+LangC_PushSymbolScope(LangC_Context* ctx)
 {
-	return kind >= LangC_NodeKind_TypeBase__First && kind <= LangC_NodeKind_TypeBase__Last;
+	LangC_SymbolScope* scope = Arena_Push(ctx->persistent_arena, sizeof(*scope));
+	
+	if (ctx->previous_scope)
+	{
+		ctx->previous_scope->next = scope;
+		ctx->previous_scope = NULL;
+		ctx->scope->down = scope;
+	}
+	
+	scope->up = ctx->scope;
+	ctx->scope = scope;
+	
+	return scope;
 }
 
-internal LangC_Node* LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl);
-internal LangC_Node* LangC_ParseBlock(LangC_Context* ctx, LangC_Node** out_last);
-internal LangC_Node* LangC_ParseExpr(LangC_Context* ctx, int32 level, bool32 allow_init);
-internal LangC_Node* LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32* out_should_eat_semicolon);
-internal LangC_Node* LangC_ParseDeclOrExpr(LangC_Context* ctx, LangC_Node** out_last, bool32 type_only, int32 level);
-internal LangC_Node* LangC_ParseDeclAndSemicolonIfNeeded(LangC_Context* ctx, LangC_Node** out_last, int32 options);
-internal bool32 LangC_ParsePossibleGnuAttribute(LangC_Context* ctx, LangC_Node* apply_to);
+internal void
+LangC_PopSymbolScope(LangC_Context* ctx)
+{
+	ctx->previous_scope = ctx->scope;
+	ctx->scope = ctx->scope->up;
+}
+
+internal void
+LangC_TypedefDecl(LangC_Context* ctx, LangC_AstDecl* decl)
+{
+	LangC_Symbol* sym = Arena_Push(ctx->persistent_arena, sizeof(*sym));
+	String name = decl->name;
+	
+	sym->kind = LangC_SymbolKind_Typename;
+	sym->decl = decl;
+	sym->name = name;
+	
+	if (!ctx->scope->types)
+		ctx->scope->types = LittleMap_Create(ctx->persistent_arena, 128);
+	
+	LittleMap_Insert(ctx->scope->types, name, sym);
+}
 
 internal bool32
 LangC_IsBeginningOfDeclOrType(LangC_Context* ctx)
@@ -193,7 +148,18 @@ LangC_IsBeginningOfDeclOrType(LangC_Context* ctx)
 		case LangC_TokenKind_Identifier:
 		{
 			String ident = ctx->lex.token.value_ident;
-			return LangC_TypeNodeExists(ctx, ident);
+			uint64 hash = SimpleHash(ident);
+			LangC_SymbolScope* scope = ctx->scope;
+			
+			while (scope)
+			{
+				if (scope->types && LittleMap_FetchWithCachedHash(scope->types, ident, hash))
+					return true;
+				
+				scope = scope->up;
+			}
+			
+			return false;
 		}
 		
 		case LangC_TokenKind_Int:
@@ -221,43 +187,43 @@ LangC_IsBeginningOfDeclOrType(LangC_Context* ctx)
 	return false;
 }
 
-internal LangC_Node*
+internal LangC_Node* LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl);
+internal LangC_Node* LangC_ParseBlock(LangC_Context* ctx, LangC_Node** out_last);
+internal LangC_Node* LangC_ParseExpr(LangC_Context* ctx, int32 level, bool32 allow_init);
+internal LangC_Node* LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32* out_should_eat_semicolon);
+internal LangC_Node* LangC_ParseDeclOrExpr(LangC_Context* ctx, LangC_Node** out_last, bool32 type_only, int32 level);
+internal LangC_Node* LangC_ParseDeclAndSemicolonIfNeeded(LangC_Context* ctx, LangC_Node** out_last, int32 options);
+internal bool32 LangC_ParsePossibleGnuAttribute(LangC_Context* ctx, LangC_AstNode* apply_to);
+
+internal LangC_AstDecl*
 LangC_ParseEnumBody(LangC_Context* ctx)
 {
 	LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftCurl);
-	LangC_Node* result = LangC_CreateNode(ctx, LangC_NodeKind_TypeBaseEnumEntry);
-	LangC_Node* last = result;
+	LangC_AstDecl* result = LangC_CreateNode(ctx, LangC_AstKind_DeclEnumEntry, sizeof(LangC_AstDecl));
+	LangC_AstNode* last = &result->h;
 	
 	if (LangC_AssertToken(&ctx->lex, LangC_TokenKind_Identifier))
-	{
 		result->name = ctx->lex.token.value_ident;
-	}
 	
-	LangC_ParsePossibleGnuAttribute(ctx, result);
+	LangC_ParsePossibleGnuAttribute(ctx, &result->h);
 	
 	if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Equals))
-	{
-		result->expr = LangC_ParseExpr(ctx, 1, false);
-	}
+		result->init = LangC_ParseExpr(ctx, 1, false);
 	
 	while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma) &&
 		   ctx->lex.token.kind != LangC_TokenKind_RightCurl)
 	{
-		LangC_Node* new_node = LangC_CreateNode(ctx, LangC_NodeKind_TypeBaseEnumEntry);
+		LangC_AstDecl* new_node = LangC_CreateNode(ctx, LangC_AstKind_DeclEnumEntry, sizeof(LangC_AstDecl));
 		
 		if (LangC_AssertToken(&ctx->lex, LangC_TokenKind_Identifier))
-		{
 			new_node->name = ctx->lex.token.value_ident;
-		}
 		
-		LangC_ParsePossibleGnuAttribute(ctx, new_node);
+		LangC_ParsePossibleGnuAttribute(ctx, &new_node->h);
 		
 		if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Equals))
-		{
-			new_node->expr = LangC_ParseExpr(ctx, 1, false);
-		}
+			new_node->init = LangC_ParseExpr(ctx, 1, false);
 		
-		last = last->next = new_node;
+		last = last->next = &new_node->h;
 	}
 	
 	LangC_EatToken(&ctx->lex, LangC_TokenKind_RightCurl);
@@ -265,21 +231,21 @@ LangC_ParseEnumBody(LangC_Context* ctx)
 	return result;
 }
 
-internal LangC_Node*
+internal LangC_AstDecl*
 LangC_ParseStructBody(LangC_Context* ctx)
 {
 	LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftCurl);
 	bool32 should_eat_semicolon = false;
-	LangC_Node* last;
-	LangC_Node* result = LangC_ParseDecl(ctx, &last, 4, &should_eat_semicolon);
+	LangC_AstNode* last;
+	LangC_AstDecl* result = LangC_ParseDecl(ctx, (void*)&last, 4, &should_eat_semicolon);
 	
 	// NOTE(ljre): Bitfields
 	if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Colon))
 	{
-		LangC_Node* attrib = LangC_CreateNode(ctx, LangC_NodeKind_AttributeBitfield);
-		attrib->expr = LangC_ParseExpr(ctx, 1, false);
-		attrib->next = result->attributes;
-		result->attributes = attrib;
+		LangC_AstAttribute* attrib = LangC_CreateNode(ctx, LangC_AstKind_AttributeBitfield, SizeofPoly(LangC_AstAttribute, bitfield));
+		attrib->as->bitfield.expr = LangC_ParseExpr(ctx, 1, false);
+		attrib->h.next = (void*)result->h.attributes;
+		result->h.attributes = attrib;
 	}
 	
 	if (should_eat_semicolon)
@@ -296,9 +262,9 @@ LangC_ParseStructBody(LangC_Context* ctx)
 		// NOTE(ljre): Bitfields
 		if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Colon))
 		{
-			LangC_Node* attrib = LangC_CreateNode(ctx, LangC_NodeKind_AttributeBitfield);
-			attrib->expr = LangC_ParseExpr(ctx, 1, false);
-			attrib->next = last->attributes;
+			LangC_AstAttribute* attrib = LangC_CreateNode(ctx, LangC_AstKind_AttributeBitfield, SizeofPoly(LangC_AstAttribute, bitfield));
+			attrib->as->bitfield.expr = LangC_ParseExpr(ctx, 1, false);
+			attrib->h.next = (void*)last->attributes;
 			last->attributes = attrib;
 		}
 		
@@ -317,7 +283,7 @@ LangC_ParseStructBody(LangC_Context* ctx)
 internal LangC_Node*
 LangC_ParseDeclOrExpr(LangC_Context* ctx, LangC_Node** out_last, bool32 type_only, int32 level)
 {
-	LangC_Node* result = NULL;
+	void* result = NULL;
 	
 	if (LangC_IsBeginningOfDeclOrType(ctx))
 		result = LangC_ParseDeclAndSemicolonIfNeeded(ctx, out_last, type_only);
@@ -327,11 +293,11 @@ LangC_ParseDeclOrExpr(LangC_Context* ctx, LangC_Node** out_last, bool32 type_onl
 	return result;
 }
 
-internal LangC_Node*
+internal void*
 LangC_ParseInitializerField(LangC_Context* ctx)
 {
-	LangC_Node* result = NULL;
-	LangC_Node* head = NULL;
+	LangC_AstExpr* result = NULL;
+	LangC_AstExpr* head = NULL;
 	
 	for (;;)
 	{
@@ -339,27 +305,27 @@ LangC_ParseInitializerField(LangC_Context* ctx)
 		{
 			case LangC_TokenKind_Dot:
 			{
-				LangC_Node* newnode = LangC_CreateNode(ctx, LangC_NodeKind_ExprInitializerMember);
+				LangC_AstExpr* newnode = LangC_CreateNode(ctx, LangC_AstKind_ExprInitializerMember, SizeofPoly(LangC_AstExpr, desig_entry));
 				if (head)
-					head = head->middle = newnode;
+					head = head->as->desig_entry.next = newnode;
 				else
 					result = head = newnode;
 				
 				LangC_NextToken(&ctx->lex);
 				if (LangC_AssertToken(&ctx->lex, LangC_TokenKind_Identifier))
-					newnode->name = ctx->lex.token.value_ident;
+					newnode->as->desig_entry.name = ctx->lex.token.value_ident;
 			} continue;
 			
 			case LangC_TokenKind_LeftBrkt:
 			{
-				LangC_Node* newnode = LangC_CreateNode(ctx, LangC_NodeKind_ExprInitializerIndex);
+				LangC_AstExpr* newnode = LangC_CreateNode(ctx, LangC_AstKind_ExprInitializerIndex, SizeofPoly(LangC_AstExpr, desig_entry));
 				if (head)
-					head = head->middle = newnode;
+					head = head->as->desig_entry.next = newnode;
 				else
 					result = head = newnode;
 				
 				LangC_NextToken(&ctx->lex);
-				newnode->left = LangC_ParseExpr(ctx, 0, false);
+				newnode->as->desig_entry.index = LangC_ParseExpr(ctx, 0, false);
 				
 				LangC_EatToken(&ctx->lex, LangC_TokenKind_RightBrkt);
 			} continue;
@@ -370,7 +336,11 @@ LangC_ParseInitializerField(LangC_Context* ctx)
 				{
 					LangC_EatToken(&ctx->lex, LangC_TokenKind_Assign);
 					
-					result->right = LangC_ParseExpr(ctx, 1, true);
+					LangC_AstExpr* newnode = LangC_CreateNode(ctx, LangC_AstKind_ExprInitializerIndex, SizeofPoly(LangC_AstExpr, desig_init));
+					newnode->as->desig_init.desig = result;
+					newnode->as->desig_init.expr = LangC_ParseExpr(ctx, 1, true);
+					
+					result = newnode;
 				}
 				else
 					result = LangC_ParseExpr(ctx, 1, true);
@@ -384,7 +354,7 @@ LangC_ParseInitializerField(LangC_Context* ctx)
 }
 
 internal String
-LangC_PrepareStringLiteral(LangC_Context* ctx, bool32* is_wide)
+LangC_PrepareStringLiteral(LangC_Context* ctx, bool32* restrict is_wide)
 {
 	String str;
 	char* buffer = Arena_End(ctx->persistent_arena);
@@ -408,8 +378,8 @@ LangC_PrepareStringLiteral(LangC_Context* ctx, bool32* is_wide)
 internal LangC_Node*
 LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 {
-	LangC_Node* result = LangC_CreateNode(ctx, LangC_NodeKind_ExprFactor);
-	LangC_Node* head = result;
+	LangC_AstExpr* result = LangC_CreateNode(ctx, LangC_AstKind_ExprFactor, SizeofPolyAny(LangC_AstExpr));
+	LangC_AstExpr* head = result;
 	bool32 has_unary = false;
 	bool32 dont_parse_postfix = true;
 	
@@ -421,84 +391,87 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 			
 			case LangC_TokenKind_Minus:
 			{
-				head->kind = LangC_NodeKind_Expr1Negative;
-				head = head->expr = LangC_CreateNode(ctx, LangC_NodeKind_ExprFactor);
+				head->h.kind = LangC_AstKind_Expr1Negative;
+				head = head->as->unary.expr = LangC_CreateNode(ctx, LangC_AstKind_ExprFactor, SizeofPolyAny(LangC_AstExpr));
 				
 				LangC_NextToken(&ctx->lex);
 			} continue;
 			
 			case LangC_TokenKind_Mul:
 			{
-				head->kind = LangC_NodeKind_Expr1Deref;
-				head = head->expr = LangC_CreateNode(ctx, LangC_NodeKind_ExprFactor);
+				head->h.kind = LangC_AstKind_Expr1Deref;
+				head = head->as->unary.expr = LangC_CreateNode(ctx, LangC_AstKind_ExprFactor, SizeofPolyAny(LangC_AstExpr));
 				
 				LangC_NextToken(&ctx->lex);
 			} continue;
 			
 			case LangC_TokenKind_And:
 			{
-				head->kind = LangC_NodeKind_Expr1Ref;
-				head = head->expr = LangC_CreateNode(ctx, LangC_NodeKind_ExprFactor);
+				head->h.kind = LangC_AstKind_Expr1Ref;
+				head = head->as->unary.expr = LangC_CreateNode(ctx, LangC_AstKind_ExprFactor, SizeofPolyAny(LangC_AstExpr));
 				
 				LangC_NextToken(&ctx->lex);
 			} continue;
 			
 			case LangC_TokenKind_Not:
 			{
-				head->kind = LangC_NodeKind_Expr1Not;
-				head = head->expr = LangC_CreateNode(ctx, LangC_NodeKind_ExprFactor);
+				head->h.kind = LangC_AstKind_Expr1Not;
+				head = head->as->unary.expr = LangC_CreateNode(ctx, LangC_AstKind_ExprFactor, SizeofPolyAny(LangC_AstExpr));
 				
 				LangC_NextToken(&ctx->lex);
 			} continue;
 			
 			case LangC_TokenKind_LNot:
 			{
-				head->kind = LangC_NodeKind_Expr1LogicalNot;
-				head = head->expr = LangC_CreateNode(ctx, LangC_NodeKind_ExprFactor);
+				head->h.kind = LangC_AstKind_Expr1LogicalNot;
+				head = head->as->unary.expr = LangC_CreateNode(ctx, LangC_AstKind_ExprFactor, SizeofPolyAny(LangC_AstExpr));
 				
 				LangC_NextToken(&ctx->lex);
 			} continue;
 			
 			case LangC_TokenKind_Inc:
 			{
-				head->kind = LangC_NodeKind_Expr1PrefixInc;
-				head = head->expr = LangC_CreateNode(ctx, LangC_NodeKind_ExprFactor);
+				head->h.kind = LangC_AstKind_Expr1PrefixInc;
+				head = head->as->unary.expr = LangC_CreateNode(ctx, LangC_AstKind_ExprFactor, SizeofPolyAny(LangC_AstExpr));
 				
 				LangC_NextToken(&ctx->lex);
 			} continue;
 			
 			case LangC_TokenKind_Dec:
 			{
-				head->kind = LangC_NodeKind_Expr1PrefixDec;
-				head = head->expr = LangC_CreateNode(ctx, LangC_NodeKind_ExprFactor);
+				head->h.kind = LangC_AstKind_Expr1PrefixDec;
+				head = head->as->unary.expr = LangC_CreateNode(ctx, LangC_AstKind_ExprFactor, SizeofPolyAny(LangC_AstExpr));
 				
 				LangC_NextToken(&ctx->lex);
 			} continue;
 			
 			case LangC_TokenKind_Sizeof:
 			{
-				head->kind = LangC_NodeKind_Expr1Sizeof;
+				head->h.kind = LangC_AstKind_Expr1Sizeof;
 				
 				LangC_NextToken(&ctx->lex);
 				if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_LeftParen))
 				{
 					if (LangC_IsBeginningOfDeclOrType(ctx))
 					{
-						head->kind = LangC_NodeKind_Expr1SizeofType;
-						head = head->expr = LangC_CreateNode(ctx, LangC_NodeKind_ExprFactor);
+						head->h.kind = LangC_AstKind_Expr1SizeofType;
 						
-						LangC_UpdateNode(ctx, LangC_NodeKind_Decl, head);
-						head->type = LangC_ParseDeclAndSemicolonIfNeeded(ctx, NULL, 1);
+						LangC_UpdateNode(ctx, LangC_AstKind_Decl, &head->h);
+						head->as->sizeof_type.type = LangC_ParseDecl(ctx, NULL, 1, NULL);
 					}
 					else
 					{
-						head = head->expr = LangC_CreateNode(ctx, LangC_NodeKind_ExprFactor);
-						LangC_UpdateNode(ctx, 0, head);
-						head->expr = LangC_ParseExpr(ctx, 0, false);
+						head->as->sizeof_expr.expr = LangC_ParseExpr(ctx, 0, false);
+						LangC_UpdateNode(ctx, 0, &head->h);
+						head = head->as->sizeof_expr.expr;
 					}
 					
 					LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
 					goto ignore_factor;
+				}
+				else
+				{
+					head = head->as->sizeof_expr.expr = LangC_CreateNode(ctx, LangC_AstKind_ExprFactor, SizeofPolyAny(LangC_AstExpr));
 				}
 			} continue;
 			
@@ -507,28 +480,29 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 				LangC_NextToken(&ctx->lex);
 				if (LangC_IsBeginningOfDeclOrType(ctx))
 				{
-					LangC_Node* type = LangC_ParseDeclAndSemicolonIfNeeded(ctx, NULL, 1);
+					LangC_AstType* type = LangC_ParseDecl(ctx, NULL, 1, NULL);
 					
 					LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
 					if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_LeftCurl))
 					{
-						LangC_UpdateNode(ctx, 0, head);
-						head->kind = LangC_NodeKind_ExprCompoundLiteral;
-						head->type = type;
+						LangC_UpdateNode(ctx, 0, &head->h);
+						head->h.kind = LangC_AstKind_ExprCompoundLiteral;
+						head->as->compound.type = type;
 						
 						goto parse_init;
 					}
 					else
 					{
-						head->kind = LangC_NodeKind_Expr1Cast;
-						head->type = type;
-						head = head->expr = LangC_CreateNode(ctx, LangC_NodeKind_ExprFactor);
+						head->h.kind = LangC_AstKind_Expr1Cast;
+						head->as->cast.to = type;
+						head = head->as->cast.expr = LangC_CreateNode(ctx, LangC_AstKind_ExprFactor, SizeofPolyAny(LangC_AstExpr));
 					}
 				}
 				else
 				{
 					// yes. this is a "leak"
-					*head = *LangC_ParseExpr(ctx, 0, false);
+					OurMemCopy(head, LangC_ParseExpr(ctx, 0, false), SizeofPolyAny(LangC_AstExpr));
+					
 					LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
 					goto ignore_factor;
 				}
@@ -540,8 +514,8 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 	
 	if (allow_init && ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
 	{
-		LangC_UpdateNode(ctx, 0, head);
-		head->kind = LangC_NodeKind_ExprInitializer;
+		LangC_UpdateNode(ctx, 0, &head->h);
+		head->h.kind = LangC_AstKind_ExprInitializer;
 		if (has_unary)
 			LangC_LexerError(&ctx->lex, "expected expression.");
 		
@@ -552,8 +526,8 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 			parse_init: dont_parse_postfix = false;
 		}
 		
-		head->init = LangC_ParseInitializerField(ctx);
-		LangC_Node* last_init = head->init;
+		head->as->init.exprs = LangC_ParseInitializerField(ctx);
+		LangC_AstNode* last_init = (void*)head->as->init.exprs;
 		
 		while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma) &&
 			   ctx->lex.token.kind != LangC_TokenKind_RightCurl)
@@ -571,7 +545,7 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 		{
 			case LangC_TokenKind_IntLiteral:
 			{
-				LangC_UpdateNode(ctx, LangC_NodeKind_ExprInt, head);
+				LangC_UpdateNode(ctx, LangC_AstKind_ExprInt, &head->h);
 				head->value_int = ctx->lex.token.value_int;
 				
 				LangC_NextToken(&ctx->lex);
@@ -579,7 +553,7 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 			
 			case LangC_TokenKind_LIntLiteral:
 			{
-				LangC_UpdateNode(ctx, LangC_NodeKind_ExprLInt, head);
+				LangC_UpdateNode(ctx, LangC_AstKind_ExprLInt, &head->h);
 				head->value_int = ctx->lex.token.value_int;
 				
 				LangC_NextToken(&ctx->lex);
@@ -587,7 +561,7 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 			
 			case LangC_TokenKind_LLIntLiteral:
 			{
-				LangC_UpdateNode(ctx, LangC_NodeKind_ExprLLInt, head);
+				LangC_UpdateNode(ctx, LangC_AstKind_ExprLLInt, &head->h);
 				head->value_int = ctx->lex.token.value_int;
 				
 				LangC_NextToken(&ctx->lex);
@@ -595,7 +569,7 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 			
 			case LangC_TokenKind_UintLiteral:
 			{
-				LangC_UpdateNode(ctx, LangC_NodeKind_ExprUInt, head);
+				LangC_UpdateNode(ctx, LangC_AstKind_ExprUInt, &head->h);
 				head->value_uint = ctx->lex.token.value_uint;
 				
 				LangC_NextToken(&ctx->lex);
@@ -603,7 +577,7 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 			
 			case LangC_TokenKind_LUintLiteral:
 			{
-				LangC_UpdateNode(ctx, LangC_NodeKind_ExprULInt, head);
+				LangC_UpdateNode(ctx, LangC_AstKind_ExprULInt, &head->h);
 				head->value_uint = ctx->lex.token.value_uint;
 				
 				LangC_NextToken(&ctx->lex);
@@ -611,7 +585,7 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 			
 			case LangC_TokenKind_LLUintLiteral:
 			{
-				LangC_UpdateNode(ctx, LangC_NodeKind_ExprULLInt, head);
+				LangC_UpdateNode(ctx, LangC_AstKind_ExprULLInt, &head->h);
 				head->value_uint = ctx->lex.token.value_uint;
 				
 				LangC_NextToken(&ctx->lex);
@@ -622,16 +596,16 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 			{
 				bool32 is_wide;
 				
-				LangC_UpdateNode(ctx, LangC_NodeKind_ExprString, head);
+				LangC_UpdateNode(ctx, LangC_AstKind_ExprString, &head->h);
 				head->value_str = LangC_PrepareStringLiteral(ctx, &is_wide);
 				
 				if (is_wide)
-					head->kind = LangC_NodeKind_ExprWideString;
+					head->h.kind = LangC_AstKind_ExprWideString;
 			} break;
 			
 			case LangC_TokenKind_FloatLiteral:
 			{
-				LangC_UpdateNode(ctx, LangC_NodeKind_ExprFloat, head);
+				LangC_UpdateNode(ctx, LangC_AstKind_ExprFloat, &head->h);
 				head->value_float = ctx->lex.token.value_float;
 				
 				LangC_NextToken(&ctx->lex);
@@ -639,7 +613,7 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 			
 			case LangC_TokenKind_DoubleLiteral:
 			{
-				LangC_UpdateNode(ctx, LangC_NodeKind_ExprDouble, head);
+				LangC_UpdateNode(ctx, LangC_AstKind_ExprDouble, &head->h);
 				head->value_double = ctx->lex.token.value_double;
 				
 				LangC_NextToken(&ctx->lex);
@@ -650,8 +624,8 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 				if (LangC_IsBeginningOfDeclOrType(ctx))
 					LangC_LexerError(&ctx->lex, "unexpected typename.");
 				
-				LangC_UpdateNode(ctx, LangC_NodeKind_ExprIdent, head);
-				head->name = ctx->lex.token.value_ident;
+				LangC_UpdateNode(ctx, LangC_AstKind_ExprIdent, &head->h);
+				head->as->ident.name = ctx->lex.token.value_ident;
 				
 				LangC_NextToken(&ctx->lex);
 			} break;
@@ -676,8 +650,8 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 		{
 			case LangC_TokenKind_Inc:
 			{
-				LangC_Node* new_node = LangC_CreateNode(ctx, LangC_NodeKind_Expr1PostfixInc);
-				new_node->expr = head;
+				LangC_AstExpr* new_node = LangC_CreateNode(ctx, LangC_AstKind_Expr1PostfixInc, SizeofPolyAny(LangC_AstExpr));
+				new_node->as->unary.expr = head;
 				head = new_node;
 				
 				LangC_NextToken(&ctx->lex);
@@ -685,8 +659,8 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 			
 			case LangC_TokenKind_Dec:
 			{
-				LangC_Node* new_node = LangC_CreateNode(ctx, LangC_NodeKind_Expr1PostfixDec);
-				new_node->expr = head;
+				LangC_AstExpr* new_node = LangC_CreateNode(ctx, LangC_AstKind_Expr1PostfixInc, SizeofPolyAny(LangC_AstExpr));
+				new_node->as->unary.expr = head;
 				head = new_node;
 				
 				LangC_NextToken(&ctx->lex);
@@ -694,15 +668,15 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 			
 			case LangC_TokenKind_LeftParen:
 			{
-				LangC_Node* new_node = LangC_CreateNode(ctx, LangC_NodeKind_Expr2Call);
-				new_node->left = head;
+				LangC_AstExpr* new_node = LangC_CreateNode(ctx, LangC_AstKind_Expr2Call, SizeofPolyAny(LangC_AstExpr));
+				new_node->as->binary.left = head;
 				head = new_node;
 				
 				LangC_NextToken(&ctx->lex);
 				if (ctx->lex.token.kind != LangC_TokenKind_RightParen)
 				{
-					LangC_Node* last_param = LangC_ParseExpr(ctx, 1, false);
-					head->right = last_param;
+					LangC_AstNode* last_param = LangC_ParseExpr(ctx, 1, false);
+					head->as->binary.right = (void*)last_param;
 					
 					while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma))
 					{
@@ -715,33 +689,33 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 			
 			case LangC_TokenKind_LeftBrkt:
 			{
-				LangC_Node* new_node = LangC_CreateNode(ctx, LangC_NodeKind_Expr2Index);
-				new_node->left = head;
+				LangC_AstExpr* new_node = LangC_CreateNode(ctx, LangC_AstKind_Expr2Index, SizeofPolyAny(LangC_AstExpr));
+				new_node->as->binary.left = head;
 				head = new_node;
 				
 				LangC_NextToken(&ctx->lex);
-				head->right = LangC_ParseExpr(ctx, 0, false);
+				head->as->binary.right = LangC_ParseExpr(ctx, 0, false);
 				
 				LangC_EatToken(&ctx->lex, LangC_TokenKind_RightBrkt);
 			} continue;
 			
 			case LangC_TokenKind_Dot:
 			{
-				LangC_NodeKind kind = LangC_NodeKind_Expr2Access;
+				LangC_AstKind kind = LangC_AstKind_Expr2Access;
 				
 				if (0)
 				{
-					case LangC_TokenKind_Arrow: kind = LangC_NodeKind_Expr2DerefAccess;
+					case LangC_TokenKind_Arrow: kind = LangC_AstKind_Expr2DerefAccess;
 				}
 				
-				LangC_Node* new_node = LangC_CreateNode(ctx, kind);
-				new_node->expr = head;
+				LangC_AstExpr* new_node = LangC_CreateNode(ctx, kind, SizeofPolyAny(LangC_AstExpr));
+				new_node->as->access.expr = head;
 				head = new_node;
 				
 				LangC_NextToken(&ctx->lex);
 				if (LangC_AssertToken(&ctx->lex, LangC_TokenKind_Identifier))
 				{
-					head->name = ctx->lex.token.value_ident;
+					head->as->access.field = ctx->lex.token.value_ident;
 					LangC_NextToken(&ctx->lex);
 				}
 			} continue;
@@ -756,7 +730,7 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 internal LangC_Node*
 LangC_ParseExpr(LangC_Context* ctx, int32 level, bool32 allow_init)
 {
-	LangC_Node* result = LangC_ParseExprFactor(ctx, allow_init);
+	LangC_AstExpr* result = LangC_ParseExprFactor(ctx, allow_init);
 	
 	LangC_OperatorPrecedence prec;
 	while (prec = LangC_operators_precedence[ctx->lex.token.kind],
@@ -764,7 +738,7 @@ LangC_ParseExpr(LangC_Context* ctx, int32 level, bool32 allow_init)
 	{
 		int32 op = LangC_token_to_op[ctx->lex.token.kind];
 		LangC_NextToken(&ctx->lex);
-		LangC_Node* right = LangC_ParseExprFactor(ctx, false);
+		LangC_AstExpr* right = LangC_ParseExprFactor(ctx, false);
 		
 		LangC_TokenKind lookahead = ctx->lex.token.kind;
 		LangC_OperatorPrecedence lookahead_prec = LangC_operators_precedence[lookahead];
@@ -774,19 +748,19 @@ LangC_ParseExpr(LangC_Context* ctx, int32 level, bool32 allow_init)
 				(lookahead_prec.level == prec.level && lookahead_prec.right2left))) {
 			LangC_NextToken(&ctx->lex);
 			
-			LangC_Node* tmp = LangC_CreateNode(ctx, 0);
+			LangC_AstExpr* tmp;
 			
 			if (lookahead == LangC_TokenKind_QuestionMark) {
-				tmp->kind = LangC_NodeKind_Expr3Condition;
-				tmp->left = right;
-				tmp->middle = LangC_ParseExpr(ctx, 0, false);
+				tmp = LangC_CreateNode(ctx, LangC_AstKind_Expr3Condition, SizeofPolyAny(LangC_AstExpr));
+				tmp->as->ternary.left = right;
+				tmp->as->ternary.middle = LangC_ParseExpr(ctx, 0, false);
 				
 				LangC_EatToken(&ctx->lex, LangC_TokenKind_Colon);
-				tmp->right = LangC_ParseExpr(ctx, level - 1, false);
+				tmp->as->ternary.right = LangC_ParseExpr(ctx, level - 1, false);
 			} else {
-				tmp->kind = LangC_token_to_op[lookahead];
-				tmp->left = right;
-				tmp->right = LangC_ParseExpr(ctx, level + 1, false);
+				tmp = LangC_CreateNode(ctx, LangC_token_to_op[lookahead], SizeofPolyAny(LangC_AstExpr));
+				tmp->as->binary.left = right;
+				tmp->as->binary.right = LangC_ParseExpr(ctx, level + 1, false);
 			}
 			
 			lookahead = ctx->lex.token.kind;
@@ -794,20 +768,20 @@ LangC_ParseExpr(LangC_Context* ctx, int32 level, bool32 allow_init)
 			right = tmp;
 		}
 		
-		LangC_Node* tmp = LangC_CreateNode(ctx, op);
+		LangC_AstExpr* tmp = LangC_CreateNode(ctx, op, SizeofPolyAny(LangC_AstExpr));
 		
-		if (op == LangC_NodeKind_Expr3Condition)
+		if (op == LangC_AstKind_Expr3Condition)
 		{
-			tmp->left = result;
-			tmp->middle = right;
+			tmp->as->ternary.left = result;
+			tmp->as->ternary.middle = right;
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_Colon);
-			tmp->right = LangC_ParseExpr(ctx, prec.level, false);
+			tmp->as->ternary.right = LangC_ParseExpr(ctx, prec.level, false);
 		}
 		else
 		{
-			tmp->left = result;
-			tmp->right = right;
+			tmp->as->binary.left = result;
+			tmp->as->binary.right = right;
 		}
 		
 		result = tmp;
@@ -817,7 +791,7 @@ LangC_ParseExpr(LangC_Context* ctx, int32 level, bool32 allow_init)
 }
 
 internal bool32
-LangC_ParsePossibleGnuAttribute(LangC_Context* ctx, LangC_Node* apply_to)
+LangC_ParsePossibleGnuAttribute(LangC_Context* ctx, LangC_AstNode* apply_to)
 {
 	if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_GccAttribute))
 	{
@@ -831,29 +805,32 @@ LangC_ParsePossibleGnuAttribute(LangC_Context* ctx, LangC_Node* apply_to)
 				if (!LangC_IsKeyword(ctx->lex.token.kind) && ctx->lex.token.kind != LangC_TokenKind_Identifier)
 					break;
 				
-				LangC_Node* attrib = LangC_CreateNode(ctx, LangC_NodeKind_Attribute);
+				LangC_AstAttribute* attrib = NULL;
 				String name = ctx->lex.token.value_ident;
 				if (MatchCString("packed", name) || MatchCString("__packed__", name))
 				{
-					attrib->kind = LangC_NodeKind_AttributePacked;
+					attrib = LangC_CreateNode(ctx, LangC_AstKind_AttributePacked, SizeofPoly(LangC_AstAttribute, aligned));
 					
 					LangC_NextToken(&ctx->lex);
 				}
 				else if (MatchCString("aligned", name))
 				{
-					attrib->kind = LangC_NodeKind_AttributePacked;
+					attrib = LangC_CreateNode(ctx, LangC_AstKind_AttributePacked, SizeofPoly(LangC_AstAttribute, aligned));
 					
 					LangC_NextToken(&ctx->lex);
 					if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_LeftParen))
 					{
-						attrib->expr = LangC_ParseExpr(ctx, 0, false);
+						attrib->as->aligned.expr = LangC_ParseExpr(ctx, 0, false);
 						
 						LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
 					}
 				}
 				
-				attrib->next = apply_to->attributes;
-				apply_to->attributes = attrib;
+				if (attrib)
+				{
+					attrib->h.next = (void*)apply_to->attributes;
+					apply_to->attributes = attrib;
+				}
 			}
 			while (!LangC_EatToken(&ctx->lex, LangC_TokenKind_Comma));
 		}
@@ -868,7 +845,7 @@ LangC_ParsePossibleGnuAttribute(LangC_Context* ctx, LangC_Node* apply_to)
 }
 
 internal bool32
-LangC_ParsePossibleMsvcDeclspec(LangC_Context* ctx, LangC_Node* apply_to)
+LangC_ParsePossibleMsvcDeclspec(LangC_Context* ctx, LangC_AstNode* apply_to)
 {
 	if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_MsvcDeclspec))
 	{
@@ -886,10 +863,10 @@ LangC_ParsePossibleMsvcDeclspec(LangC_Context* ctx, LangC_Node* apply_to)
 	return false;
 }
 
-internal LangC_Node*
+internal void*
 LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 {
-	LangC_Node* result = NULL;
+	LangC_AstStmt* result = NULL;
 	LangC_Node* last = NULL;
 	
 	switch (ctx->lex.token.kind)
@@ -901,62 +878,62 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 		
 		case LangC_TokenKind_If:
 		{
-			last = result = LangC_CreateNode(ctx, LangC_NodeKind_StmtIf);
+			last = result = LangC_CreateNode(ctx, LangC_AstKind_StmtIf, SizeofPoly(LangC_AstStmt, generic));
 			
 			LangC_NextToken(&ctx->lex);
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftParen);
-			result->expr = LangC_ParseExpr(ctx, 0, false);
+			result->as->generic.leafs[0] = LangC_ParseExpr(ctx, 0, false);
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
-			result->stmt = LangC_ParseStmt(ctx, NULL, false);
+			result->as->generic.leafs[1] = LangC_ParseStmt(ctx, NULL, false);
 			
 			if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Else))
-				result->stmt2 = LangC_ParseStmt(ctx, NULL, false);
+				result->as->generic.leafs[2] = LangC_ParseStmt(ctx, NULL, false);
 		} break;
 		
 		case LangC_TokenKind_While:
 		{
-			last = result = LangC_CreateNode(ctx, LangC_NodeKind_StmtWhile);
+			last = result = LangC_CreateNode(ctx, LangC_AstKind_StmtWhile, SizeofPoly(LangC_AstStmt, generic));
 			
 			LangC_NextToken(&ctx->lex);
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftParen);
-			result->expr = LangC_ParseExpr(ctx, 0, false);
+			result->as->generic.leafs[0] = LangC_ParseExpr(ctx, 0, false);
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
-			result->stmt = LangC_ParseStmt(ctx, NULL, false);
+			result->as->generic.leafs[1] = LangC_ParseStmt(ctx, NULL, false);
 		} break;
 		
 		case LangC_TokenKind_For:
 		{
-			last = result = LangC_CreateNode(ctx, LangC_NodeKind_StmtFor);
+			last = result = LangC_CreateNode(ctx, LangC_AstKind_StmtFor, SizeofPoly(LangC_AstStmt, generic));
 			
 			LangC_NextToken(&ctx->lex);
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftParen);
 			if (ctx->lex.token.kind != LangC_TokenKind_Semicolon)
-				result->init = LangC_ParseDeclOrExpr(ctx, NULL, false, 0);
+				result->as->generic.leafs[0] = LangC_ParseDeclOrExpr(ctx, NULL, false, 0);
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 			if (ctx->lex.token.kind != LangC_TokenKind_Semicolon)
-				result->expr = LangC_ParseExpr(ctx, 0, false);
+				result->as->generic.leafs[1] = LangC_ParseExpr(ctx, 0, false);
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 			if (ctx->lex.token.kind != LangC_TokenKind_RightParen)
-				result->iter = LangC_ParseExpr(ctx, 0, false);
+				result->as->generic.leafs[2] = LangC_ParseExpr(ctx, 0, false);
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
-			result->stmt = LangC_ParseStmt(ctx, NULL, false);
+			result->as->generic.leafs[3] = LangC_ParseStmt(ctx, NULL, false);
 		} break;
 		
 		case LangC_TokenKind_Do:
 		{
-			last = result = LangC_CreateNode(ctx, LangC_NodeKind_StmtDoWhile);
+			last = result = LangC_CreateNode(ctx, LangC_AstKind_StmtDoWhile, SizeofPoly(LangC_AstStmt, generic));
 			
 			LangC_NextToken(&ctx->lex);
-			result->stmt = LangC_ParseStmt(ctx, NULL, false);
+			result->as->generic.leafs[0] = LangC_ParseStmt(ctx, NULL, false);
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_While);
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftParen);
-			result->expr = LangC_ParseExpr(ctx, 0, false);
+			result->as->generic.leafs[1] = LangC_ParseExpr(ctx, 0, false);
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
@@ -964,16 +941,16 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 		
 		case LangC_TokenKind_GccAttribute:
 		{
-			last = result = LangC_CreateNode(ctx, LangC_NodeKind_StmtEmpty);
-			LangC_ParsePossibleGnuAttribute(ctx, result);
+			last = result = LangC_CreateNode(ctx, LangC_AstKind_StmtEmpty, sizeof(LangC_AstStmt));
+			LangC_ParsePossibleGnuAttribute(ctx, &result->h);
 			
 			if (allow_decl && LangC_IsBeginningOfDeclOrType(ctx))
 			{
-				LangC_Node* attribs = result->attributes;
-				result = LangC_ParseDeclAndSemicolonIfNeeded(ctx, &last, 4);
+				LangC_AstAttribute* attribs = result->h.attributes;
+				result = LangC_ParseDeclAndSemicolonIfNeeded(ctx, (void*)&last, 4);
 				
-				for (LangC_Node* it = result; it; it = it->next)
-					LangC_AppendNode(ctx, &it->attributes, attribs);
+				for (LangC_AstNode* it = (void*)result; it; it = it->next)
+					LangC_AppendNode(ctx, (void*)&it->attributes, attribs);
 			}
 			else
 				LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
@@ -981,52 +958,52 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 		
 		case LangC_TokenKind_Semicolon:
 		{
-			last = result = LangC_CreateNode(ctx, LangC_NodeKind_StmtEmpty);
+			last = result = LangC_CreateNode(ctx, LangC_AstKind_StmtEmpty, sizeof(LangC_AstStmt));
 			
 			LangC_NextToken(&ctx->lex);
 		} break;
 		
 		case LangC_TokenKind_Switch:
 		{
-			last = result = LangC_CreateNode(ctx, LangC_NodeKind_StmtSwitch);
+			last = result = LangC_CreateNode(ctx, LangC_AstKind_StmtSwitch, SizeofPoly(LangC_AstStmt, generic));
 			
 			LangC_NextToken(&ctx->lex);
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftParen);
-			result->expr = LangC_ParseExpr(ctx, 0, false);
+			result->as->generic.leafs[0] = LangC_ParseExpr(ctx, 0, false);
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
-			result->stmt = LangC_ParseStmt(ctx, NULL, false);
+			result->as->generic.leafs[1] = LangC_ParseStmt(ctx, NULL, false);
 		} break;
 		
 		case LangC_TokenKind_Return:
 		{
-			last = result = LangC_CreateNode(ctx, LangC_NodeKind_StmtReturn);
+			last = result = LangC_CreateNode(ctx, LangC_AstKind_StmtReturn, SizeofPoly(LangC_AstStmt, generic));
 			
 			LangC_NextToken(&ctx->lex);
-			result->expr = LangC_ParseExpr(ctx, 0, false);
+			result->as->generic.leafs[0] = LangC_ParseExpr(ctx, 0, false);
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
 		} break;
 		
 		case LangC_TokenKind_Case:
 		{
-			result = LangC_CreateNode(ctx, LangC_NodeKind_StmtCase);
+			result = LangC_CreateNode(ctx, LangC_AstKind_StmtCase, SizeofPoly(LangC_AstStmt, generic));
 			
 			LangC_NextToken(&ctx->lex);
-			result->expr = LangC_ParseExpr(ctx, 0, false);
+			result->as->generic.leafs[0] = LangC_ParseExpr(ctx, 0, false);
 			
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_Colon);
-			result->stmt = LangC_ParseStmt(ctx, NULL, false);
+			result->as->generic.leafs[1] = LangC_ParseStmt(ctx, NULL, false);
 		} break;
 		
 		case LangC_TokenKind_Goto:
 		{
-			last = result = LangC_CreateNode(ctx, LangC_NodeKind_StmtGoto);
+			last = result = LangC_CreateNode(ctx, LangC_AstKind_StmtGoto, SizeofPoly(LangC_AstStmt, go_to));
 			
 			LangC_NextToken(&ctx->lex);
 			if (LangC_AssertToken(&ctx->lex, LangC_TokenKind_Identifier))
 			{
-				result->name = ctx->lex.token.value_ident;
+				result->as->go_to.label_name = ctx->lex.token.value_ident;
 				
 				LangC_NextToken(&ctx->lex);
 			}
@@ -1037,7 +1014,7 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 		case LangC_TokenKind_MsvcAsm:
 		{
 			// TODO(ljre): Proper __asm parsing. WTF is this syntax??????????
-			last = result = LangC_CreateNode(ctx, LangC_NodeKind_StmtEmpty);
+			last = result = LangC_CreateNode(ctx, LangC_AstKind_StmtEmpty, sizeof(LangC_AstStmt));
 			
 			LangC_NextToken(&ctx->lex);
 			if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_LeftCurl))
@@ -1053,16 +1030,16 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 		
 		case LangC_TokenKind_GccAsm:
 		{
-			last = result = LangC_CreateNode(ctx, LangC_NodeKind_StmtGccAsm);
+			last = result = LangC_CreateNode(ctx, LangC_AstKind_StmtGccAsm, SizeofPoly(LangC_AstStmt, gcc_asm));
 			
 			LangC_NextToken(&ctx->lex);
 			for (;; LangC_NextToken(&ctx->lex))
 			{
 				switch (ctx->lex.token.kind)
 				{
-					case LangC_TokenKind_Volatile: result->flags |= LangC_NodeFlags_GccAsmVolatile; continue;
-					case LangC_TokenKind_Inline: result->flags |= LangC_NodeFlags_GccAsmInline; continue;
-					case LangC_TokenKind_Goto: result->flags |= LangC_NodeFlags_GccAsmGoto; continue;
+					case LangC_TokenKind_Volatile: result->h.flags |= LangC_AstFlags_GccAsmVolatile; continue;
+					case LangC_TokenKind_Inline: result->h.flags |= LangC_AstFlags_GccAsmInline; continue;
+					case LangC_TokenKind_Goto: result->h.flags |= LangC_AstFlags_GccAsmGoto; continue;
 				}
 				
 				break;
@@ -1071,7 +1048,7 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 			LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftParen);
 			if (LangC_AssertToken(&ctx->lex, LangC_TokenKind_StringLiteral))
 			{
-				result->leafs[0] = LangC_ParseExprFactor(ctx, false);
+				result->as->gcc_asm.leafs[0] = LangC_ParseExprFactor(ctx, false);
 				
 				for (int32 i = 1; i <= 4; ++i)
 				{
@@ -1081,7 +1058,8 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 					if (ctx->lex.token.kind == LangC_TokenKind_StringLiteral ||
 						ctx->lex.token.kind == LangC_TokenKind_Identifier)
 					{
-						LangC_Node* head = result->leafs[i] = LangC_ParseExprFactor(ctx, false);
+						LangC_AstNode* head = LangC_ParseExprFactor(ctx, false);
+						result->as->gcc_asm.leafs[i] = (void*)head;
 						
 						while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma))
 							head = head->next = LangC_ParseExprFactor(ctx, false);
@@ -1100,18 +1078,18 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 			{
 				last = result = LangC_ParseExpr(ctx, 0, false);
 				
-				if (result->kind == LangC_NodeKind_ExprIdent && LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Colon))
+				if (result->h.kind == LangC_AstKind_ExprIdent && LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Colon))
 				{
-					result->kind = LangC_NodeKind_StmtLabel;
-					result->stmt = LangC_ParseStmt(ctx, NULL, false);
+					result->h.kind = LangC_AstKind_StmtLabel;
+					result->as->label.stmt = LangC_ParseStmt(ctx, NULL, false);
 					
-					if (result->stmt->kind == LangC_NodeKind_StmtEmpty)
-						result->attributes = result->stmt->attributes; // NOTE(ljre): For GCC __attribute__ only.
+					if (result->as->label.stmt->h.kind == LangC_AstKind_StmtEmpty)
+						result->h.attributes = result->as->label.stmt->h.attributes; // NOTE(ljre): For GCC __attribute__ only.
 				}
 				else
 				{
-					LangC_Node* s = LangC_CreateNode(ctx, LangC_NodeKind_StmtExpr);
-					s->expr = result;
+					LangC_AstStmt* s = LangC_CreateNode(ctx, LangC_AstKind_StmtExpr, SizeofPoly(LangC_AstStmt, expr));
+					s->as->expr.expr = (void*)result;
 					last = result = s;
 					
 					LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
@@ -1130,8 +1108,8 @@ internal LangC_Node*
 LangC_ParseBlock(LangC_Context* ctx, LangC_Node** out_last)
 {
 	LangC_EatToken(&ctx->lex, LangC_TokenKind_LeftCurl);
-	LangC_Node* result = LangC_CreateNode(ctx, LangC_NodeKind_StmtCompound);
-	LangC_Node* last = NULL;
+	LangC_AstStmt* result = LangC_CreateNode(ctx, LangC_AstKind_StmtCompound, SizeofPoly(LangC_AstStmt, compound));
+	LangC_AstNode* last = NULL;
 	
 	if (ctx->lex.token.kind == LangC_TokenKind_RightCurl)
 	{
@@ -1142,18 +1120,18 @@ LangC_ParseBlock(LangC_Context* ctx, LangC_Node** out_last)
 	}
 	else
 	{
-		LangC_PushTypeNodeScope(ctx);
-		result->stmt = LangC_ParseStmt(ctx, &last, true);
+		LangC_PushSymbolScope(ctx);
+		result->as->compound.stmts = LangC_ParseStmt(ctx, (void*)&last, true);
 		
 		while (!LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_RightCurl))
 		{
 			LangC_Node* new_last;
-			LangC_Node* new_node = LangC_ParseStmt(ctx, &new_last, true);
+			LangC_AstNode* new_node = LangC_ParseStmt(ctx, &new_last, true);
 			last->next = new_node;
 			last = new_last;
 		}
 		
-		LangC_PopTypeNodeScope(ctx);
+		LangC_PopSymbolScope(ctx);
 	}
 	
 	if (out_last)
@@ -1162,16 +1140,12 @@ LangC_ParseBlock(LangC_Context* ctx, LangC_Node** out_last)
 	return result;
 }
 
-internal LangC_Node*
-LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bool32 type_only, bool32 is_global)
+internal LangC_AstType*
+LangC_ParseRestOfDeclIt(LangC_Context* ctx, LangC_AstType** head, uint32* flags_head, LangC_AstAttribute** attrib_head, LangC_AstDecl* decl, bool32 type_only, bool32 is_global)
 {
-	LangC_Node* result = LangC_CreateNode(ctx, 0); // dummy node
-	LangC_Node* head = result;
-	
-	head->type = base;
-	LangC_Node* paren_stack[64];
-	paren_stack[0] = NULL;
-	uintsize paren_stack_size = 0;
+	LangC_AstType** result = head;
+	uint32 saved_flags = 0;
+	LangC_AstAttribute* saved_attrib = NULL;
 	
 	for (;;)
 	{
@@ -1181,38 +1155,41 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 			{
 				LangC_NextToken(&ctx->lex);
 				
-				LangC_Node* newtype = LangC_CreateNode(ctx, LangC_NodeKind_TypePointer);
-				newtype->type = head->type;
-				head->type = newtype;
+				LangC_AstType* newtype = LangC_CreateNode(ctx, LangC_AstKind_TypePointer, SizeofPoly(LangC_AstType, ptr));
+				*head = newtype;
+				
+				head = &newtype->as->ptr.to;
+				flags_head = &newtype->h.flags;
+				attrib_head = &newtype->h.attributes;
 			} continue;
 			
 			case LangC_TokenKind_Const:
 			{
 				LangC_NextToken(&ctx->lex);
 				
-				head->type->flags |= LangC_NodeFlags_Const;
+				*flags_head |= LangC_AstFlags_Const;
 			} continue;
 			
 			case LangC_TokenKind_Restrict:
 			{
 				LangC_NextToken(&ctx->lex);
 				
-				head->type->flags |= LangC_NodeFlags_Restrict;
+				*flags_head |= LangC_AstFlags_Restrict;
 			} continue;
 			
 			// NOTE(ljre): MSVC calling convention keywords
 			{
-				LangC_NodeFlags flags;
+				uint32 flags;
 				
-				/**/ if (0) case LangC_TokenKind_MsvcCdecl: flags = LangC_NodeFlags_MsvcCdecl;
-				else if (0) case LangC_TokenKind_MsvcStdcall: flags = LangC_NodeFlags_MsvcStdcall;
-				else if (0) case LangC_TokenKind_MsvcVectorcall: flags = LangC_NodeFlags_MsvcVectorcall;
-				else if (0) case LangC_TokenKind_MsvcFastcall: flags = LangC_NodeFlags_MsvcFastcall;
+				/**/ if (0) case LangC_TokenKind_MsvcCdecl: flags = LangC_AstFlags_MsvcCdecl;
+				else if (0) case LangC_TokenKind_MsvcStdcall: flags = LangC_AstFlags_MsvcStdcall;
+				else if (0) case LangC_TokenKind_MsvcVectorcall: flags = LangC_AstFlags_MsvcVectorcall;
+				else if (0) case LangC_TokenKind_MsvcFastcall: flags = LangC_AstFlags_MsvcFastcall;
 				
-				LangC_Node* attrib = LangC_CreateNode(ctx, LangC_NodeKind_AttributeCallconv);
-				attrib->flags |= flags;
-				attrib->next = head->type->attributes;
-				head->type->attributes = attrib;
+				LangC_AstAttribute* attrib = LangC_CreateNode(ctx, LangC_AstKind_AttributeCallconv, sizeof(LangC_AstAttribute));
+				attrib->h.flags |= flags;
+				attrib->h.next = (void*)*attrib_head;
+				*attrib_head = attrib;
 				
 				LangC_NextToken(&ctx->lex);
 			} continue;
@@ -1220,10 +1197,11 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 			case LangC_TokenKind_LeftParen:
 			{
 				LangC_NextToken(&ctx->lex);
-				Assert(paren_stack_size < ArrayLength(paren_stack));
+				*head = LangC_ParseRestOfDeclIt(ctx, head, &saved_flags, &saved_attrib, decl, type_only, is_global);
+				LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
 				
-				paren_stack[paren_stack_size++] = head->type;
-			} continue;
+				goto after_identifier;
+			} break;
 		}
 		
 		break;
@@ -1235,8 +1213,7 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 		LangC_NextToken(&ctx->lex);
 	}
 	
-	LangC_Node* previous_head = head;
-	head = head->type;
+	after_identifier:;
 	
 	for (;;)
 	{
@@ -1245,34 +1222,39 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 			case LangC_TokenKind_LeftParen:
 			{
 				LangC_NextToken(&ctx->lex);
-				LangC_Node* newtype = LangC_CreateNode(ctx, LangC_NodeKind_TypeFunction);
+				LangC_AstType* newtype = LangC_CreateNode(ctx, LangC_AstKind_TypeFunction, SizeofPoly(LangC_AstType, function));
 				
-				LangC_Node* attrib = head->attributes;
-				if (attrib && attrib->kind == LangC_NodeKind_AttributeCallconv)
+				if (saved_attrib)
 				{
-					newtype->attributes = attrib;
-					head->attributes = attrib->next;
-					attrib->next = NULL;
+					newtype->h.attributes = saved_attrib;
+					
+					LangC_AppendNode(ctx, (void*)&saved_attrib->h.next, *attrib_head);
+					saved_attrib->h.next = (void*)*attrib_head;
+					saved_attrib = NULL;
 				}
 				
-				// NOTE(ljre): pointer magic.
-				newtype->type = head;
-				previous_head->type = newtype;
-				previous_head = head;
-				head = newtype;
+				if (saved_flags)
+				{
+					newtype->h.flags |= saved_flags;
+					saved_flags = 0;
+				}
+				
+				newtype->as->function.ret = *head;
+				*head = newtype;
+				result = head;
 				
 				if (ctx->lex.token.kind == LangC_TokenKind_RightParen)
-					newtype->flags |= LangC_NodeFlags_VarArgs;
+					newtype->h.flags |= LangC_AstFlags_VarArgs;
 				else
 				{
-					LangC_Node* last_param;
-					newtype->params = LangC_ParseDecl(ctx, &last_param, 8, NULL);
+					LangC_AstNode* last_param;
+					newtype->as->function.params = LangC_ParseDecl(ctx, (void*)&last_param, 8, NULL);
 					
 					while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma))
 					{
 						if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_VarArgs))
 						{
-							newtype->flags |= LangC_NodeFlags_VarArgs;
+							newtype->h.flags |= LangC_AstFlags_VarArgs;
 							break;
 						}
 						
@@ -1288,46 +1270,69 @@ LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_Node* base, LangC_Node* decl, bo
 			case LangC_TokenKind_LeftBrkt:
 			{
 				LangC_NextToken(&ctx->lex);
-				LangC_Node* newtype = LangC_CreateNode(ctx, LangC_NodeKind_TypeArray);
+				LangC_AstType* newtype = LangC_CreateNode(ctx, LangC_AstKind_TypeVlaArray, SizeofPolyAny(LangC_AstType));
 				
-				// NOTE(ljre): more pointer magic.
-				newtype->type = head;
-				previous_head->type = newtype;
-				previous_head = head;
-				head = newtype;
+				if (saved_attrib)
+				{
+					newtype->h.attributes = saved_attrib;
+					
+					LangC_AppendNode(ctx, (void*)&saved_attrib->h.next, *attrib_head);
+					saved_attrib->h.next = (void*)*attrib_head;
+					saved_attrib = NULL;
+				}
+				
+				if (saved_flags)
+				{
+					newtype->h.flags |= saved_flags;
+					saved_flags = 0;
+				}
+				
+				newtype->as->array.of = *head;
+				*head = newtype;
+				result = head;
 				
 				if (ctx->lex.token.kind != LangC_TokenKind_RightBrkt)
-					newtype->expr = LangC_ParseExpr(ctx, 0, false);
+					newtype->as->vla_array.length = LangC_ParseExpr(ctx, 0, false);
 				
 				LangC_EatToken(&ctx->lex, LangC_TokenKind_RightBrkt);
 			} continue;
-			
-			case LangC_TokenKind_RightParen:
-			{
-				if (paren_stack_size > 0)
-				{
-					LangC_EatToken(&ctx->lex, LangC_TokenKind_RightParen);
-					
-					Assert(paren_stack_size > 0);
-					head = paren_stack[--paren_stack_size];
-					
-					while (previous_head->type != head)
-						previous_head = previous_head->type;
-					
-					continue;
-				}
-			} /* fallthrough */
 		}
 		
 		break;
 	}
 	
-	if (paren_stack_size > 0)
+	return *result;
+}
+
+internal LangC_AstType*
+LangC_ParseRestOfDecl(LangC_Context* ctx, LangC_AstType* base, LangC_AstDecl* decl, bool32 type_only, bool32 is_global)
+{
+	uint32 flags = 0;
+	LangC_AstAttribute* attrib = NULL;
+	LangC_AstType* head = base;
+	
+	LangC_AstType* result = LangC_ParseRestOfDeclIt(ctx, &head, &flags, &attrib, decl, type_only, is_global);
+	
+	if (flags || attrib)
 	{
-		LangC_LexerError(&ctx->lex, "expected closing ')' for declarator.");
+		LangC_AstType* tmp = LangC_CreateNode(ctx, base->h.kind, SizeofPolyAny(LangC_AstType));
+		*tmp = *base;
+		*tmp->as = *base->as;
+		
+		tmp->h.flags |= flags;
+		
+		if (attrib)
+		{
+			LangC_AstAttribute* saved_attrib = tmp->h.attributes;
+			tmp->h.attributes = attrib;
+			if (saved_attrib)
+				LangC_AppendNode(ctx, (void*)&tmp->h.attributes, saved_attrib);
+		}
+		
+		result = tmp;
 	}
 	
-	return result->type; // ignore dummy node
+	return result;
 }
 
 // NOTE(ljre): 'options': bitset
@@ -1344,12 +1349,12 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 {
 	Assert(!(options & 4) || out_should_eat_semicolon);
 	
-	LangC_Node* decl = NULL;
+	LangC_AstDecl* decl = NULL;
 	if (!(options & 1))
-		decl = LangC_CreateNode(ctx, LangC_NodeKind_Decl);
+		decl = LangC_CreateNode(ctx, LangC_AstKind_Decl, sizeof(LangC_AstDecl));
 	
-	LangC_Node* base = LangC_CreateNode(ctx, LangC_NodeKind_Type);
-	LangC_Node* callconv = NULL;
+	LangC_AstType* base = LangC_CreateNode(ctx, LangC_AstKind_Type, SizeofPolyAny(LangC_AstType));
+	LangC_AstAttribute* callconv = NULL;
 	
 	beginning:;
 	// Parse Base Type
@@ -1368,34 +1373,34 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 					break;
 				}
 				
-				if (decl->kind != LangC_NodeKind_Decl)
+				if (decl->h.kind != LangC_AstKind_Decl)
 					LangC_LexerError(&ctx->lex, "invalid use of multiple storage modifiers.");
 				else
-					decl->kind = LangC_NodeKind_DeclAuto;
+					decl->h.kind = LangC_AstKind_DeclAuto;
 			} break;
 			
 			case LangC_TokenKind_Char:
 			{
-				if (base->kind != LangC_NodeKind_Type)
+				if (base->h.kind != LangC_AstKind_Type)
 					LangC_LexerError(&ctx->lex, "object cannot have more than one type; did you miss a semicolon?");
 				else
-					base->kind |= LangC_NodeKind_TypeBaseChar;
+					base->h.kind |= LangC_AstKind_TypeChar;
 			} break;
 			
 			case LangC_TokenKind_Const:
 			{
-				if (base->flags & LangC_NodeFlags_Const)
+				if (base->h.flags & LangC_AstFlags_Const)
 					LangC_LexerError(&ctx->lex, "too much constness.");
 				
-				base->flags |= LangC_NodeFlags_Const;
+				base->h.flags |= LangC_AstFlags_Const;
 			} break;
 			
 			case LangC_TokenKind_Double:
 			{
-				if (base->kind != LangC_NodeKind_Type)
+				if (base->h.kind != LangC_AstKind_Type)
 					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				else
-					base->kind = LangC_NodeKind_TypeBaseDouble;
+					base->h.kind = LangC_AstKind_TypeDouble;
 			} break;
 			
 			case LangC_TokenKind_Extern:
@@ -1406,39 +1411,39 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 					break;
 				}
 				
-				if (decl->kind != LangC_NodeKind_Decl)
+				if (decl->h.kind != LangC_AstKind_Decl)
 					LangC_LexerError(&ctx->lex, "invalid use of multiple storage modifiers.");
 				else
-					decl->flags |= LangC_NodeKind_DeclExtern;
+					decl->h.flags |= LangC_AstKind_DeclExtern;
 			} break;
 			
 			case LangC_TokenKind_Enum:
 			{
-				if (base->kind != LangC_NodeKind_Type)
+				if (base->h.kind != LangC_AstKind_Type)
 					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				
-				base->kind = LangC_NodeKind_TypeBaseEnum;
+				base->h.kind = LangC_AstKind_TypeEnum;
 				
 				LangC_NextToken(&ctx->lex);
 				if (ctx->lex.token.kind == LangC_TokenKind_Identifier)
 				{
-					base->name = ctx->lex.token.value_ident;
+					base->as->enumerator.name = ctx->lex.token.value_ident;
 					
 					LangC_NextToken(&ctx->lex);
 				}
 				
 				if (ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
-					base->body = LangC_ParseEnumBody(ctx);
+					base->as->enumerator.entries = LangC_ParseEnumBody(ctx);
 				
-				LangC_ParsePossibleGnuAttribute(ctx, base);
+				LangC_ParsePossibleGnuAttribute(ctx, (void*)base);
 			} continue;  // ignore the LangC_NextToken() at the end.
 			
 			case LangC_TokenKind_Float:
 			{
-				if (base->kind != LangC_NodeKind_Type)
+				if (base->h.kind != LangC_AstKind_Type)
 					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				else
-					base->kind = LangC_NodeKind_TypeBaseFloat;
+					base->h.kind = LangC_AstKind_TypeFloat;
 			} break;
 			
 			case LangC_TokenKind_GccExtension:
@@ -1448,10 +1453,10 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 			
 			case LangC_TokenKind_Int:
 			{
-				if (base->kind != LangC_NodeKind_Type)
+				if (base->h.kind != LangC_AstKind_Type)
 					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				else
-					base->kind = LangC_NodeKind_TypeBaseInt;
+					base->h.kind = LangC_AstKind_TypeInt;
 			} break;
 			
 			case LangC_TokenKind_Inline:
@@ -1462,26 +1467,26 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 					break;
 				}
 				
-				if (decl->flags & LangC_NodeFlags_Inline)
+				if (decl->h.flags & LangC_AstFlags_Inline)
 					LangC_LexerError(&ctx->lex, "repeated use of keyword 'inline'.");
 				
-				decl->flags |= LangC_NodeFlags_Inline;
+				decl->h.flags |= LangC_AstFlags_Inline;
 			} break;
 			
 			case LangC_TokenKind_Long:
 			{
-				if (base->flags & LangC_NodeFlags_LongLong)
+				if (base->h.flags & LangC_AstFlags_LongLong)
 					LangC_LexerError(&ctx->lex, "too long for me.");
-				else if (base->flags & LangC_NodeFlags_Short)
+				else if (base->h.flags & LangC_AstFlags_Short)
 					LangC_LexerError(&ctx->lex, "'long' does not work with 'short'.");
-				else if (base->flags & LangC_NodeFlags_Long)
+				else if (base->h.flags & LangC_AstFlags_Long)
 				{
 					// combination of long and short flags is long long
-					base->flags &= ~LangC_NodeFlags_Long;
-					base->flags |= LangC_NodeFlags_LongLong;
+					base->h.flags &= ~LangC_AstFlags_Long;
+					base->h.flags |= LangC_AstFlags_LongLong;
 				}
 				else
-					base->flags |= LangC_NodeFlags_Long;
+					base->h.flags |= LangC_AstFlags_Long;
 			} break;
 			
 			case LangC_TokenKind_MsvcDeclspec:
@@ -1490,27 +1495,31 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 				{
 					LangC_LexerError(&ctx->lex, "expected a type.");
 					
-					LangC_Node dummy = { 0 };
+					LangC_AstNode dummy = { 0 };
 					LangC_ParsePossibleMsvcDeclspec(ctx, &dummy);
 					break;
 				}
 				
-				LangC_ParsePossibleMsvcDeclspec(ctx, decl);
+				LangC_ParsePossibleMsvcDeclspec(ctx, (void*)decl);
 			} break;
 			
 			// NOTE(ljre): MSVC calling convention keywords
 			{
-				LangC_NodeFlags flags;
+				uint32 flags;
 				
-				/**/ if (0) case LangC_TokenKind_MsvcCdecl: flags = LangC_NodeFlags_MsvcCdecl;
-				else if (0) case LangC_TokenKind_MsvcStdcall: flags = LangC_NodeFlags_MsvcStdcall;
-				else if (0) case LangC_TokenKind_MsvcVectorcall: flags = LangC_NodeFlags_MsvcVectorcall;
-				else if (0) case LangC_TokenKind_MsvcFastcall: flags = LangC_NodeFlags_MsvcFastcall;
+				/**/ if (0) case LangC_TokenKind_MsvcCdecl: flags = LangC_AstFlags_MsvcCdecl;
+				else if (0) case LangC_TokenKind_MsvcStdcall: flags = LangC_AstFlags_MsvcStdcall;
+				else if (0) case LangC_TokenKind_MsvcVectorcall: flags = LangC_AstFlags_MsvcVectorcall;
+				else if (0) case LangC_TokenKind_MsvcFastcall: flags = LangC_AstFlags_MsvcFastcall;
 				
 				if (!callconv)
 				{
-					callconv = LangC_CreateNode(ctx, LangC_NodeKind_AttributeCallconv);
-					callconv->flags |= flags;
+					callconv = LangC_CreateNode(ctx, LangC_AstKind_AttributeCallconv, sizeof(*callconv));
+					callconv->h.flags |= flags;
+				}
+				else
+				{
+					// TODO(ljre): Error
 				}
 			} break;
 			
@@ -1522,38 +1531,38 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 					break;
 				}
 				
-				if (decl->kind != LangC_NodeKind_Decl)
+				if (decl->h.kind != LangC_AstKind_Decl)
 					LangC_LexerError(&ctx->lex, "invalid use of multiple storage modifiers.");
 				else
-					decl->flags |= LangC_NodeKind_DeclRegister;
+					decl->h.flags |= LangC_AstKind_DeclRegister;
 			} break;
 			
 			case LangC_TokenKind_Restrict:
 			{
-				if (base->flags & LangC_NodeFlags_Restrict)
+				if (base->h.flags & LangC_AstFlags_Restrict)
 					LangC_LexerError(&ctx->lex, "repeated use of keyword 'restrict'.");
 				
-				base->flags |= LangC_NodeFlags_Restrict;
+				base->h.flags |= LangC_AstFlags_Restrict;
 			} break;
 			
 			case LangC_TokenKind_Short:
 			{
-				if (base->flags & (LangC_NodeFlags_Long | LangC_NodeFlags_LongLong))
+				if (base->h.flags & (LangC_AstFlags_Long | LangC_AstFlags_LongLong))
 					LangC_LexerError(&ctx->lex, "'short' does not work with 'long'.");
-				else if (base->flags & LangC_NodeFlags_Short)
+				else if (base->h.flags & LangC_AstFlags_Short)
 					LangC_LexerError(&ctx->lex, "too short for me.\n");
 				else
-					base->flags |= LangC_NodeFlags_Short;
+					base->h.flags |= LangC_AstFlags_Short;
 			} break;
 			
 			case LangC_TokenKind_Signed:
 			{
-				if (base->flags & LangC_NodeFlags_Signed)
+				if (base->h.flags & LangC_AstFlags_Signed)
 					LangC_LexerError(&ctx->lex, "repeated use of keyword 'signed'.");
-				else if (base->flags & LangC_NodeFlags_Unsigned)
+				else if (base->h.flags & LangC_AstFlags_Unsigned)
 					LangC_LexerError(&ctx->lex, "'signed' does not work with 'unsigned'.");
 				else
-					base->flags |= LangC_NodeFlags_Signed;
+					base->h.flags |= LangC_AstFlags_Signed;
 			} break;
 			
 			case LangC_TokenKind_Static:
@@ -1564,31 +1573,31 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 					break;
 				}
 				
-				if (decl->kind != LangC_NodeKind_Decl)
+				if (decl->h.kind != LangC_AstKind_Decl)
 					LangC_LexerError(&ctx->lex, "invalid use of multiple storage modifiers.");
 				else
-					decl->kind = LangC_NodeKind_DeclStatic;
+					decl->h.kind = LangC_AstKind_DeclStatic;
 			} break;
 			
 			case LangC_TokenKind_Struct:
 			{
-				if (base->kind != LangC_NodeKind_Type)
+				if (base->h.kind != LangC_AstKind_Type)
 					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				
-				base->kind = LangC_NodeKind_TypeBaseStruct;
+				base->h.kind = LangC_AstKind_TypeStruct;
 				
 				LangC_NextToken(&ctx->lex);
 				if (ctx->lex.token.kind == LangC_TokenKind_Identifier)
 				{
-					base->name = ctx->lex.token.value_ident;
+					base->as->structure.name = ctx->lex.token.value_ident;
 					
 					LangC_NextToken(&ctx->lex);
 				}
 				
 				if (ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
-					base->body = LangC_ParseStructBody(ctx);
+					base->as->structure.body = LangC_ParseStructBody(ctx);
 				
-				LangC_ParsePossibleGnuAttribute(ctx, base);
+				LangC_ParsePossibleGnuAttribute(ctx, (void*)base);
 			} continue;  // ignore the LangC_NextToken() at the end.
 			
 			case LangC_TokenKind_Typedef:
@@ -1599,84 +1608,84 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 					break;
 				}
 				
-				if (decl->kind != LangC_NodeKind_Decl)
+				if (decl->h.kind != LangC_AstKind_Decl)
 					LangC_LexerError(&ctx->lex, "invalid use of multiple storage modifiers.");
 				else
-					decl->kind = LangC_NodeKind_DeclTypedef;
+					decl->h.kind = LangC_AstKind_DeclTypedef;
 			} break;
 			
 			case LangC_TokenKind_Union:
 			{
-				if (base->kind != LangC_NodeKind_Type)
+				if (base->h.kind != LangC_AstKind_Type)
 					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				
-				base->kind = LangC_NodeKind_TypeBaseUnion;
+				base->h.kind = LangC_AstKind_TypeUnion;
 				
 				LangC_NextToken(&ctx->lex);
 				if (ctx->lex.token.kind == LangC_TokenKind_Identifier)
 				{
-					base->name = ctx->lex.token.value_ident;
+					base->as->structure.name = ctx->lex.token.value_ident;
 					
 					LangC_NextToken(&ctx->lex);
 				}
 				
 				if (ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
-					base->body = LangC_ParseStructBody(ctx);
+					base->as->structure.body = LangC_ParseStructBody(ctx);
 				
-				LangC_ParsePossibleGnuAttribute(ctx, base);
+				LangC_ParsePossibleGnuAttribute(ctx, (void*)base);
 			} continue; // ignore the LangC_NextToken() at the end.
 			
 			case LangC_TokenKind_Unsigned:
 			{
-				if (base->flags & LangC_NodeFlags_Unsigned)
+				if (base->h.flags & LangC_AstFlags_Unsigned)
 					LangC_LexerError(&ctx->lex, "repeated use of keyword 'unsigned'.");
-				else if (base->flags & LangC_NodeFlags_Signed)
+				else if (base->h.flags & LangC_AstFlags_Signed)
 					LangC_LexerError(&ctx->lex, "'unsigned' does not work with 'signed'.");
 				else
-					base->flags |= LangC_NodeFlags_Unsigned;
+					base->h.flags |= LangC_AstFlags_Unsigned;
 			} break;
 			
 			case LangC_TokenKind_Void:
 			{
-				if (base->kind != LangC_NodeKind_Type)
+				if (base->h.kind != LangC_AstKind_Type)
 					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				else
-					base->kind |= LangC_NodeKind_TypeBaseVoid;
+					base->h.kind |= LangC_AstKind_TypeVoid;
 			} break;
 			
 			case LangC_TokenKind_Volatile:
 			{
-				if (base->flags & LangC_NodeFlags_Volatile)
+				if (base->h.flags & LangC_AstFlags_Volatile)
 					LangC_LexerError(&ctx->lex, "repeated use of keyword 'volatile'.");
 				
-				base->flags |= LangC_NodeFlags_Volatile;
+				base->h.flags |= LangC_AstFlags_Volatile;
 			} break;
 			
 			case LangC_TokenKind_Bool:
 			{
-				if (base->kind != LangC_NodeKind_Type)
+				if (base->h.kind != LangC_AstKind_Type)
 					LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 				else
-					base->kind = LangC_NodeKind_TypeBaseBool;
+					base->h.kind = LangC_AstKind_TypeBool;
 			} break;
 			
 			case LangC_TokenKind_Complex:
 			{
-				if (base->flags & LangC_NodeFlags_Complex)
+				if (base->h.flags & LangC_AstFlags_Complex)
 					LangC_LexerError(&ctx->lex, "repeated use of keyword '_Complex'.");
 				
-				base->flags |= LangC_NodeFlags_Complex;
+				base->h.flags |= LangC_AstFlags_Complex;
 			} break;
 			
 			case LangC_TokenKind_Identifier:
 			{
 				if (LangC_IsBeginningOfDeclOrType(ctx))
 				{
-					if (base->kind != LangC_NodeKind_Type)
+					if (base->h.kind != LangC_AstKind_Type)
 						LangC_LexerError(&ctx->lex, "object cannot have more than one type.");
 					
-					base->kind = LangC_NodeKind_TypeBaseTypename;
-					base->name = ctx->lex.token.value_ident;
+					base->h.kind = LangC_AstKind_TypeTypename;
+					base->as->typedefed.name = ctx->lex.token.value_ident;
 					break;
 				}
 				else if (options & 1)
@@ -1692,28 +1701,28 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 	out_of_loop:;
 	
 	bool32 implicit_int = false;
-	if (base->kind == LangC_NodeKind_Type)
+	if (base->h.kind == LangC_AstKind_Type)
 	{
-		if (base->flags & (LangC_NodeFlags_Unsigned |
-						   LangC_NodeFlags_Signed |
-						   LangC_NodeFlags_Short |
-						   LangC_NodeFlags_Long |
-						   LangC_NodeFlags_LongLong))
+		if (base->h.flags & (LangC_AstFlags_Unsigned |
+							 LangC_AstFlags_Signed |
+							 LangC_AstFlags_Short |
+							 LangC_AstFlags_Long |
+							 LangC_AstFlags_LongLong))
 		{
-			base->kind = LangC_NodeKind_TypeBaseInt;
+			base->h.kind = LangC_AstKind_TypeInt;
 		}
 		else
 			implicit_int = true;
 	}
 	
 	right_before_parsing_rest_of_decl:;
-	LangC_Node* type = LangC_ParseRestOfDecl(ctx, base, decl, options & 1, options & 2);
+	LangC_AstType* type = LangC_ParseRestOfDecl(ctx, base, decl, options & 1, options & 2);
 	
 	if (implicit_int)
 	{
 		bool32 reported = false;
 		
-		if (type->kind >= LangC_NodeKind_TypeBase__First && type->kind <= LangC_NodeKind_TypeBase__Last)
+		if (type->h.kind >= LangC_AstKind_TypeChar && type->h.kind <= LangC_AstKind_TypeEnum)
 		{
 			if (options & 1)
 			{
@@ -1746,35 +1755,31 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 		
 		if (!reported)
 		{
-			if (type->kind == LangC_NodeKind_TypeFunction)
+			if (type->h.kind == LangC_AstKind_TypeFunction)
 				LangC_LexerWarning(&ctx->lex, LangC_Warning_ImplicitInt, "implicit return type 'int'.");
 			else
 				LangC_LexerWarning(&ctx->lex, LangC_Warning_ImplicitInt, "implicit type 'int'.");
 		}
 		
-		base->kind = LangC_NodeKind_TypeBaseInt;
+		base->h.kind = LangC_AstKind_TypeInt;
 	}
 	
-	if (callconv && type->kind == LangC_NodeKind_TypeFunction)
-	{
-		callconv->next = type->attributes;
-		type->attributes = callconv;
-	}
+	// TODO(ljre): Apply 'callconv'
 	
 	if (options & 8)
 	{
-		if (type->kind == LangC_NodeKind_TypeArray)
+		if (type->h.kind == LangC_AstKind_TypeArray)
 		{
-			type->kind = LangC_NodeKind_TypePointer;
-			type->flags |= LangC_NodeFlags_Decayed;
+			type->h.kind = LangC_AstKind_TypePointer;
+			type->h.flags |= LangC_AstFlags_Decayed;
 		}
-		else if (type->kind == LangC_NodeKind_TypeFunction)
+		else if (type->h.kind == LangC_AstKind_TypeFunction)
 		{
-			LangC_Node* new_node = LangC_CreateNode(ctx, LangC_NodeKind_TypePointer);
-			new_node->type = type;
-			type = new_node;
+			LangC_AstType* newtype = LangC_CreateNode(ctx, LangC_AstKind_TypePointer, SizeofPoly(LangC_AstType, ptr));
+			newtype->as->ptr.to = type;
+			type = newtype;
 			
-			type->flags |= LangC_NodeFlags_Decayed;
+			type->h.flags |= LangC_AstFlags_Decayed;
 		}
 	}
 	
@@ -1782,23 +1787,19 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 		return type;
 	
 	// This is a declaration!
-	LangC_Node* last = decl;
+	LangC_AstNode* last = (void*)decl;
 	decl->type = type;
 	
-	if (decl->kind == LangC_NodeKind_DeclTypedef)
-		LangC_DefineTypeNode(ctx, decl);
+	if (decl->h.kind == LangC_AstKind_DeclTypedef)
+		LangC_TypedefDecl(ctx, decl);
 	
 	if (ctx->lex.token.kind == LangC_TokenKind_LeftCurl)
 	{
-		if (type->kind != LangC_NodeKind_TypeFunction)
-		{
+		if (type->h.kind != LangC_AstKind_TypeFunction)
 			LangC_LexerError(&ctx->lex, "invalid block for non-function declaration.");
-		}
 		
 		if (!(options & 2))
-		{
 			LangC_LexerError(&ctx->lex, "function definitions are only allowed in global scope.");
-		}
 		
 		decl->body = LangC_ParseBlock(ctx, NULL);
 	}
@@ -1806,33 +1807,50 @@ LangC_ParseDecl(LangC_Context* ctx, LangC_Node** out_last, int32 options, bool32
 	{
 		if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Assign))
 		{
-			if (decl->kind == LangC_NodeKind_DeclTypedef)
+			if (decl->h.kind == LangC_AstKind_DeclTypedef)
 				LangC_LexerError(&ctx->lex, "cannot assign to types.");
-			else if (decl->kind == LangC_NodeKind_DeclExtern)
+			else if (decl->h.kind == LangC_AstKind_DeclExtern)
 				LangC_LexerError(&ctx->lex, "cannot initialize a declaration with 'extern' storage modifier.");
 			
-			decl->expr = LangC_ParseExpr(ctx, 1, true);
+			decl->init = LangC_ParseExpr(ctx, 1, true);
 		}
 		
 		while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma))
 		{
-			LangC_Node* new_node = LangC_CreateNode(ctx, decl->kind);
+			LangC_AstDecl* new_node = LangC_CreateNode(ctx, decl->h.kind, sizeof(LangC_AstDecl));
 			new_node->type = LangC_ParseRestOfDecl(ctx, base, new_node, false, options & 2);
-			last = last->next = new_node;
+			last = last->next = (void*)new_node;
 			
-			if (decl->kind == LangC_NodeKind_DeclTypedef)
+			// TODO(ljre): Apply 'callconv'
+			
+			if (options & 8)
 			{
-				LangC_DefineTypeNode(ctx, last);
+				if (new_node->type->h.kind == LangC_AstKind_TypeArray)
+				{
+					new_node->type->h.kind = LangC_AstKind_TypePointer;
+					new_node->type->h.flags |= LangC_AstFlags_Decayed;
+				}
+				else if (new_node->type->h.kind == LangC_AstKind_TypeFunction)
+				{
+					LangC_AstType* newtype = LangC_CreateNode(ctx, LangC_AstKind_TypePointer, SizeofPoly(LangC_AstType, ptr));
+					newtype->as->ptr.to = new_node->type;
+					new_node->type = newtype;
+					
+					new_node->type->h.flags |= LangC_AstFlags_Decayed;
+				}
 			}
+			
+			if (decl->h.kind == LangC_AstKind_DeclTypedef)
+				LangC_TypedefDecl(ctx, new_node);
 			
 			if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Assign))
 			{
-				if (decl->kind == LangC_NodeKind_DeclTypedef)
+				if (decl->h.kind == LangC_AstKind_DeclTypedef)
 					LangC_LexerError(&ctx->lex, "cannot assign to types.");
-				else if (decl->kind == LangC_NodeKind_DeclExtern)
+				else if (decl->h.kind == LangC_AstKind_DeclExtern)
 					LangC_LexerError(&ctx->lex, "cannot initialize a declaration with 'extern' storage modifier.");
 				
-				new_node->expr = LangC_ParseExpr(ctx, 1, true);
+				new_node->init = LangC_ParseExpr(ctx, 1, true);
 			}
 		}
 		
@@ -1849,7 +1867,7 @@ internal LangC_Node*
 LangC_ParseDeclAndSemicolonIfNeeded(LangC_Context* ctx, LangC_Node** out_last, int32 options)
 {
 	bool32 b = false;
-	LangC_Node* result = LangC_ParseDecl(ctx, out_last, options, &b);
+	LangC_AstNode* result = LangC_ParseDecl(ctx, out_last, options, &b);
 	
 	if (b)
 		LangC_EatToken(&ctx->lex, LangC_TokenKind_Semicolon);
@@ -1862,18 +1880,24 @@ LangC_ParseFile(LangC_Context* ctx)
 {
 	Trace();
 	
-	LangC_Node* first_node = NULL;
-	LangC_Node* last_node;
+	LangC_AstDecl* first_node = NULL;
+	LangC_AstDecl* last_node;
 	
 	LangC_SetupLexer(&ctx->lex, ctx->pre_source, ctx->persistent_arena);
 	ctx->lex.ctx = ctx;
+	LangC_PushSymbolScope(ctx);
 	
-#if 1
+	ctx->scope->names = LittleMap_Create(ctx->persistent_arena, 1 << 14);
+	ctx->scope->types = LittleMap_Create(ctx->persistent_arena, 1 << 14);
+	ctx->scope->structs = LittleMap_Create(ctx->persistent_arena, 1 << 14);
+	ctx->scope->unions = LittleMap_Create(ctx->persistent_arena, 1 << 14);
+	ctx->scope->enums = LittleMap_Create(ctx->persistent_arena, 1 << 14);
+	
 	LangC_NextToken(&ctx->lex);
 	
 	while (ctx->lex.token.kind == LangC_TokenKind_Semicolon)
 		LangC_NextToken(&ctx->lex);
-	first_node = LangC_ParseDeclAndSemicolonIfNeeded(ctx, &last_node, 2 | 4);
+	first_node = LangC_ParseDeclAndSemicolonIfNeeded(ctx, (void*)&last_node, 2 | 4);
 	
 	while (ctx->lex.token.kind != LangC_TokenKind_Eof)
 	{
@@ -1881,20 +1905,9 @@ LangC_ParseFile(LangC_Context* ctx)
 			LangC_NextToken(&ctx->lex);
 		
 		LangC_Node* new_last = NULL;
-		last_node->next = LangC_ParseDeclAndSemicolonIfNeeded(ctx, &new_last, 2 | 4);
+		last_node->h.next = LangC_ParseDeclAndSemicolonIfNeeded(ctx, &new_last, 2 | 4);
 		last_node = new_last;
 	}
-#else
-	while (LangC_NextToken(&ctx->lex), ctx->lex.token.kind != LangC_TokenKind_Eof)
-	{
-		switch (ctx->lex.token.kind)
-		{
-			case LangC_TokenKind_Identifier: Print("%S (ident)\n", StrFmt(ctx->lex.token.value_ident)); break;
-			case LangC_TokenKind_StringLiteral: Print("\"%S\"\n", StrFmt(ctx->lex.token.value_str)); break;
-			default: Print("%s\n", LangC_token_str_table[ctx->lex.token.kind]); break;
-		}
-	}
-#endif
 	
 	ctx->ast = first_node;
 	return true;

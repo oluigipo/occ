@@ -124,8 +124,8 @@ LangC_FlushWarnings(LangC_Context* ctx)
 #include "lang_c_lexer.c"
 #include "lang_c_preprocessor.c"
 #include "lang_c_parser.c"
-#include "lang_c_resolution.c"
-#include "lang_c_gen.c"
+//#include "lang_c_resolution.c"
+//#include "lang_c_gen.c"
 
 #include "lang_c_driver.c"
 

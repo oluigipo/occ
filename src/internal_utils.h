@@ -91,7 +91,7 @@ SimpleHash(String str)
 	uintsize i = 0;
 	
 	while (i < str.size && str.data[i]) {
-		uint8 value = (uint64)str.data[i++];
+		uint64 value = (uint64)str.data[i++];
 		
 		hash ^= value;
 		hash *= 16777619ull;

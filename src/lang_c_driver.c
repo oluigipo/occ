@@ -27,45 +27,38 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	StringList* last_input_file = NULL;
 	String output_file = StrInit("a.out");
 	int32 mode = 0;
+	LangC_ABI abi = {
+		.t_char = { 1, 0, true },
+		.t_schar = { 1, 0, false },
+		.t_uchar = { 1, 0, true },
+		.t_short = { 2, 1, false },
+		.t_ushort = { 2, 1, true },
+		.t_int = { 4, 3, false },
+		.t_uint = { 4, 3, true },
+		.t_long = { 4, 3, false },
+		.t_ulong = { 4, 3, true },
+		.t_longlong = { 8, 7, false },
+		.t_ulonglong = { 8, 7, true },
+		.t_double = { 8, 7, false },
+		.t_float = { 4, 3, false },
+		.t_ptr = { 8, 7, true },
+		.t_bool = { 1, 0, true },
+		
+		.char_bit = 8,
+		.index_sizet = 10,
+		.index_ptrdifft = 9,
+	};
+	
 	LangC_Context* ctx = &(LangC_Context) {
 		.options = &options,
 		.persistent_arena = Arena_Create(Gigabytes(32)),
 		.stage_arena = Arena_Create(Gigabytes(8)),
 		
-		.abi = &(LangC_ABI) {
-			.t_char = { 1, 0, true },
-			.t_schar = { 1, 0, false },
-			.t_uchar = { 1, 0, true },
-			.t_short = { 2, 1, false },
-			.t_ushort = { 2, 1, true },
-			.t_int = { 4, 3, false },
-			.t_uint = { 4, 3, true },
-			.t_long = { 4, 3, false },
-			.t_ulong = { 4, 3, true },
-			.t_longlong = { 8, 7, false },
-			.t_ulonglong = { 8, 7, true },
-			.t_double = { 8, 7, false },
-			.t_float = { 4, 3, false },
-			.t_ptr = { 8, 7, true },
-			.t_bool = { 1, 0, true },
-			
-			.char_bit = 8,
-			.index_sizet = 10,
-			.index_ptrdifft = 9,
-		},
+		.abi = &abi,
 	};
 	
 	Map_Init(&ctx->pp.obj_macros, sizeof(LangC_Macro), sizeof(LangC_Macro) * 100000);
 	Map_Init(&ctx->pp.func_macros, sizeof(LangC_Macro), sizeof(LangC_Macro) * 10000);
-	
-	// NOTE(ljre): Last item is 'void', which has no ABIType
-	for (int32 i = 0; i < ArrayLength(LangC_basic_types_table)-1; ++i)
-	{
-		LangC_Node* node = &LangC_basic_types_table[i];
-		
-		node->size = ctx->abi->t[i].size;
-		node->alignment_mask = ctx->abi->t[i].alignment_mask;
-	}
 	
 	//~ NOTE(ljre): Setup system include directory
 	{
@@ -80,7 +73,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 		
 		if (last_slash_index != -1)
 		{
-			options.include_dirs_count = 1;
+			StringList* p = PushMemory(sizeof(*p));
 			
 			uintsize len = last_slash_index+1 + sizeof include;
 			char* path = PushMemory(len + 1);
@@ -89,7 +82,8 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 			OurMemCopy(path + last_slash_index+1, include, sizeof include);
 			path[len] = 0;
 			
-			options.include_dirs[0] = StrMake(path, len + 1);
+			p->value = StrMake(path, len + 1);
+			options.include_dirs = p;
 		}
 	}
 	
@@ -160,7 +154,11 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 			
 			dir[needed_len] = 0;
 			
-			options.include_dirs[++options.include_dirs_count] = StrMake(dir, needed_len+1);
+			StringList* p = PushMemory(sizeof(*p));
+			p->value = StrMake(dir, needed_len+1);
+			p->next = options.include_dirs;
+			
+			options.include_dirs = p;
 		}
 		else if (StringStartsWith(strflag, "D"))
 		{
@@ -264,11 +262,11 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 				Arena_Clear(ctx->stage_arena);
 				
 				ok = ok && LangC_ParseFile(ctx); Arena_Clear(ctx->stage_arena);
-				ok = ok && LangC_ResolveAst(ctx); Arena_Clear(ctx->stage_arena);
+				//ok = ok && LangC_ResolveAst(ctx); Arena_Clear(ctx->stage_arena);
 				
 				LangC_FlushWarnings(ctx);
 				
-				ok = ok && LangC_GenIr(ctx); Arena_Clear(ctx->stage_arena);
+				//ok = ok && LangC_GenIr(ctx); Arena_Clear(ctx->stage_arena);
 				// TODO
 			}
 		} break;

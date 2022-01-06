@@ -102,9 +102,9 @@ LangC_TryToLoadFile(LangC_Context* ctx, String path, bool32 relative, String inc
 		}
 	}
 	
-	for (int32 i = ctx->options->include_dirs_count - 1; i >= 0 ; --i)
+	for (StringList* it = ctx->options->include_dirs; it; it = it->next)
 	{
-		String include_dir = ctx->options->include_dirs[i];
+		String include_dir = it->value;
 		include_dir = IgnoreNullTerminator(include_dir);
 		
 		OurMemCopy(fullpath, include_dir.data, include_dir.size);

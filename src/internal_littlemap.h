@@ -62,6 +62,7 @@ LittleMap_Insert(LittleMap* map, String key, void* value)
 		{
 			map->entries[index].key = key;
 			map->entries[index].value = value;
+			map->entries[index].hash = hash;
 			
 			++map->len;
 			return true;
@@ -75,10 +76,8 @@ LittleMap_Insert(LittleMap* map, String key, void* value)
 }
 
 internal void*
-LittleMap_Fetch(LittleMap* map, String key)
+LittleMap_FetchWithCachedHash(LittleMap* map, String key, uint64 hash)
 {
-	uint64 hash = SimpleHash(key);
-	
 	for (; map; map = map->next)
 	{
 		uint32 start_index = hash & (map->cap-1);
@@ -102,6 +101,12 @@ LittleMap_Fetch(LittleMap* map, String key)
 	}
 	
 	return NULL;
+}
+
+internal void*
+LittleMap_Fetch(LittleMap* map, String key)
+{
+	return LittleMap_FetchWithCachedHash(map, key, SimpleHash(key));
 }
 
 #endif //INTERNAL_LITTLEMAP_H
