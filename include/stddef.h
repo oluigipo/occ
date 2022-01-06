@@ -16,9 +16,17 @@
 typedef unsigned long long size_t;
 typedef signed long long ptrdiff_t;
 
+#define __SIZEOF_LONG 4
+
 #elif defined(_WIN32) || defined(__linux__)
 typedef unsigned long size_t;
 typedef signed long ptrdiff_t;
+
+#ifdef __x86_64__
+#   define __SIZEOF_LONG 8
+#else
+#   define __SIZEOF_LONG 4
+#endif
 
 #endif // _WIN64
 

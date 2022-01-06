@@ -109,4 +109,39 @@ LittleMap_Fetch(LittleMap* map, String key)
 	return LittleMap_FetchWithCachedHash(map, key, SimpleHash(key));
 }
 
+struct LittleMap_Iterator
+{
+	LittleMap* map;
+	uintsize index;
+}
+typedef LittleMap_Iterator;
+
+internal bool32
+LittleMap_Next(LittleMap_Iterator* iter, String* opt_key, void** opt_value)
+{
+	beginning:;
+	
+	if (!iter->map || iter->index >= iter->map->cap)
+		return false;
+	
+	LittleMap_Entry* cur = &iter->map->entries[iter->index];
+	LittleMap_Entry* end = &iter->map->entries[iter->map->cap];
+	
+	while (cur->hash == 0 && cur->key.size == 0)
+	{
+		if (++cur >= end)
+		{
+			iter->map = iter->map->next;
+			goto beginning;
+		}
+	}
+	
+	if (opt_key)
+		*opt_key = cur->key;
+	if (opt_value)
+		*opt_value = cur->value;
+	
+	return true;
+}
+
 #endif //INTERNAL_LITTLEMAP_H

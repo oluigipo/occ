@@ -330,10 +330,19 @@ float value_float;\
 double value_double;\
 }
 
+struct LangC_LexerFile
+{
+	String path;
+	int32 included_line;
+	bool32 is_system_file;
+	LangC_LexerFile* included_from;
+};
+
 struct LangC_Token
 {
 	int32 line, col;
 	LangC_TokenKind kind;
+	bool32 dont_expand;
 	String as_string;
 	String leading_spaces;
 	
@@ -345,14 +354,6 @@ struct LangC_TokenList
 {
 	LangC_TokenList* next;
 	LangC_Token token;
-};
-
-struct LangC_LexerFile
-{
-	String path;
-	int32 included_line;
-	bool32 is_system_file;
-	LangC_LexerFile* included_from;
 };
 
 struct LangC_Lexer
@@ -387,6 +388,7 @@ enum LangC_AstKind
 	LangC_AstKind_Null = 0,
 	LangC_AstKind__Category = 12,
 	LangC_AstKind__CategoryMask = ~((1<<LangC_AstKind__Category)-1),
+	LangC_AstKind__CategoryCount = 8,
 	
 	LangC_AstKind_Type = 1 << LangC_AstKind__Category,
 	LangC_AstKind_TypeChar, // first
@@ -538,7 +540,8 @@ enum LangC_AstFlags
 	LangC_AstFlags_MsvcFastcall = 1<< 3,
 };
 
-// NOTE(ljre): Because warnings.
+// NOTE(ljre): Because warnings... we can typedef to LangC_AstNode if clang supports recognizing
+//             inheritance-like structs layouts warning suppresion.
 typedef void LangC_Node;
 
 // NOTE(ljre): Base type for AST Nodes.
@@ -570,7 +573,8 @@ struct LangC_AstType
 	LangC_AstNode h;
 	
 	uint64 size;
-	uint16 alignment;
+	uint16 alignment_mask;
+	// NOTE(ljre): there's padding here, so add more stuff if needed.
 	
 	union
 	{
@@ -578,6 +582,8 @@ struct LangC_AstType
 		struct { LangC_AstType* of; uint64 length; } array;
 		struct { LangC_AstType* to; } ptr;
 		struct { LangC_AstType* ret; LangC_AstDecl* params; } function;
+		struct { LangC_AstType* base; } not_base; // NOTE(ljre): This should match the beginning of the above.
+		
 		struct { LangC_AstDecl* body; String name; } structure;
 		struct { String name; } typedefed;
 		struct { LangC_AstDecl* entries; String name; } enumerator;
@@ -725,7 +731,7 @@ struct LangC_Symbol
 		struct { LangC_SymbolScope* fields; } structure;
 		struct { LangC_SymbolScope* entries; } enumerator;
 		struct { int32 value; } enum_const;
-		struct { uintsize offset; } field;
+		struct { uint64 offset; } field;
 	} as[];
 };
 

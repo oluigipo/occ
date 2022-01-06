@@ -436,7 +436,34 @@ LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_le
 				
 				LangC_IgnoreWhitespaces(&def_head, false);
 			}
-			while (def_head[0] == ',' && ++def_head && LangC_EatToken(parent_lex, LangC_TokenKind_Comma));
+			while (def_head[0] == ',' && ++def_head && LangC_TryToEatToken(parent_lex, LangC_TokenKind_Comma));
+		}
+		
+		while (def_head[0] == ',')
+		{
+			++def_head;
+			
+			LangC_IgnoreWhitespaces(&def_head, false);
+			LangC_MacroParameter* param = &params[param_count++];
+			String name;
+			
+			if (def_head[0] == '.' && def_head[1] == '.' && def_head[2] == '.')
+			{
+				def_head += 3;
+				name = Str("__VA_ARGS__");
+			}
+			else
+			{
+				const char* name_begin = def_head;
+				
+				while (LangC_IsIdentChar(*def_head))
+					++def_head;
+				
+				name = StrMake(name_begin, (uintsize)(def_head - name_begin));
+			}
+			
+			param->name = name;
+			param->expands_to = "";
 		}
 		
 		while (parent_lex->token.kind && parent_lex->token.kind != LangC_TokenKind_RightParen)
@@ -568,6 +595,9 @@ LangC_ExpandMacro(LangC_Context* ctx, LangC_Macro* macro, LangC_Lexer* parent_le
 				else
 				{
 					LangC_NextToken(lex);
+					if (tok.kind == LangC_TokenKind_Identifier && CompareStringFast(macro->name, tok.value_ident) == 0)
+						tok.dont_expand = true;
+					
 					LangC_PushToken(parent_lex, &tok);
 				}
 			} break;
@@ -1133,12 +1163,15 @@ LangC_Preprocess2(LangC_Context* ctx, String path, const char* source, LangC_Lex
 			{
 				String ident = lex->token.value_ident;
 				String leading_spaces = lex->token.leading_spaces;
-				LangC_Macro* macro;
+				LangC_Macro* macro = NULL;
 				
-				if (LangC_PeekIncomingToken(lex).kind == LangC_TokenKind_LeftParen)
-					macro = LangC_FindMacro(ctx, ident, 3);
-				else
-					macro = LangC_FindMacro(ctx, ident, 0);
+				if (!lex->token.dont_expand)
+				{
+					if (LangC_PeekIncomingToken(lex).kind == LangC_TokenKind_LeftParen)
+						macro = LangC_FindMacro(ctx, ident, 3);
+					else
+						macro = LangC_FindMacro(ctx, ident, 0);
+				}
 				
 				if (macro)
 					LangC_ExpandMacro(ctx, macro, lex, leading_spaces);

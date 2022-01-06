@@ -238,6 +238,10 @@ LangC_IgnoreWhitespaces(const char** p, bool32 newline)
 		{
 			*p += 2;
 		}
+		else if (**p == '\\' && (*p)[1] == '\r')
+		{
+			*p += 2 + ((*p)[2] == '\n');
+		}
 		else
 		{
 			break;
@@ -325,7 +329,8 @@ LangC_TokenizeStringLiteral(LangC_Lexer* lex)
 		if (end[0] == '\n')
 			break;
 		
-		if (end[0] == '\\' && (end[1] == '\n' || end[1] == '\\' || end[1] == '"'))
+		if (end[0] == '\\' && ((end[1] == '\n' || end[1] == '\r' && end[2] == '\n')
+							   || end[1] == '\\' || end[1] == '"'))
 		{
 			end += 2;
 		}
@@ -371,6 +376,7 @@ LangC_NextToken(LangC_Lexer* lex)
 	beginning:;
 	LangC_IgnoreWhitespaces(&lex->head, !lex->preprocessor);
 	
+	lex->token.dont_expand = false;
 	lex->token.as_string.data = lex->head;
 	lex->token.line = lex->line;
 	lex->token.col = lex->col;
@@ -904,8 +910,11 @@ LangC_AssertToken(LangC_Lexer* lex, LangC_TokenKind kind)
 	if (lex->token.kind != kind)
 	{
 		result = false;
-		LangC_LexerError(lex, "expected '%s', but got '%S'.",
-						 LangC_token_str_table[kind], StrFmt(lex->token.as_string));
+		if (lex->token.kind)
+			LangC_LexerError(lex, "expected '%s', but got '%S'.",
+							 LangC_token_str_table[kind], StrFmt(lex->token.as_string));
+		else
+			LangC_LexerError(lex, "expected '%s' before end of file.", LangC_token_str_table[kind]);
 	}
 	
 	return result;

@@ -203,11 +203,14 @@ LangC_ParseEnumBody(LangC_Context* ctx)
 	LangC_AstNode* last = &result->h;
 	
 	if (LangC_AssertToken(&ctx->lex, LangC_TokenKind_Identifier))
+	{
 		result->name = ctx->lex.token.value_ident;
+		LangC_NextToken(&ctx->lex);
+	}
 	
 	LangC_ParsePossibleGnuAttribute(ctx, &result->h);
 	
-	if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Equals))
+	if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Assign))
 		result->init = LangC_ParseExpr(ctx, 1, false);
 	
 	while (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Comma) &&
@@ -216,11 +219,14 @@ LangC_ParseEnumBody(LangC_Context* ctx)
 		LangC_AstDecl* new_node = LangC_CreateNode(ctx, LangC_AstKind_DeclEnumEntry, sizeof(LangC_AstDecl));
 		
 		if (LangC_AssertToken(&ctx->lex, LangC_TokenKind_Identifier))
+		{
 			new_node->name = ctx->lex.token.value_ident;
+			LangC_NextToken(&ctx->lex);
+		}
 		
 		LangC_ParsePossibleGnuAttribute(ctx, &new_node->h);
 		
-		if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Equals))
+		if (LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_Assign))
 			new_node->init = LangC_ParseExpr(ctx, 1, false);
 		
 		last = last->next = &new_node->h;
@@ -630,6 +636,11 @@ LangC_ParseExprFactor(LangC_Context* ctx, bool32 allow_init)
 				LangC_NextToken(&ctx->lex);
 			} break;
 			
+			case LangC_TokenKind_Eof:
+			{
+				LangC_LexerError(&ctx->lex, "expected expression before end of file.");
+			} break;
+			
 			default:
 			{
 				LangC_LexerError(&ctx->lex, "expected expression.");
@@ -871,6 +882,11 @@ LangC_ParseStmt(LangC_Context* ctx, LangC_Node** out_last, bool32 allow_decl)
 	
 	switch (ctx->lex.token.kind)
 	{
+		case LangC_TokenKind_Eof:
+		{
+			LangC_LexerError(&ctx->lex, "expected statement before end of file.");
+		} break;
+		
 		case LangC_TokenKind_LeftCurl:
 		{
 			result = LangC_ParseBlock(ctx, NULL);
@@ -1118,12 +1134,12 @@ LangC_ParseBlock(LangC_Context* ctx, LangC_Node** out_last)
 		
 		LangC_EatToken(&ctx->lex, LangC_TokenKind_RightCurl);
 	}
-	else
+	else if (ctx->lex.token.kind)
 	{
 		LangC_PushSymbolScope(ctx);
 		result->as->compound.stmts = LangC_ParseStmt(ctx, (void*)&last, true);
 		
-		while (!LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_RightCurl))
+		while (ctx->lex.token.kind && !LangC_TryToEatToken(&ctx->lex, LangC_TokenKind_RightCurl))
 		{
 			LangC_Node* new_last;
 			LangC_AstNode* new_node = LangC_ParseStmt(ctx, &new_last, true);
@@ -1889,9 +1905,9 @@ LangC_ParseFile(LangC_Context* ctx)
 	
 	ctx->scope->names = LittleMap_Create(ctx->persistent_arena, 1 << 14);
 	ctx->scope->types = LittleMap_Create(ctx->persistent_arena, 1 << 14);
-	ctx->scope->structs = LittleMap_Create(ctx->persistent_arena, 1 << 14);
-	ctx->scope->unions = LittleMap_Create(ctx->persistent_arena, 1 << 14);
-	ctx->scope->enums = LittleMap_Create(ctx->persistent_arena, 1 << 14);
+	ctx->scope->structs = LittleMap_Create(ctx->persistent_arena, 1 << 13);
+	ctx->scope->unions = LittleMap_Create(ctx->persistent_arena, 1 << 13);
+	ctx->scope->enums = LittleMap_Create(ctx->persistent_arena, 1 << 13);
 	
 	LangC_NextToken(&ctx->lex);
 	
@@ -1910,5 +1926,5 @@ LangC_ParseFile(LangC_Context* ctx)
 	}
 	
 	ctx->ast = first_node;
-	return true;
+	return ctx->error_count == 0;
 }
