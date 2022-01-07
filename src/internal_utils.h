@@ -236,6 +236,7 @@ OurStrCopy_(char* restrict buf, const char* restrict from, uintsize max)
 //             %z  (uintsize)
 //             %f  (double)
 //             %c  (char)
+//             %0  places null terminator
 //
 //             Returns how many bytes where written to 'buf'.
 internal uintsize
@@ -320,6 +321,11 @@ OurVPrintf(char* buf, uintsize len, const char* fmt, va_list args)
 			{
 				double n = va_arg(args, double);
 				outhead += snprintf(outhead, outend - outhead, "%f", n);
+			} break;
+			
+			case '0':
+			{
+				*outhead++ = 0;
 			} break;
 			
 			case 0: goto out_of_the_loop;
@@ -426,6 +432,7 @@ OurVPrintfSize(const char* fmt, va_list args)
 				result += snprintf(NULL, 0, "%f", n);
 			} break;
 			
+			case '0':
 			default:
 			{
 				result += 1;

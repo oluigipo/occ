@@ -2,6 +2,40 @@ internal void C_Preprocess2(C_Context* ctx, String path, const char* source, C_L
 internal void C_PreprocessIfDef(C_Context* ctx, C_Lexer* lex, bool32 not);
 internal void C_PreprocessIf(C_Context* ctx, C_Lexer* lex);
 
+internal void
+C_PreprocessWriteToken(C_Context* ctx, const C_Token* token)
+{
+	if (!ctx->pp.stream)
+	{
+		Arena_PushMemory(ctx->persistent_arena, StrFmt(token->as_string));
+		Arena_PushMemory(ctx->persistent_arena, StrFmt(token->leading_spaces));
+	}
+	else if (token->kind != C_TokenKind_NewLine)
+	{
+		C_Token copy = *token;
+		
+		if (copy.kind == C_TokenKind_Identifier)
+			copy.kind = C_FindKeywordByString(copy.as_string);
+		
+		ctx->pp.stream = C_PushTokenToStream(ctx->pp.stream, &copy, ctx->persistent_arena);
+	}
+}
+
+internal String
+C_PreprocessSPrintf(C_Context* ctx, const char* fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	
+	String result;
+	if (ctx->pp.stream)
+		result = Arena_VSPrintf(ctx->persistent_arena, fmt, args);
+	else
+		result = Arena_VSPrintf(ctx->stage_arena, fmt, args);
+	
+	return result;
+}
+
 internal C_PPLoadedFile*
 C_LoadFileFromDisk(C_Context* ctx, const char path[MAX_PATH_SIZE], uint64 calculated_hash, bool32 relative)
 {
@@ -180,7 +214,7 @@ C_IgnoreUntilNewline(C_Lexer* lex)
 }
 
 internal C_Macro*
-C_DefineMacro(C_Context* ctx, String definition)
+C_DefineMacro(C_Context* ctx, String definition, const C_SourceTrace* from)
 {
 	C_Preprocessor* const pp = &ctx->pp;
 	const char* def = Arena_NullTerminateString(ctx->stage_arena, definition);
@@ -197,11 +231,33 @@ C_DefineMacro(C_Context* ctx, String definition)
 	};
 	
 	bool32 is_func_like = (head[0] == '(');
+	uint32 param_count = 0;
+	
+	if (is_func_like)
+	{
+		// TODO(ljre): Check if parameter names are valid identifiers.
+		C_IgnoreWhitespaces(&head, false);
+		
+		if (*++head != ')')
+		{
+			++param_count;
+			
+			for (; head[0] && head[0] != ')'; ++head)
+			{
+				if (head[0] == ',')
+					++param_count;
+			}
+		}
+	}
 	
 	C_Macro obj = {
 		.def = def,
 		.name = name,
+		.param_count = param_count,
 	};
+	
+	if (from)
+		obj.trace = *from;
 	
 	uint64 hash = SimpleHash(name);
 	
@@ -280,48 +336,51 @@ C_TracePreprocessor(C_Context* ctx, C_Lexer* lex, uint32 flags)
 {
 	Assert(flags < 16);
 	
-	static const char* const flag_table[] = {
-		NULL,
-		"1",
-		"2",
-		"1 2",
-		"3",
-		"1 3",
-		"2 3",
-		"1 2 3",
-		"4",
-		"1 4",
-		"2 4",
-		"1 2 4",
-		"3 4",
-		"1 3 4",
-		"2 3 4",
-		"1 2 3 4",
-	};
-	
-	if (flags)
-		Arena_Printf(ctx->persistent_arena, "# %i \"%S\" %s\n", lex->line, StrFmt(lex->file->path), flag_table[flags]);
-	else
-		Arena_Printf(ctx->persistent_arena, "# %i \"%S\"\n", lex->line, StrFmt(lex->file->path));
+	if (!ctx->tokens)
+	{
+		static const char* const flag_table[] = {
+			NULL,
+			"1",
+			"2",
+			"1 2",
+			"3",
+			"1 3",
+			"2 3",
+			"1 2 3",
+			"4",
+			"1 4",
+			"2 4",
+			"1 2 4",
+			"3 4",
+			"1 3 4",
+			"2 3 4",
+			"1 2 3 4",
+		};
+		
+		if (flags)
+			Arena_Printf(ctx->persistent_arena, "# %i \"%S\" %s\n", lex->line, StrFmt(lex->file->path), flag_table[flags]);
+		else
+			Arena_Printf(ctx->persistent_arena, "# %i \"%S\"\n", lex->line, StrFmt(lex->file->path));
+	}
 }
 
 internal void
 C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leading_spaces)
 {
 	TraceName(macro->name);
+	C_SourceTrace invocation_trace = parent_lex->token.trace;
 	
 	// NOTE(ljre): Handle special macros
 	if (MatchCString("__LINE__", macro->name))
 	{
 		int32 line = parent_lex->line;
-		char* mem = Arena_End(ctx->stage_arena);
-		uintsize needed = Arena_Printf(ctx->stage_arena, "%i", line);
 		
 		C_Token tok = {
 			.kind = C_TokenKind_IntLiteral,
-			.as_string = StrMake(mem, needed),
+			.as_string = C_PreprocessSPrintf(ctx, "%i", line),
 			.leading_spaces = StrNull,
 			.value_int = line,
+			.trace = parent_lex->token.trace,
 		};
 		
 		C_PushTokenToFront(parent_lex, &tok);
@@ -331,14 +390,13 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 	else if (MatchCString("__FILE__", macro->name))
 	{
 		String file = parent_lex->file->path;
-		char* mem = Arena_End(ctx->stage_arena);
-		uintsize needed = Arena_Printf(ctx->stage_arena, "\"%S\"", StrFmt(file));
 		
 		C_Token tok = {
 			.kind = C_TokenKind_StringLiteral,
-			.as_string = StrMake(mem, needed),
+			.as_string = C_PreprocessSPrintf(ctx, "\"%S\"", StrFmt(file)),
 			.leading_spaces = StrNull,
 			.value_str = file,
+			.trace = parent_lex->token.trace,
 		};
 		
 		C_PushTokenToFront(parent_lex, &tok);
@@ -350,8 +408,8 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 	macro->expanding = true;
 	const char* def_head = macro->def;
 	
-	C_MacroParameter params[128];
-	int32 param_count = 0;
+	C_MacroParameter* params = NULL;
+	uint32 param_count = 0;
 	
 	bool8 is_func_like = Map_Owns(&ctx->pp.func_macros, macro);
 	
@@ -363,6 +421,8 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 	// NOTE(ljre): Define parameters as macros
 	if (is_func_like)
 	{
+		params = Arena_Push(ctx->stage_arena, macro->param_count * sizeof(*params));
+		
 		C_NextToken(parent_lex); // eat macro name
 		C_EatToken(parent_lex, C_TokenKind_LeftParen);
 		
@@ -374,7 +434,7 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 			{
 				C_IgnoreWhitespaces(&def_head, false);
 				C_MacroParameter* param = &params[param_count++];
-				Assert(param_count <= ArrayLength(params));
+				Assert(param_count <= macro->param_count);
 				
 				String name;
 				char* buf = Arena_End(ctx->stage_arena);
@@ -480,8 +540,9 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 	// NOTE(ljre): Expand macro
 	C_Lexer* lex = &(C_Lexer) {
 		.preprocessor = true,
-		.file = parent_lex->file,
-		.line = parent_lex->line,
+		.file = macro->trace.file,
+		.line = macro->trace.line,
+		.col = macro->trace.col,
 		.ctx = ctx,
 	};
 	
@@ -493,6 +554,17 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 	parent_lex->waiting_token = NULL;
 	
 	C_SetupLexer(lex, def_head, parent_lex->arena);
+	
+	// NOTE(ljre): Insert Trace
+	{
+		Arena* arena = (ctx->tokens) ? ctx->persistent_arena : ctx->stage_arena;
+		C_SourceTrace* trace = Arena_Push(arena, sizeof(*trace));
+		*trace = invocation_trace;
+		
+		lex->invocation = trace;
+		lex->macro_def = macro;
+	}
+	
 	C_NextToken(lex);
 	
 	// NOTE(ljre): Expand macro.
@@ -507,29 +579,22 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 				C_MacroParameter* param;
 				if (!is_func_like ||
 					!C_AssertToken(lex, C_TokenKind_Identifier) ||
-					!(param = C_FindMacroParameter(params, param_count, lex->token.value_ident)))
+					!(param = C_FindMacroParameter(params, macro->param_count, lex->token.value_ident)))
 				{
 					C_LexerError(parent_lex, "expected a macro parameter for stringification.");
 				}
 				else
 				{
-					uintsize len = strlen(param->expands_to);
-					char* buf = Arena_PushAligned(ctx->stage_arena, len+2, 1);
-					
-					buf[0] = '"';
-					OurMemCopy(buf + 1, param->expands_to, len);
-					buf[len + 1] = '"';
+					// TODO(ljre): Fix this.
+					String str = C_PreprocessSPrintf(ctx, "\"%s\"", param->expands_to);
 					
 					C_Token tok = {
 						.kind = C_TokenKind_StringLiteral,
 						.leading_spaces = lex->token.leading_spaces,
-						.as_string = {
-							.size = len + 2,
-							.data = buf,
-						},
+						.as_string = str,
 						.value_str = {
-							.size = len,
-							.data = buf + 1,
+							.size = str.size - 2,
+							.data = str.data + 1,
 						},
 					};
 					
@@ -1011,7 +1076,7 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 	};
 	
 	C_SetupLexer(lex, source, ctx->stage_arena);
-	C_PushLexerFile(lex, path, from);
+	C_PushFileTrace(lex, path, from);
 	
 	C_TracePreprocessor(ctx, lex, 1);
 	
@@ -1099,7 +1164,7 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 							.data = def,
 						};
 						
-						C_DefineMacro(ctx, macro_def);
+						C_DefineMacro(ctx, macro_def, &lex->token.trace);
 					}
 				}
 				else if (MatchCString("undef", directive))
@@ -1177,8 +1242,7 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 					C_ExpandMacro(ctx, macro, lex, leading_spaces);
 				else
 				{
-					Arena_PushMemory(ctx->persistent_arena, ident.size, ident.data);
-					Arena_PushMemory(ctx->persistent_arena, leading_spaces.size, leading_spaces.data);
+					C_PreprocessWriteToken(ctx, &lex->token);
 					C_NextToken(lex);
 				}
 				
@@ -1195,8 +1259,7 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 					previous_was_newline = true;
 				}
 				
-				Arena_PushMemory(ctx->persistent_arena, StrFmt(lex->token.as_string));
-				Arena_PushMemory(ctx->persistent_arena, StrFmt(lex->token.leading_spaces));
+				C_PreprocessWriteToken(ctx, &lex->token);
 				C_NextToken(lex);
 			} break;
 		}
@@ -1211,20 +1274,29 @@ C_Preprocess(C_Context* ctx, String path)
 	Trace();
 	
 	// NOTE(ljre): Those macros are handled internally, but a definition is still needed.
-	C_DefineMacro(ctx, Str("__LINE__"))->persistent = true;
-	C_DefineMacro(ctx, Str("__FILE__"))->persistent = true;
+	C_DefineMacro(ctx, Str("__LINE__"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__FILE__"), NULL)->persistent = true;
 	
 	String fullpath;
 	ctx->source = C_TryToLoadFile(ctx, path, true, StrNull, &fullpath);
-	ctx->pre_source = Arena_End(ctx->persistent_arena);
-	ctx->use_stage_arena_for_warnings = true;
-	
 	if (ctx->source)
+	{
+		if (!ctx->tokens)
+		{
+			ctx->pre_source = Arena_End(ctx->persistent_arena);
+			ctx->use_stage_arena_for_warnings = true;
+		}
+		else
+		{
+			ctx->pp.stream = ctx->tokens;
+		}
+		
 		C_Preprocess2(ctx, fullpath, ctx->source, NULL);
+	}
 	else
 	{
 		Print("error: could not open input file '%S'.\n", StrFmt(path));
-		++C_error_count;
+		++ctx->error_count;
 	}
 	
 #if 0

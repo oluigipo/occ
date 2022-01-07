@@ -6,7 +6,8 @@ internal void C_NextToken(C_Lexer* lex);
 internal void
 C_SetupLexer(C_Lexer* lex, const char* source, Arena* arena)
 {
-	lex->col = 1;
+	if (lex->col == 0)
+		lex->col = 1;
 	if (lex->line == 0)
 		lex->line = 1;
 	
@@ -21,9 +22,9 @@ C_SetupLexer(C_Lexer* lex, const char* source, Arena* arena)
 }
 
 internal void
-C_PushLexerFile(C_Lexer* lex, String path, C_Lexer* trace_from)
+C_PushFileTrace(C_Lexer* lex, String path, C_Lexer* trace_from)
 {
-	C_LexerFile* file = Arena_Push(lex->arena, sizeof *file);
+	C_SourceFileTrace* file = Arena_Push(lex->arena, sizeof(*file));
 	
 	if (!trace_from)
 		trace_from = lex;
@@ -36,9 +37,9 @@ C_PushLexerFile(C_Lexer* lex, String path, C_Lexer* trace_from)
 }
 
 internal void
-C_PopLexerFile(C_Lexer* lex)
+C_PopFileTrace(C_Lexer* lex)
 {
-	C_LexerFile* file = lex->file;
+	C_SourceFileTrace* file = lex->file;
 	
 	lex->file = file->included_from;
 	lex->line = file->included_line + 1;
@@ -65,18 +66,18 @@ C_IsIdentChar(char ch)
 }
 
 internal void
-C_PrintIncludeStack(C_LexerFile* file, int32 line)
+C_PrintIncludeStack(C_SourceFileTrace* file, uint32 line)
 {
 	if (file->included_from)
 		C_PrintIncludeStack(file->included_from, file->included_line);
 	
-	Print("%C1%S%C0(%i): in included file\n", StrFmt(file->path), line);
+	Print("%C1%S%C0(%u): in included file\n", StrFmt(file->path), line);
 }
 
 internal void
 C_LexerError(C_Lexer* lex, const char* fmt, ...)
 {
-	C_LexerFile* file = lex->file;
+	C_SourceFileTrace* file = lex->file;
 	C_error_count++;
 	
 	Print("\n");
@@ -94,12 +95,12 @@ C_LexerError(C_Lexer* lex, const char* fmt, ...)
 }
 
 internal void
-C_PrintIncludeStackToArena(C_LexerFile* file, int32 line, Arena* arena)
+C_PrintIncludeStackToArena(C_SourceFileTrace* file, uint32 line, Arena* arena)
 {
 	if (file->included_from)
 		C_PrintIncludeStackToArena(file->included_from, file->included_line, arena);
 	
-	Arena_Printf(arena, "%C1%S%C0(%i): in included file\n", StrFmt(file->path), line);
+	Arena_Printf(arena, "%C1%S%C0(%u): in included file\n", StrFmt(file->path), line);
 }
 
 internal void
@@ -107,7 +108,7 @@ C_LexerWarning(C_Lexer* lex, C_Warning warning, const char* fmt, ...)
 {
 	if (lex->ctx && C_IsWarningEnabled(lex->ctx, warning))
 	{
-		C_LexerFile* file = lex->file;
+		C_SourceFileTrace* file = lex->file;
 		char* buf = Arena_End(global_arena);
 		
 		Arena_PushMemory(global_arena, 1, "\n");
@@ -125,6 +126,18 @@ C_LexerWarning(C_Lexer* lex, C_Warning warning, const char* fmt, ...)
 		
 		C_PushWarning(lex->ctx, warning, buf);
 	}
+}
+
+internal C_TokenKind
+C_FindKeywordByString(String str)
+{
+	for (int32 keyword = C_TokenKind__FirstKeyword; keyword <= C_TokenKind__LastKeyword; ++keyword)
+	{
+		if (MatchCString(C_token_str_table[keyword], str))
+			return keyword;
+	}
+	
+	return C_TokenKind_Identifier;
 }
 
 internal void
@@ -378,8 +391,12 @@ C_NextToken(C_Lexer* lex)
 	
 	lex->token.dont_expand = false;
 	lex->token.as_string.data = lex->head;
-	lex->token.line = lex->line;
-	lex->token.col = lex->col;
+	
+	lex->token.trace.line = lex->line;
+	lex->token.trace.col = lex->col;
+	lex->token.trace.file = lex->file;
+	lex->token.trace.invocation = lex->invocation;
+	lex->token.trace.macro_def = lex->macro_def;
 	
 	switch (lex->head[0])
 	{
@@ -446,13 +463,13 @@ C_NextToken(C_Lexer* lex)
 					// NOTE(ljre): "This indicates the start of a new file."
 					if (flags & 1 || !lex->file)
 					{
-						C_PushLexerFile(lex, file, NULL);
+						C_PushFileTrace(lex, file, NULL);
 					}
 					
 					// NOTE(ljre): "This indicates returning to a file (after having included another file)."
 					if (flags & 2)
 					{
-						C_PopLexerFile(lex);
+						C_PopFileTrace(lex);
 					}
 					
 					lex->line = line;
@@ -623,16 +640,7 @@ C_NextToken(C_Lexer* lex)
 			lex->token.value_ident = ident;
 			
 			if (!lex->preprocessor)
-			{
-				for (int32 keyword = C_TokenKind__FirstKeyword; keyword <= C_TokenKind__LastKeyword; ++keyword)
-				{
-					if (MatchCString(C_token_str_table[keyword], ident))
-					{
-						lex->token.kind = keyword;
-						break;
-					}
-				}
-			}
+				lex->token.kind = C_FindKeywordByString(ident);
 		} break;
 		
 		case '"':
@@ -938,4 +946,15 @@ C_TryToEatToken(C_Lexer* lex, C_TokenKind kind)
 	}
 	
 	return false;
+}
+
+internal C_TokenStream*
+C_PushTokenToStream(C_TokenStream* stream, const C_Token* token, Arena* arena)
+{
+	if (stream->len >= ArrayLength(stream->tokens))
+		stream = stream->next = Arena_Push(arena, sizeof(*stream));
+	
+	stream->tokens[stream->len++] = *token;
+	
+	return stream;
 }

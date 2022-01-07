@@ -124,9 +124,9 @@ C_FlushWarnings(C_Context* ctx)
 // NOTE(ljre): The order of the includes here matters.
 #include "lang_c_lexer.c"
 #include "lang_c_preprocessor.c"
-#include "lang_c_parser.c"
-#include "lang_c_analyzer.c"
-#include "lang_c_gen.c"
+//#include "lang_c_parser.c"
+//#include "lang_c_analyzer.c"
+//#include "lang_c_gen.c"
 
 #include "lang_c_driver.c"
 

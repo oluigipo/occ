@@ -182,11 +182,11 @@ C_DefaultDriver(int32 argc, const char** argv)
 				const char* value_begin = ++flag;
 				char* mem = Arena_End(global_arena);
 				uintsize len = Arena_Printf(global_arena, "%S %s", name_end - name_begin, name_begin, value_begin);
-				C_DefineMacro(ctx, StrMake(mem, len));
+				C_DefineMacro(ctx, StrMake(mem, len), NULL);
 			}
 			else
 			{
-				C_DefineMacro(ctx, StrMake(name_begin, name_end - name_begin))->persistent = true;
+				C_DefineMacro(ctx, StrMake(name_begin, name_end - name_begin), NULL)->persistent = true;
 			}
 		}
 		else if (StringStartsWith(strflag, "help") || StringStartsWith(strflag, "-help"))
@@ -205,45 +205,45 @@ C_DefaultDriver(int32 argc, const char** argv)
 	Assert(input_files);
 	
 	//~ NOTE(ljre): Default predefined macros.
-	C_DefineMacro(ctx, Str("__STDC__ 1"))->persistent = true;
-	C_DefineMacro(ctx, Str("__STDC_HOSTED__ 1"))->persistent = true;
-	C_DefineMacro(ctx, Str("__STDC_VERSION__ 199901L"))->persistent = true;
-	C_DefineMacro(ctx, Str("__x86_64 1"))->persistent = true;
-	C_DefineMacro(ctx, Str("__x86_64__ 1"))->persistent = true;
-	C_DefineMacro(ctx, Str("_M_AMD64 1"))->persistent = true;
-	C_DefineMacro(ctx, Str("_M_X64 1"))->persistent = true;
-	C_DefineMacro(ctx, Str("_WIN32 1"))->persistent = true;
-	C_DefineMacro(ctx, Str("_WIN64 1"))->persistent = true;
-	C_DefineMacro(ctx, Str("__OCC__ 1"))->persistent = true;
+	C_DefineMacro(ctx, Str("__STDC__ 1"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__STDC_HOSTED__ 1"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__STDC_VERSION__ 199901L"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__x86_64 1"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__x86_64__ 1"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("_M_AMD64 1"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("_M_X64 1"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("_WIN32 1"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("_WIN64 1"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__OCC__ 1"), NULL)->persistent = true;
 	
 	// NOTE(ljre): Polyfills
-	C_DefineMacro(ctx, Str("__int64 long long"))->persistent = true;
-	C_DefineMacro(ctx, Str("__int32 int"))->persistent = true;
-	C_DefineMacro(ctx, Str("__int16 short"))->persistent = true;
-	C_DefineMacro(ctx, Str("__int8 char"))->persistent = true;
-	C_DefineMacro(ctx, Str("__inline inline"))->persistent = true;
-	C_DefineMacro(ctx, Str("__inline__ inline"))->persistent = true;
-	C_DefineMacro(ctx, Str("__restrict restrict"))->persistent = true;
-	C_DefineMacro(ctx, Str("__restrict__ restrict"))->persistent = true;
-	C_DefineMacro(ctx, Str("__const const"))->persistent = true;
-	C_DefineMacro(ctx, Str("__const__ const"))->persistent = true;
-	C_DefineMacro(ctx, Str("__volatile volatile"))->persistent = true;
-	C_DefineMacro(ctx, Str("__volatile__ volatile"))->persistent = true;
-	C_DefineMacro(ctx, Str("__attribute __attribute__"))->persistent = true;
-	//C_DefineMacro(ctx, Str("__forceinline inline"))->persistent = true;
-	//C_DefineMacro(ctx, Str("__attribute__(...)"))->persistent = true;
-	//C_DefineMacro(ctx, Str("__declspec(...)"))->persistent = true;
-	C_DefineMacro(ctx, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"))->persistent = true;
-	C_DefineMacro(ctx, Str("__builtin_va_list void*"))->persistent = true;
+	C_DefineMacro(ctx, Str("__int64 long long"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__int32 int"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__int16 short"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__int8 char"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__inline inline"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__inline__ inline"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__restrict restrict"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__restrict__ restrict"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__const const"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__const__ const"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__volatile volatile"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__volatile__ volatile"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__attribute __attribute__"), NULL)->persistent = true;
+	//C_DefineMacro(ctx, Str("__forceinline inline"), NULL)->persistent = true;
+	//C_DefineMacro(ctx, Str("__attribute__(...)"), NULL)->persistent = true;
+	//C_DefineMacro(ctx, Str("__declspec(...)"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("__builtin_va_list void*"), NULL)->persistent = true;
 	
 #if 1
 	// NOTE(ljre): MINGW macros
-	C_DefineMacro(ctx, Str("_MSC_VER 1910"))->persistent = true;
-	C_DefineMacro(ctx, Str("_MSC_FULL_VER 191025017"))->persistent = true;
-	//C_DefineMacro(ctx, Str("__MINGW_ATTRIB_DEPRECATED_STR(x)"))->persistent = true;
-	//C_DefineMacro(ctx, Str("__MINGW_ATTRIB_NONNULL(x)"))->persistent = true;
-	//C_DefineMacro(ctx, Str("__MINGW_NOTHROW"))->persistent = true;
-	//C_DefineMacro(ctx, Str("__mingw_ovr"))->persistent = true;
+	C_DefineMacro(ctx, Str("_MSC_VER 1910"), NULL)->persistent = true;
+	C_DefineMacro(ctx, Str("_MSC_FULL_VER 191025017"), NULL)->persistent = true;
+	//C_DefineMacro(ctx, Str("__MINGW_ATTRIB_DEPRECATED_STR(x)"), NULL)->persistent = true;
+	//C_DefineMacro(ctx, Str("__MINGW_ATTRIB_NONNULL(x)"), NULL)->persistent = true;
+	//C_DefineMacro(ctx, Str("__MINGW_NOTHROW"), NULL)->persistent = true;
+	//C_DefineMacro(ctx, Str("__mingw_ovr"), NULL)->persistent = true;
 #endif
 	
 	//~ NOTE(ljre): Build.
@@ -255,6 +255,7 @@ C_DefaultDriver(int32 argc, const char** argv)
 			for (StringList* it = input_files; it; it = it->next)
 			{
 				bool32 ok = true;
+				ctx->tokens = Arena_Push(ctx->persistent_arena, sizeof(*ctx->tokens));
 				
 				// NOTE(ljre): 'C_Preprocess' pushes warnings to the stage arena, so we need to flush
 				//             before clearing it.
@@ -262,12 +263,12 @@ C_DefaultDriver(int32 argc, const char** argv)
 				C_FlushWarnings(ctx);
 				Arena_Clear(ctx->stage_arena);
 				
-				ok = ok && C_ParseFile(ctx); Arena_Clear(ctx->stage_arena);
-				ok = ok && C_ResolveAst(ctx); Arena_Clear(ctx->stage_arena);
+				//ok = ok && C_ParseFile(ctx); Arena_Clear(ctx->stage_arena);
+				//ok = ok && C_ResolveAst(ctx); Arena_Clear(ctx->stage_arena);
 				
-				C_FlushWarnings(ctx);
+				//C_FlushWarnings(ctx);
 				
-				ok = ok && C_GenIr(ctx); Arena_Clear(ctx->stage_arena);
+				//ok = ok && C_GenIr(ctx); Arena_Clear(ctx->stage_arena);
 				// TODO
 			}
 		} break;

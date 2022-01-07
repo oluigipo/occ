@@ -139,3 +139,34 @@ Arena_Destroy(Arena* arena)
 {
 	OS_FreeMemory(arena, arena->reserved + sizeof *arena);
 }
+
+internal String
+Arena_VSPrintf(Arena* arena, const char* fmt, va_list args)
+{
+	va_list args_copy;
+	va_copy(args_copy, args);
+	
+	uintsize len = OurVPrintfSize(fmt, args_copy);
+	uintsize offset = arena->offset;
+	
+	char* buf = Arena_PushAligned(arena, len, 1);
+	
+	len = OurVPrintf(buf, len, fmt, args);
+	arena->offset = offset + len;
+	
+	va_end(args_copy);
+	
+	return StrMake(buf, len);
+}
+
+internal String
+Arena_SPrintf(Arena* arena, const char* fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	
+	String result = Arena_VSPrintf(arena, fmt, args);
+	
+	va_end(args);
+	return result;
+}
