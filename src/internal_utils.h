@@ -12,8 +12,6 @@
 internal inline void*
 OurMemCopy(void* restrict dst, const void* restrict src, uintsize size)
 {
-	Trace();
-	
 #if defined(__clang__) || defined(__GNUC__)
 	void* d = dst;
 	__asm__ __volatile__("rep movsb"

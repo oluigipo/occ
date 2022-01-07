@@ -117,6 +117,8 @@ C_TypedefDecl(C_Context* ctx, C_AstDecl* decl)
 internal bool32
 C_IsBeginningOfDeclOrType(C_Context* ctx)
 {
+	Trace();
+	
 	switch (ctx->token->kind)
 	{
 		case C_TokenKind_Identifier:
@@ -177,6 +179,8 @@ internal bool32 C_ParsePossibleGnuAttribute(C_Context* ctx, C_AstNode* apply_to)
 internal C_AstDecl*
 C_ParseEnumBody(C_Context* ctx)
 {
+	Trace();
+	
 	C_StreamEatToken(ctx, C_TokenKind_LeftCurl);
 	C_AstDecl* result = C_CreateNode(ctx, C_AstKind_DeclEnumEntry, sizeof(C_AstDecl));
 	C_AstNode* last = &result->h;
@@ -219,6 +223,8 @@ C_ParseEnumBody(C_Context* ctx)
 internal C_AstDecl*
 C_ParseStructBody(C_Context* ctx)
 {
+	Trace();
+	
 	C_StreamEatToken(ctx, C_TokenKind_LeftCurl);
 	bool32 should_eat_semicolon = false;
 	C_AstNode* last;
@@ -281,6 +287,8 @@ C_ParseDeclOrExpr(C_Context* ctx, C_Node** out_last, bool32 type_only, int32 lev
 internal void*
 C_ParseInitializerField(C_Context* ctx)
 {
+	Trace();
+	
 	C_AstExpr* result = NULL;
 	C_AstExpr* head = NULL;
 	
@@ -341,6 +349,8 @@ C_ParseInitializerField(C_Context* ctx)
 internal String
 C_PrepareStringLiteral(C_Context* ctx, bool32* restrict is_wide)
 {
+	Trace();
+	
 	String str;
 	char* buffer = Arena_End(ctx->persistent_arena);
 	*is_wide = false;
@@ -363,6 +373,8 @@ C_PrepareStringLiteral(C_Context* ctx, bool32* restrict is_wide)
 internal C_Node*
 C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 {
+	Trace();
+	
 	C_AstExpr* result = C_CreateNode(ctx, C_AstKind_ExprFactor, SizeofPolyAny(C_AstExpr));
 	C_AstExpr* head = result;
 	bool32 has_unary = false;
@@ -721,6 +733,8 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 internal C_Node*
 C_ParseExpr(C_Context* ctx, int32 level, bool32 allow_init)
 {
+	Trace();
+	
 	C_AstExpr* result = C_ParseExprFactor(ctx, allow_init);
 	
 	C_OperatorPrecedence prec;
@@ -784,6 +798,8 @@ C_ParseExpr(C_Context* ctx, int32 level, bool32 allow_init)
 internal bool32
 C_ParsePossibleGnuAttribute(C_Context* ctx, C_AstNode* apply_to)
 {
+	Trace();
+	
 	if (C_StreamTryEatToken(ctx, C_TokenKind_GccAttribute))
 	{
 		C_StreamEatToken(ctx, C_TokenKind_LeftParen);
@@ -838,6 +854,8 @@ C_ParsePossibleGnuAttribute(C_Context* ctx, C_AstNode* apply_to)
 internal bool32
 C_ParsePossibleMsvcDeclspec(C_Context* ctx, C_AstNode* apply_to)
 {
+	Trace();
+	
 	if (C_StreamTryEatToken(ctx, C_TokenKind_MsvcDeclspec))
 	{
 		C_StreamEatToken(ctx, C_TokenKind_LeftParen);
@@ -857,6 +875,8 @@ C_ParsePossibleMsvcDeclspec(C_Context* ctx, C_AstNode* apply_to)
 internal void*
 C_ParseStmt(C_Context* ctx, C_Node** out_last, bool32 allow_decl)
 {
+	Trace();
+	
 	C_AstStmt* result = NULL;
 	C_Node* last = NULL;
 	
@@ -1129,6 +1149,8 @@ C_ParseStmt(C_Context* ctx, C_Node** out_last, bool32 allow_decl)
 internal C_Node*
 C_ParseBlock(C_Context* ctx, C_Node** out_last)
 {
+	Trace();
+	
 	C_StreamEatToken(ctx, C_TokenKind_LeftCurl);
 	C_AstStmt* result = C_CreateNode(ctx, C_AstKind_StmtCompound, SizeofPoly(C_AstStmt, compound));
 	C_AstNode* last = NULL;
@@ -1142,7 +1164,7 @@ C_ParseBlock(C_Context* ctx, C_Node** out_last)
 	}
 	else if (ctx->token->kind)
 	{
-		C_PushSymbolScope(ctx);
+		result->as->compound.scope = C_PushSymbolScope(ctx);
 		result->as->compound.stmts = C_ParseStmt(ctx, (void*)&last, true);
 		
 		while (ctx->token->kind && !C_StreamTryEatToken(ctx, C_TokenKind_RightCurl))
@@ -1165,6 +1187,8 @@ C_ParseBlock(C_Context* ctx, C_Node** out_last)
 internal C_AstType*
 C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstAttribute** attrib_head, C_AstDecl* decl, bool32 type_only, bool32 is_global)
 {
+	Trace();
+	
 	C_AstType** result = head;
 	uint32 saved_flags = 0;
 	C_AstAttribute* saved_attrib = NULL;
@@ -1369,6 +1393,7 @@ C_ParseRestOfDecl(C_Context* ctx, C_AstType* base, C_AstDecl* decl, bool32 type_
 internal C_Node*
 C_ParseDecl(C_Context* ctx, C_Node** out_last, int32 options, bool32* out_should_eat_semicolon)
 {
+	Trace();
 	Assert(!(options & 4) || out_should_eat_semicolon);
 	
 	C_AstDecl* decl = NULL;
@@ -1916,6 +1941,8 @@ C_ParseFile(C_Context* ctx)
 	C_AstDecl* last_node;
 	
 	ctx->token = &ctx->tokens->tokens[0];
+	C_StreamDealWithPragmaToken(ctx);
+	
 	C_PushSymbolScope(ctx);
 	
 	ctx->scope->names = LittleMap_Create(ctx->persistent_arena, 1 << 14);

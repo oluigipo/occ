@@ -965,6 +965,20 @@ C_PushTokenToStream(C_TokenStream* stream, const C_Token* token, Arena* arena)
 	return stream;
 }
 
+internal void C_StreamNextToken(C_Context* ctx);
+internal void
+C_StreamDealWithPragmaToken(C_Context* ctx)
+{
+	if (Unlikely(ctx->token->kind == C_TokenKind_HashtagPragma))
+	{
+		do
+			C_StreamNextToken(ctx);
+		while (ctx->token->kind != C_TokenKind_NewLine);
+		
+		C_StreamNextToken(ctx);
+	}
+}
+
 internal void
 C_StreamNextToken(C_Context* ctx)
 {
@@ -982,6 +996,8 @@ C_StreamNextToken(C_Context* ctx)
 	}
 	
 	ctx->token = &ctx->tokens->tokens[index];
+	
+	C_StreamDealWithPragmaToken(ctx);
 }
 
 internal bool32

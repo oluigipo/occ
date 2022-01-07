@@ -39,6 +39,87 @@ C_CreatePointerType(C_Context* ctx, C_AstType* of)
 	return result;
 }
 
+internal LittleMap*
+C_GetMapFromSymbolKind(C_Context* ctx, C_SymbolScope* scope, C_SymbolKind kind, bool32 create_new)
+{
+	LittleMap** map = NULL;
+	
+	switch (kind)
+	{
+		case C_SymbolKind_Var:
+		case C_SymbolKind_VarDecl:
+		case C_SymbolKind_StaticVar:
+		case C_SymbolKind_Function:
+		case C_SymbolKind_FunctionDecl:
+		case C_SymbolKind_Parameter:
+		case C_SymbolKind_Field:
+		case C_SymbolKind_EnumConstant: map = &scope->names; break;
+		case C_SymbolKind_Typename: map = &scope->types; break;
+		case C_SymbolKind_Struct: map = &scope->structs; break;
+		case C_SymbolKind_Union: map = &scope->unions; break;
+		case C_SymbolKind_Enum: map = &scope->enums; break;
+		
+		default: Unreachable(); break;
+	}
+	
+	if (create_new && !*map)
+		*map = LittleMap_Create(ctx->persistent_arena, 32);
+	
+	return *map;
+}
+
+internal uintsize
+C_SizeForSymbolKind(C_SymbolKind kind)
+{
+	switch (kind)
+	{
+		case C_SymbolKind_Typename:
+		case C_SymbolKind_Var:
+		case C_SymbolKind_VarDecl:
+		case C_SymbolKind_StaticVar: return sizeof(C_Symbol);
+		case C_SymbolKind_Function:
+		case C_SymbolKind_FunctionDecl: return SizeofPoly(C_Symbol, function);
+		case C_SymbolKind_Parameter: return SizeofPoly(C_Symbol, parameter);
+		case C_SymbolKind_Field: return SizeofPoly(C_Symbol, field);
+		case C_SymbolKind_EnumConstant: return SizeofPoly(C_Symbol, enum_const);
+		case C_SymbolKind_Struct:
+		case C_SymbolKind_Union: return SizeofPoly(C_Symbol, structure);
+		case C_SymbolKind_Enum: return SizeofPoly(C_Symbol, enumerator);
+		
+		default: Unreachable(); break;
+	}
+	
+	return 0;
+}
+
+internal C_Symbol*
+C_CreateSymbolInScope(C_Context* ctx, String name, C_SymbolKind kind, C_AstDecl* decl, C_SymbolScope* scope)
+{
+	C_Symbol* sym = Arena_Push(ctx->persistent_arena, C_SizeForSymbolKind(kind));
+	
+	sym->kind = kind;
+	sym->decl = decl;
+	sym->name = name;
+	
+	LittleMap* map = C_GetMapFromSymbolKind(ctx, scope, kind, true);
+	uint64 hash;
+	
+	if (name.size > 0)
+		hash = SimpleHash(name);
+	else
+		hash = ++ctx->unnamed_count;
+	
+	LittleMap_InsertWithHash(map, name, sym, hash);
+	
+	return sym;
+}
+
+internal inline C_Symbol*
+C_CreateSymbol(C_Context* ctx, String name, C_SymbolKind kind, C_AstDecl* decl)
+{
+	return C_CreateSymbolInScope(ctx, name, kind, decl, ctx->working_scope);
+}
+
 internal C_Symbol*
 C_FindSimilarSymbolByName(C_Context* ctx, String name, C_SymbolKind specific)
 {
@@ -52,32 +133,39 @@ C_FindSimilarSymbolByName(C_Context* ctx, String name, C_SymbolKind specific)
 }
 
 internal C_Symbol*
-C_SymbolAlreadyDefinedInThisScope(C_Context* ctx, String name, C_SymbolKind specific, C_SymbolScope* scope)
+C_SymbolDefinedInScope(C_Context* ctx, String name, C_SymbolKind specific, C_SymbolScope* scope)
 {
-	LittleMap* map = NULL;
-	
-	switch (specific)
-	{
-		case C_SymbolKind_Var:
-		case C_SymbolKind_VarDecl:
-		case C_SymbolKind_StaticVar:
-		case C_SymbolKind_Function:
-		case C_SymbolKind_FunctionDecl:
-		case C_SymbolKind_Parameter:
-		case C_SymbolKind_Field:
-		case C_SymbolKind_EnumConstant: map = scope->names; break;
-		case C_SymbolKind_Typename: map = scope->types; break;
-		case C_SymbolKind_Struct: map = scope->structs; break;
-		case C_SymbolKind_Union: map = scope->unions; break;
-		case C_SymbolKind_Enum: map = scope->enums; break;
-		
-		default: Unreachable(); break;
-	}
+	LittleMap* map = C_GetMapFromSymbolKind(ctx, scope, specific, false);
 	
 	if (map)
 		return LittleMap_Fetch(map, name);
 	else
 		return NULL;
+}
+
+internal C_Symbol*
+C_FindSymbolInScope(C_Context* ctx, String name, C_SymbolKind kind, C_SymbolScope* scope)
+{
+	uint64 hash = SimpleHash(name);
+	
+	for (; scope; scope = scope->up)
+	{
+		LittleMap* map = C_GetMapFromSymbolKind(ctx, scope, kind, false);
+		if (!map)
+			continue;
+		
+		C_Symbol* sym = LittleMap_FetchWithCachedHash(map, name, hash);
+		if (sym)
+			return sym;
+	}
+	
+	return NULL;
+}
+
+internal inline C_Symbol*
+C_FindSymbol(C_Context* ctx, String name, C_SymbolKind kind)
+{
+	return C_FindSymbolInScope(ctx, name, kind, ctx->working_scope);
 }
 
 internal C_AstType*
@@ -93,50 +181,10 @@ C_TypeFromTypename(C_Context* ctx, C_AstType* type)
 	return type;
 }
 
-internal C_Symbol*
-C_CreateSymbol(C_Context* ctx, String name, C_SymbolKind kind, C_Node* decl, C_SymbolScope* scope)
+internal bool32
+C_IsTypeComplete(C_Context* ctx, C_AstType* type)
 {
-	LittleMap* map = NULL;
-	uintsize size = 0;
-	
-	switch (kind)
-	{
-		if (0)
-		{
-			case C_SymbolKind_Var:
-			case C_SymbolKind_VarDecl:
-			case C_SymbolKind_Parameter:
-			case C_SymbolKind_StaticVar: size = sizeof(C_Symbol);
-		}
-		if (0)
-		{
-			case C_SymbolKind_Function:
-			case C_SymbolKind_FunctionDecl: size = SizeofPoly(C_Symbol, function);
-		}
-		if (0)
-			case C_SymbolKind_Field: size = SizeofPoly(C_Symbol, field);
-		if (0)
-			case C_SymbolKind_EnumConstant: size = SizeofPoly(C_Symbol, enum_const);
-		
-		map = ctx->scope->names; break;
-		
-		case C_SymbolKind_Typename: map = scope->types; size = sizeof(C_Symbol); break;
-		case C_SymbolKind_Struct: map = scope->structs; size = SizeofPoly(C_Symbol, structure); break;
-		case C_SymbolKind_Union: map = scope->unions; size = SizeofPoly(C_Symbol, structure); break;
-		case C_SymbolKind_Enum: map = scope->enums; size = SizeofPoly(C_Symbol, enumerator); break;
-		
-		default: Unreachable(); break;
-	}
-	
-	C_Symbol* result = Arena_Push(ctx->persistent_arena, size);
-	
-	result->kind = kind;
-	result->name = name;
-	result->decl = decl;
-	
-	LittleMap_Insert(map, name, result);
-	
-	return result;
+	return type->size > 0;
 }
 
 internal void
@@ -342,10 +390,228 @@ C_NodeCount(C_Node* node)
 	return count;
 }
 
+// NOTE(ljre): Resolve type and return new one (if it decays, etc.)
+//
+//             Flags:
+//                 1 - is global decl
+//                 2 - inlined struct/union -- pass 'C_SymbolScope*' to argument aux
+//                 4 - function return
+//                 8 - struct member
+internal C_AstType*
+C_ResolveType(C_Context* ctx, C_AstType* type, bool32* out_is_complete, uint32 flags, void* aux)
+{
+	bool32 is_complete = false;
+	const C_ABIType* abitype = NULL;
+	
+	switch (type->h.kind)
+	{
+		case C_AstKind_TypeTypename:
+		{
+			type->h.symbol = C_FindSymbol(ctx, type->as->typedefed.name, C_SymbolKind_Typename);
+			Assert(type->h.symbol);
+			
+			C_AstType* typedefed = type->h.symbol->decl->type;
+			is_complete = C_IsTypeComplete(ctx, typedefed);
+			if (is_complete)
+			{
+				type->size = typedefed->size;
+				type->alignment_mask = typedefed->alignment_mask;
+			}
+		} break;
+		
+		// NOTE(ljre): Set primitives
+		{
+			case C_AstKind_TypeChar:
+			{
+				if (type->h.flags & C_AstFlags_Signed)
+					abitype = &ctx->abi->t_schar;
+				else if (type->h.flags & C_AstFlags_Unsigned)
+					abitype = &ctx->abi->t_uchar;
+				else
+					abitype = &ctx->abi->t_schar;
+			} break;
+			
+			case C_AstKind_TypeInt:
+			{
+				if (type->h.flags & C_AstFlags_LongLong)
+					abitype = &ctx->abi->t_longlong;
+				else if (type->h.flags & C_AstFlags_Long)
+					abitype = &ctx->abi->t_long;
+				else if (type->h.flags & C_AstFlags_Short)
+					abitype = &ctx->abi->t_short;
+				else
+					abitype = &ctx->abi->t_int;
+				
+				if (type->h.flags & C_AstFlags_Unsigned)
+					abitype++; // NOTE(ljre): Make unsigned.
+			} break;
+			
+			case C_AstKind_TypeFloat: abitype = &ctx->abi->t_float; break;
+			case C_AstKind_TypeDouble: abitype = &ctx->abi->t_double; break;
+			case C_AstKind_TypeBool: abitype = &ctx->abi->t_bool; break;
+		}
+		
+		case C_AstKind_TypeVoid:
+		{
+			if (flags & 4)
+				is_complete = true;
+		} break;
+		
+		// NOTE(ljre): Structs and Unions
+		{
+			C_SymbolKind kind;
+			
+			/*  */ case C_AstKind_TypeUnion: kind = C_SymbolKind_Union;
+			if (0) case C_AstKind_TypeStruct: kind = C_SymbolKind_Struct;
+			{
+				C_Symbol* sym = NULL;
+				bool32 same_scope = false;
+				bool32 named = (type->as->structure.name.size > 0);
+				
+				if (named)
+				{
+					sym = C_SymbolDefinedInScope(ctx, type->as->structure.name, C_SymbolKind_Struct, ctx->working_scope);
+					
+					if (!sym)
+						sym = C_FindSymbol(ctx, type->as->structure.name, C_SymbolKind_Struct);
+					else
+						same_scope = true;
+				}
+				
+				if (type->as->structure.body)
+				{
+					if (same_scope)
+						C_NodeError(ctx, type, "struct redefinition in the same scope is not allowed.");
+					else
+						sym = C_CreateSymbol(ctx, type->as->structure.name, kind, (void*)type);
+					
+					C_AstDecl* decl = type->as->structure.body;
+					is_complete = true;
+					
+					C_SymbolScope* scope;
+					
+					if (flags & 2)
+						scope = aux;
+					else
+						scope = Arena_Push(ctx->persistent_arena, sizeof(C_SymbolScope));
+					
+					sym->as->structure.fields = scope;
+					
+					uint64 size = 0;
+					uint64 alignment_mask = 0;
+					
+					for (; decl; decl = (void*)decl->h.next)
+					{
+						bool32 complete;
+						bool32 named = (decl->name.size > 0);
+						
+						C_AstType* newtype = C_ResolveType(ctx, decl->type, &complete, named ? 10 : 8, NULL);
+						if (!complete)
+						{
+							C_NodeError(ctx, decl->type, "struct member needs to be of complete type.");
+							continue;
+						}
+						
+						decl->type = newtype;
+						
+						alignment_mask = Max(alignment_mask, decl->type->alignment_mask);
+						size = AlignUp(size, alignment_mask);
+						
+						// TODO(ljre): Check for repeated names.
+						
+						C_Symbol* field = C_CreateSymbolInScope(ctx, decl->name, C_SymbolKind_Field, decl, scope);
+						
+						if (kind == C_SymbolKind_Struct)
+						{
+							size += decl->type->size;
+							field->as->field.offset = size;
+						}
+						else
+						{
+							size = Max(size, decl->type->size);
+							field->as->field.offset = 0;
+						}
+					}
+					
+					type->size = size;
+				}
+				
+				type->h.symbol = sym;
+			} break;
+		}
+	}
+	
+	if (abitype)
+	{
+		type->size = abitype->size;
+		type->alignment_mask = abitype->alignment_mask;
+		
+		is_complete = true;
+	}
+	
+	if (out_is_complete)
+		*out_is_complete = is_complete;
+	
+	return type;
+}
+
+// NOTE(ljre): Same flags as C_ResolveType
+internal bool32
+C_ResolveTypeWithInitializer(C_Context* ctx, C_AstType** ptype, C_AstExpr** pinit, uint32 flags)
+{
+	return true;
+}
+
+internal void
+C_ResolveGlobalDecl(C_Context* ctx, C_AstDecl* decl)
+{
+	bool32 complete = false;
+	C_ResolveType(ctx, decl->type, &complete, 1, NULL);
+	
+	switch (decl->h.kind)
+	{
+		case C_AstKind_Decl:
+		{
+			
+		} break;
+		
+		case C_AstKind_DeclStatic:
+		{
+			
+		} break;
+		
+		case C_AstKind_DeclExtern:
+		{
+			
+		} break;
+		
+		case C_AstKind_DeclTypedef:
+		{
+			
+		} break;
+		
+		case C_AstKind_DeclRegister:
+		{
+			C_NodeError(ctx, decl, "'register' storage class is now allowed in global scope.");
+		} break;
+		
+		case C_AstKind_DeclAuto:
+		{
+			C_NodeError(ctx, decl, "'auto' storage class is now allowed in global scope.");
+		} break;
+		
+		case C_AstKind_DeclEnumEntry:
+		default: Unreachable(); break;
+	}
+}
+
 internal bool32
 C_ResolveAst(C_Context* ctx)
 {
-	// TODO
+	ctx->working_scope = ctx->scope;
+	
+	for (C_AstDecl* decl = ctx->ast; decl; decl = (void*)decl->h.next)
+		C_ResolveGlobalDecl(ctx, decl);
 	
 	return ctx->error_count == 0;
 }

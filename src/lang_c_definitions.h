@@ -665,7 +665,7 @@ struct C_AstStmt
 	{
 		struct { C_AstNode* leafs[4]; } generic; // if, for, while, do while, switch, case, etc.
 		struct { C_AstExpr* expr; } expr;
-		struct { C_AstStmt* stmts; } compound;
+		struct { C_AstStmt* stmts; C_SymbolScope* scope; } compound;
 		struct { String name; C_AstStmt* stmt; } label;
 		struct { String label_name; } go_to;
 		struct { C_AstExpr* leafs[5]; } gcc_asm;
@@ -799,6 +799,7 @@ struct C_Symbol
 		struct { C_SymbolScope* entries; } enumerator;
 		struct { int32 value; } enum_const;
 		struct { uint64 offset; } field;
+		struct { uint64 index; } parameter;
 	} as[];
 };
 
@@ -901,6 +902,8 @@ struct C_Context
 	C_SymbolScope* scope;
 	C_SymbolScope* previous_scope;
 	
+	C_SymbolScope* working_scope;
+	
 	// NOTE(ljre): For finding the host statement of 'break' and 'continue'
 	C_AstStmt* host_switch;
 	C_AstStmt* host_break;
@@ -908,6 +911,7 @@ struct C_Context
 	
 	// misc
 	uint32 error_count;
+	uint32 unnamed_count; // NOTE(ljre): Count of unnamed structs/unions/enums
 	bool8 use_stage_arena_for_warnings; // :clown:
 };
 

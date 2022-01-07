@@ -21,6 +21,19 @@ C_PreprocessWriteToken(C_Context* ctx, const C_Token* token)
 	}
 }
 
+internal void
+C_PreprocessWriteNewlineToken(C_Context* ctx, const C_SourceTrace* trace)
+{
+	C_Token token = {
+		.kind = C_TokenKind_NewLine,
+		.trace = *trace,
+		.as_string = { .size = 1, .data = "\n" },
+		.leading_spaces = { 0 },
+	};
+	
+	ctx->pp.stream = C_PushTokenToStream(ctx->pp.stream, &token, ctx->persistent_arena);
+}
+
 internal String
 C_PreprocessSPrintf(C_Context* ctx, const char* fmt, ...)
 {
@@ -719,6 +732,27 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 	C_NextToken(parent_lex);
 }
 
+internal bool32
+C_TryToExpandIdent(C_Context* ctx, C_Lexer* lex)
+{
+	String ident = lex->token.value_ident;
+	String leading_spaces = lex->token.leading_spaces;
+	C_Macro* macro = NULL;
+	
+	if (C_PeekIncomingToken(lex).kind == C_TokenKind_LeftParen)
+		macro = C_FindMacro(ctx, ident, 3);
+	else
+		macro = C_FindMacro(ctx, ident, 0);
+	
+	if (macro && !C_TokenWasGeneratedByMacro(&lex->token, macro))
+	{
+		C_ExpandMacro(ctx, macro, lex, leading_spaces);
+		return true;
+	}
+	
+	return false;
+}
+
 internal int32 C_EvalPreprocessorExprBinary(C_Context* ctx, C_Lexer* lex, int32 level);
 
 internal int32
@@ -1233,6 +1267,7 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 				else if (MatchCString("pragma", directive))
 				{
 					String leading = lex->token.leading_spaces;
+					C_SourceTrace saved_trace = lex->token.trace;
 					C_NextToken(lex);
 					
 					if (lex->token.kind == C_TokenKind_Identifier &&
@@ -1242,7 +1277,32 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 					}
 					else
 					{
-						Arena_Printf(ctx->persistent_arena, "#pragma%S", StrFmt(leading));
+						if (ctx->tokens)
+						{
+							C_Token pragma = {
+								.kind = C_TokenKind_HashtagPragma,
+								.trace = saved_trace,
+								.as_string = { .data = "#pragma", .size = 7 },
+							};
+							
+							C_PreprocessWriteToken(ctx, &pragma);
+							
+							do
+							{
+								if (lex->token.kind != C_TokenKind_Identifier || !C_TryToExpandIdent(ctx, lex))
+								{
+									C_PreprocessWriteToken(ctx, &lex->token);
+									C_NextToken(lex);
+								}
+							}
+							while (lex->token.kind && lex->token.kind != C_TokenKind_NewLine);
+							
+							C_PreprocessWriteNewlineToken(ctx, &lex->token.trace);
+						}
+						else
+						{
+							Arena_Printf(ctx->persistent_arena, "#pragma%S", StrFmt(leading));
+						}
 						break;
 					}
 				}
@@ -1256,18 +1316,7 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 			
 			case C_TokenKind_Identifier:
 			{
-				String ident = lex->token.value_ident;
-				String leading_spaces = lex->token.leading_spaces;
-				C_Macro* macro = NULL;
-				
-				if (C_PeekIncomingToken(lex).kind == C_TokenKind_LeftParen)
-					macro = C_FindMacro(ctx, ident, 3);
-				else
-					macro = C_FindMacro(ctx, ident, 0);
-				
-				if (macro && !C_TokenWasGeneratedByMacro(&lex->token, macro))
-					C_ExpandMacro(ctx, macro, lex, leading_spaces);
-				else
+				if (!C_TryToExpandIdent(ctx, lex))
 				{
 					C_PreprocessWriteToken(ctx, &lex->token);
 					C_NextToken(lex);

@@ -39,7 +39,7 @@ LittleMap_Create(Arena* arena, uint32 cap)
 }
 
 internal bool32
-LittleMap_Insert(LittleMap* map, String key, void* value)
+LittleMap_InsertWithHash(LittleMap* map, String key, void* value, uint64 hash)
 {
 	while (map && map->len == map->cap)
 	{
@@ -49,7 +49,6 @@ LittleMap_Insert(LittleMap* map, String key, void* value)
 		map = map->next;
 	}
 	
-	uint64 hash = SimpleHash(key);
 	uint32 start_index = hash & (map->cap-1);
 	uint32 index = start_index;
 	
@@ -73,6 +72,12 @@ LittleMap_Insert(LittleMap* map, String key, void* value)
 	
 	Unreachable();
 	return false;
+}
+
+internal bool32
+LittleMap_Insert(LittleMap* map, String key, void* value)
+{
+	return LittleMap_InsertWithHash(map, key, value, SimpleHash(key));
 }
 
 internal void*
