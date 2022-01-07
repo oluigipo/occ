@@ -14,7 +14,7 @@
 *    - Code analyzer: Generate useful warnings;
 *    - Flag (-W): Warnings flags;
 *    - Flag (-w): Suppress all warnings;
-*    - Revision 'LangC_Node';
+*    - Revision 'C_Node';
 *    - Worker Threads for multiple input files;
 *    - Thread-safe file cache;
 *    - Flag (???): Disable colorful log;
@@ -54,18 +54,18 @@
 *
 */
 
-#define LangC_VERSION_MAJOR 0
-#define LangC_VERSION_MINOR 0
-#define LangC_VERSION_PATCH 1
-#define LangC_VERSION_STR StrMacro(LangC_VERSION_MAJOR) "." StrMacro(LangC_VERSION_MINOR) "." StrMacro(LangC_VERSION_PATCH)
+#define C_VERSION_MAJOR 0
+#define C_VERSION_MINOR 0
+#define C_VERSION_PATCH 1
+#define C_VERSION_STR StrMacro(C_VERSION_MAJOR) "." StrMacro(C_VERSION_MINOR) "." StrMacro(C_VERSION_PATCH)
 
 #include "lang_c_definitions.h"
 
 // TODO(ljre): Remove this.
-internal int32 LangC_error_count = 0;
+internal int32 C_error_count = 0;
 
 internal void
-LangC_AddInputFile(StringList** first, StringList** last, String str)
+C_AddInputFile(StringList** first, StringList** last, String str)
 {
 	Assert(first);
 	Assert(last);
@@ -79,9 +79,9 @@ LangC_AddInputFile(StringList** first, StringList** last, String str)
 }
 
 internal inline bool32
-LangC_IsWarningEnabled(LangC_Context* ctx, LangC_Warning warning)
+C_IsWarningEnabled(C_Context* ctx, C_Warning warning)
 {
-	Assert(warning >= LangC_Warning_Null && warning < LangC_Warning__Count);
+	Assert(warning >= C_Warning_Null && warning < C_Warning__Count);
 	uint32 w = (uint32)warning;
 	
 	uint32 index = w >> 5;
@@ -91,11 +91,11 @@ LangC_IsWarningEnabled(LangC_Context* ctx, LangC_Warning warning)
 }
 
 internal void
-LangC_PushWarning(LangC_Context* ctx, LangC_Warning warning, const char* message)
+C_PushWarning(C_Context* ctx, C_Warning warning, const char* message)
 {
 	Arena* arena = (ctx->use_stage_arena_for_warnings) ? ctx->stage_arena : ctx->persistent_arena;
 	
-	LangC_QueuedWarning* newone = Arena_Push(arena, sizeof(LangC_QueuedWarning));
+	C_QueuedWarning* newone = Arena_Push(arena, sizeof(C_QueuedWarning));
 	
 	if (!ctx->last_queued_warning)
 		ctx->queued_warning = ctx->last_queued_warning = newone;
@@ -107,9 +107,9 @@ LangC_PushWarning(LangC_Context* ctx, LangC_Warning warning, const char* message
 }
 
 internal void
-LangC_FlushWarnings(LangC_Context* ctx)
+C_FlushWarnings(C_Context* ctx)
 {
-	LangC_QueuedWarning* warning = ctx->queued_warning;
+	C_QueuedWarning* warning = ctx->queued_warning;
 	
 	while (warning)
 	{
@@ -131,14 +131,14 @@ LangC_FlushWarnings(LangC_Context* ctx)
 #include "lang_c_driver.c"
 
 internal int32
-LangC_Main(int32 argc, const char** argv)
+C_Main(int32 argc, const char** argv)
 {
 	Trace();
 	
 	int32 result = 0;
 	
 	// TODO(ljre): cl.exe compiler driver just for testing.
-	result = LangC_DefaultDriver(argc, argv);
+	result = C_DefaultDriver(argc, argv);
 	
 	return result;
 }

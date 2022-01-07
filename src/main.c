@@ -63,7 +63,7 @@ int main(int argc, char* argv[])
 	global_my_path.size = OS_GetMyPath(global_arena);
 	
 	// Testing
-	int32 result = LangC_Main(argc, (const char**)argv);
+	int32 result = C_Main(argc, (const char**)argv);
 	
 	return result;
 }

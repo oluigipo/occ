@@ -1,9 +1,9 @@
 // NOTE(ljre): This is the default compiler driver.
 
 internal void
-LangC_DefaultDriver_PrintHelp(void)
+C_DefaultDriver_PrintHelp(void)
 {
-	Print("Our C Compiler v" LangC_VERSION_STR " -- help:\n"
+	Print("Our C Compiler v" C_VERSION_STR " -- help:\n"
 		  "%C2usage:%C0 occ [FILE | FLAG] ...\n"
 		  "\n"
 		  "%C2flags:%C0\n"
@@ -18,16 +18,16 @@ LangC_DefaultDriver_PrintHelp(void)
 }
 
 internal int32
-LangC_DefaultDriver(int32 argc, const char** argv)
+C_DefaultDriver(int32 argc, const char** argv)
 {
 	int32 result = 0;
 	
-	LangC_CompilerOptions options = { 0 };
+	C_CompilerOptions options = { 0 };
 	StringList* input_files = NULL;
 	StringList* last_input_file = NULL;
 	String output_file = StrInit("a.out");
 	int32 mode = 0;
-	LangC_ABI abi = {
+	C_ABI abi = {
 		.t_char = { 1, 0, true },
 		.t_schar = { 1, 0, false },
 		.t_uchar = { 1, 0, true },
@@ -49,7 +49,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 		.index_ptrdifft = 9,
 	};
 	
-	LangC_Context* ctx = &(LangC_Context) {
+	C_Context* ctx = &(C_Context) {
 		.options = &options,
 		.persistent_arena = Arena_Create(Gigabytes(32)),
 		.stage_arena = Arena_Create(Gigabytes(8)),
@@ -57,8 +57,8 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 		.abi = &abi,
 	};
 	
-	Map_Init(&ctx->pp.obj_macros, sizeof(LangC_Macro), sizeof(LangC_Macro) * 100000);
-	Map_Init(&ctx->pp.func_macros, sizeof(LangC_Macro), sizeof(LangC_Macro) * 10000);
+	Map_Init(&ctx->pp.obj_macros, sizeof(C_Macro), sizeof(C_Macro) * 100000);
+	Map_Init(&ctx->pp.func_macros, sizeof(C_Macro), sizeof(C_Macro) * 10000);
 	
 	//~ NOTE(ljre): Setup system include directory
 	{
@@ -91,7 +91,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	//~ NOTE(ljre): Parse parameters
 	if (argc < 2)
 	{
-		LangC_DefaultDriver_PrintHelp();
+		C_DefaultDriver_PrintHelp();
 		return 1;
 	}
 	
@@ -99,7 +99,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	{
 		if (arg[0][0] != '-')
 		{
-			LangC_AddInputFile(&input_files, &last_input_file, StrFrom(arg[0]));
+			C_AddInputFile(&input_files, &last_input_file, StrFrom(arg[0]));
 			continue;
 		}
 		
@@ -173,7 +173,7 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 			}
 			
 			const char* name_begin = flag;
-			while (LangC_IsIdentChar(*flag))
+			while (C_IsIdentChar(*flag))
 				++flag;
 			const char* name_end = flag;
 			
@@ -182,16 +182,16 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 				const char* value_begin = ++flag;
 				char* mem = Arena_End(global_arena);
 				uintsize len = Arena_Printf(global_arena, "%S %s", name_end - name_begin, name_begin, value_begin);
-				LangC_DefineMacro(ctx, StrMake(mem, len));
+				C_DefineMacro(ctx, StrMake(mem, len));
 			}
 			else
 			{
-				LangC_DefineMacro(ctx, StrMake(name_begin, name_end - name_begin))->persistent = true;
+				C_DefineMacro(ctx, StrMake(name_begin, name_end - name_begin))->persistent = true;
 			}
 		}
 		else if (StringStartsWith(strflag, "help") || StringStartsWith(strflag, "-help"))
 		{
-			LangC_DefaultDriver_PrintHelp();
+			C_DefaultDriver_PrintHelp();
 			return 1;
 		}
 	}
@@ -205,45 +205,45 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 	Assert(input_files);
 	
 	//~ NOTE(ljre): Default predefined macros.
-	LangC_DefineMacro(ctx, Str("__STDC__ 1"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__STDC_HOSTED__ 1"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__STDC_VERSION__ 199901L"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__x86_64 1"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__x86_64__ 1"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("_M_AMD64 1"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("_M_X64 1"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("_WIN32 1"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("_WIN64 1"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__OCC__ 1"))->persistent = true;
+	C_DefineMacro(ctx, Str("__STDC__ 1"))->persistent = true;
+	C_DefineMacro(ctx, Str("__STDC_HOSTED__ 1"))->persistent = true;
+	C_DefineMacro(ctx, Str("__STDC_VERSION__ 199901L"))->persistent = true;
+	C_DefineMacro(ctx, Str("__x86_64 1"))->persistent = true;
+	C_DefineMacro(ctx, Str("__x86_64__ 1"))->persistent = true;
+	C_DefineMacro(ctx, Str("_M_AMD64 1"))->persistent = true;
+	C_DefineMacro(ctx, Str("_M_X64 1"))->persistent = true;
+	C_DefineMacro(ctx, Str("_WIN32 1"))->persistent = true;
+	C_DefineMacro(ctx, Str("_WIN64 1"))->persistent = true;
+	C_DefineMacro(ctx, Str("__OCC__ 1"))->persistent = true;
 	
 	// NOTE(ljre): Polyfills
-	LangC_DefineMacro(ctx, Str("__int64 long long"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__int32 int"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__int16 short"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__int8 char"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__inline inline"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__inline__ inline"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__restrict restrict"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__restrict__ restrict"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__const const"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__const__ const"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__volatile volatile"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__volatile__ volatile"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__attribute __attribute__"))->persistent = true;
-	//LangC_DefineMacro(ctx, Str("__forceinline inline"))->persistent = true;
-	//LangC_DefineMacro(ctx, Str("__attribute__(...)"))->persistent = true;
-	//LangC_DefineMacro(ctx, Str("__declspec(...)"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("__builtin_va_list void*"))->persistent = true;
+	C_DefineMacro(ctx, Str("__int64 long long"))->persistent = true;
+	C_DefineMacro(ctx, Str("__int32 int"))->persistent = true;
+	C_DefineMacro(ctx, Str("__int16 short"))->persistent = true;
+	C_DefineMacro(ctx, Str("__int8 char"))->persistent = true;
+	C_DefineMacro(ctx, Str("__inline inline"))->persistent = true;
+	C_DefineMacro(ctx, Str("__inline__ inline"))->persistent = true;
+	C_DefineMacro(ctx, Str("__restrict restrict"))->persistent = true;
+	C_DefineMacro(ctx, Str("__restrict__ restrict"))->persistent = true;
+	C_DefineMacro(ctx, Str("__const const"))->persistent = true;
+	C_DefineMacro(ctx, Str("__const__ const"))->persistent = true;
+	C_DefineMacro(ctx, Str("__volatile volatile"))->persistent = true;
+	C_DefineMacro(ctx, Str("__volatile__ volatile"))->persistent = true;
+	C_DefineMacro(ctx, Str("__attribute __attribute__"))->persistent = true;
+	//C_DefineMacro(ctx, Str("__forceinline inline"))->persistent = true;
+	//C_DefineMacro(ctx, Str("__attribute__(...)"))->persistent = true;
+	//C_DefineMacro(ctx, Str("__declspec(...)"))->persistent = true;
+	C_DefineMacro(ctx, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"))->persistent = true;
+	C_DefineMacro(ctx, Str("__builtin_va_list void*"))->persistent = true;
 	
 #if 1
 	// NOTE(ljre): MINGW macros
-	LangC_DefineMacro(ctx, Str("_MSC_VER 1910"))->persistent = true;
-	LangC_DefineMacro(ctx, Str("_MSC_FULL_VER 191025017"))->persistent = true;
-	//LangC_DefineMacro(ctx, Str("__MINGW_ATTRIB_DEPRECATED_STR(x)"))->persistent = true;
-	//LangC_DefineMacro(ctx, Str("__MINGW_ATTRIB_NONNULL(x)"))->persistent = true;
-	//LangC_DefineMacro(ctx, Str("__MINGW_NOTHROW"))->persistent = true;
-	//LangC_DefineMacro(ctx, Str("__mingw_ovr"))->persistent = true;
+	C_DefineMacro(ctx, Str("_MSC_VER 1910"))->persistent = true;
+	C_DefineMacro(ctx, Str("_MSC_FULL_VER 191025017"))->persistent = true;
+	//C_DefineMacro(ctx, Str("__MINGW_ATTRIB_DEPRECATED_STR(x)"))->persistent = true;
+	//C_DefineMacro(ctx, Str("__MINGW_ATTRIB_NONNULL(x)"))->persistent = true;
+	//C_DefineMacro(ctx, Str("__MINGW_NOTHROW"))->persistent = true;
+	//C_DefineMacro(ctx, Str("__mingw_ovr"))->persistent = true;
 #endif
 	
 	//~ NOTE(ljre): Build.
@@ -256,18 +256,18 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 			{
 				bool32 ok = true;
 				
-				// NOTE(ljre): 'LangC_Preprocess' pushes warnings to the stage arena, so we need to flush
+				// NOTE(ljre): 'C_Preprocess' pushes warnings to the stage arena, so we need to flush
 				//             before clearing it.
-				ok = ok && LangC_Preprocess(ctx, it->value);
-				LangC_FlushWarnings(ctx);
+				ok = ok && C_Preprocess(ctx, it->value);
+				C_FlushWarnings(ctx);
 				Arena_Clear(ctx->stage_arena);
 				
-				ok = ok && LangC_ParseFile(ctx); Arena_Clear(ctx->stage_arena);
-				//ok = ok && LangC_ResolveAst(ctx); Arena_Clear(ctx->stage_arena);
+				ok = ok && C_ParseFile(ctx); Arena_Clear(ctx->stage_arena);
+				ok = ok && C_ResolveAst(ctx); Arena_Clear(ctx->stage_arena);
 				
-				LangC_FlushWarnings(ctx);
+				C_FlushWarnings(ctx);
 				
-				//ok = ok && LangC_GenIr(ctx); Arena_Clear(ctx->stage_arena);
+				ok = ok && C_GenIr(ctx); Arena_Clear(ctx->stage_arena);
 				// TODO
 			}
 		} break;
@@ -275,8 +275,8 @@ LangC_DefaultDriver(int32 argc, const char** argv)
 		// NOTE(ljre): Run Preprocessor
 		case 1:
 		{
-			LangC_Preprocess(ctx, input_files->value);
-			LangC_FlushWarnings(ctx);
+			C_Preprocess(ctx, input_files->value);
+			C_FlushWarnings(ctx);
 			Arena_Clear(ctx->stage_arena);
 			
 			if (!ctx->pre_source)

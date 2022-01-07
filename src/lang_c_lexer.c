@@ -1,10 +1,10 @@
 // NOTE(ljre): This lexer won't check if UTF-8 codepoints are valid, though it will check for BOM
 //             at the beginning of the file.
 
-internal void LangC_NextToken(LangC_Lexer* lex);
+internal void C_NextToken(C_Lexer* lex);
 
 internal void
-LangC_SetupLexer(LangC_Lexer* lex, const char* source, Arena* arena)
+C_SetupLexer(C_Lexer* lex, const char* source, Arena* arena)
 {
 	lex->col = 1;
 	if (lex->line == 0)
@@ -15,15 +15,15 @@ LangC_SetupLexer(LangC_Lexer* lex, const char* source, Arena* arena)
 	if ((unsigned char)lex->head[0] == 0xEF && (unsigned char)lex->head[1] == 0xBB && (unsigned char)lex->head[2] == 0xBF)
 		lex->head += 3;
 	
-	lex->token.kind = LangC_TokenKind_Eof;
+	lex->token.kind = C_TokenKind_Eof;
 	lex->previous_head = lex->head;
 	lex->arena = arena;
 }
 
 internal void
-LangC_PushLexerFile(LangC_Lexer* lex, String path, LangC_Lexer* trace_from)
+C_PushLexerFile(C_Lexer* lex, String path, C_Lexer* trace_from)
 {
-	LangC_LexerFile* file = Arena_Push(lex->arena, sizeof *file);
+	C_LexerFile* file = Arena_Push(lex->arena, sizeof *file);
 	
 	if (!trace_from)
 		trace_from = lex;
@@ -36,52 +36,52 @@ LangC_PushLexerFile(LangC_Lexer* lex, String path, LangC_Lexer* trace_from)
 }
 
 internal void
-LangC_PopLexerFile(LangC_Lexer* lex)
+C_PopLexerFile(C_Lexer* lex)
 {
-	LangC_LexerFile* file = lex->file;
+	C_LexerFile* file = lex->file;
 	
 	lex->file = file->included_from;
 	lex->line = file->included_line + 1;
 }
 
 internal inline bool32
-LangC_IsNumeric(char ch, int32 base)
+C_IsNumeric(char ch, int32 base)
 {
 	return (base == 2 && (ch == '0' || ch == '1') ||
 			(ch >= '0' && ch <= '9' || (base == 16 && (ch >= 'a' && ch <= 'f' || ch >= 'A' && ch <= 'F'))));
 }
 
 internal inline bool32
-LangC_IsAlpha(char ch)
+C_IsAlpha(char ch)
 {
 	return (ch >= 'A' & ch <= 'Z') | (ch >= 'a' & ch <= 'z');
 }
 
 internal inline bool32
-LangC_IsIdentChar(char ch)
+C_IsIdentChar(char ch)
 {
-	return ch == '_' || (ch >= '0' && ch <= '9') || LangC_IsAlpha(ch)
+	return ch == '_' || (ch >= '0' && ch <= '9') || C_IsAlpha(ch)
 		|| (unsigned char)ch >= 128; // NOTE(ljre): This makes every multibyte UTF-8 codepoint a valid char for identifiers.
 }
 
 internal void
-LangC_PrintIncludeStack(LangC_LexerFile* file, int32 line)
+C_PrintIncludeStack(C_LexerFile* file, int32 line)
 {
 	if (file->included_from)
-		LangC_PrintIncludeStack(file->included_from, file->included_line);
+		C_PrintIncludeStack(file->included_from, file->included_line);
 	
 	Print("%C1%S%C0(%i): in included file\n", StrFmt(file->path), line);
 }
 
 internal void
-LangC_LexerError(LangC_Lexer* lex, const char* fmt, ...)
+C_LexerError(C_Lexer* lex, const char* fmt, ...)
 {
-	LangC_LexerFile* file = lex->file;
-	LangC_error_count++;
+	C_LexerFile* file = lex->file;
+	C_error_count++;
 	
 	Print("\n");
 	if (file->included_from)
-		LangC_PrintIncludeStack(file->included_from, file->included_line);
+		C_PrintIncludeStack(file->included_from, file->included_line);
 	
 	Print("%C1%S%C0(%i:%i): %C2error%C0: ", StrFmt(file->path), lex->line, lex->col);
 	
@@ -94,25 +94,25 @@ LangC_LexerError(LangC_Lexer* lex, const char* fmt, ...)
 }
 
 internal void
-LangC_PrintIncludeStackToArena(LangC_LexerFile* file, int32 line, Arena* arena)
+C_PrintIncludeStackToArena(C_LexerFile* file, int32 line, Arena* arena)
 {
 	if (file->included_from)
-		LangC_PrintIncludeStackToArena(file->included_from, file->included_line, arena);
+		C_PrintIncludeStackToArena(file->included_from, file->included_line, arena);
 	
 	Arena_Printf(arena, "%C1%S%C0(%i): in included file\n", StrFmt(file->path), line);
 }
 
 internal void
-LangC_LexerWarning(LangC_Lexer* lex, LangC_Warning warning, const char* fmt, ...)
+C_LexerWarning(C_Lexer* lex, C_Warning warning, const char* fmt, ...)
 {
-	if (lex->ctx && LangC_IsWarningEnabled(lex->ctx, warning))
+	if (lex->ctx && C_IsWarningEnabled(lex->ctx, warning))
 	{
-		LangC_LexerFile* file = lex->file;
+		C_LexerFile* file = lex->file;
 		char* buf = Arena_End(global_arena);
 		
 		Arena_PushMemory(global_arena, 1, "\n");
 		if (file->included_from)
-			LangC_PrintIncludeStackToArena(file->included_from, file->included_line, global_arena);
+			C_PrintIncludeStackToArena(file->included_from, file->included_line, global_arena);
 		
 		Arena_Printf(global_arena, "%C1%S%C0(%i:%i): %C3warning%C0: ", StrFmt(file->path), lex->line, lex->col);
 		
@@ -123,14 +123,14 @@ LangC_LexerWarning(LangC_Lexer* lex, LangC_Warning warning, const char* fmt, ...
 		
 		Arena_PushMemory(global_arena, 1, "");
 		
-		LangC_PushWarning(lex->ctx, warning, buf);
+		C_PushWarning(lex->ctx, warning, buf);
 	}
 }
 
 internal void
-LangC_PushToken(LangC_Lexer* lex, LangC_Token* token)
+C_PushToken(C_Lexer* lex, C_Token* token)
 {
-	LangC_TokenList* node = Arena_Push(lex->arena, sizeof *node);
+	C_TokenList* node = Arena_Push(lex->arena, sizeof *node);
 	node->token = *token;
 	
 	if (!lex->waiting_token)
@@ -145,9 +145,9 @@ LangC_PushToken(LangC_Lexer* lex, LangC_Token* token)
 }
 
 internal void
-LangC_PushTokenToFront(LangC_Lexer* lex, LangC_Token* token)
+C_PushTokenToFront(C_Lexer* lex, C_Token* token)
 {
-	LangC_TokenList* node = Arena_Push(lex->arena, sizeof *node);
+	C_TokenList* node = Arena_Push(lex->arena, sizeof *node);
 	node->token = *token;
 	
 	if (!lex->waiting_token)
@@ -163,34 +163,34 @@ LangC_PushTokenToFront(LangC_Lexer* lex, LangC_Token* token)
 }
 
 internal void
-LangC_PushStringOfTokens(LangC_Lexer* lex, const char* str)
+C_PushStringOfTokens(C_Lexer* lex, const char* str)
 {
-	LangC_Lexer temp_lex = {
+	C_Lexer temp_lex = {
 		.preprocessor = lex->preprocessor,
 	};
 	
-	LangC_SetupLexer(&temp_lex, str, lex->arena);
-	LangC_NextToken(&temp_lex);
+	C_SetupLexer(&temp_lex, str, lex->arena);
+	C_NextToken(&temp_lex);
 	
 	while (temp_lex.token.kind)
 	{
-		LangC_PushToken(lex, &temp_lex.token);
-		LangC_NextToken(&temp_lex);
+		C_PushToken(lex, &temp_lex.token);
+		C_NextToken(&temp_lex);
 	}
 }
 
-internal LangC_Token
-LangC_PeekIncomingToken(LangC_Lexer* lex)
+internal C_Token
+C_PeekIncomingToken(C_Lexer* lex)
 {
-	LangC_Lexer tmp = *lex;
+	C_Lexer tmp = *lex;
 	
-	LangC_NextToken(&tmp);
+	C_NextToken(&tmp);
 	
 	return tmp.token;
 }
 
 internal void
-LangC_UpdateLexerPreviousHead(LangC_Lexer* lex)
+C_UpdateLexerPreviousHead(C_Lexer* lex)
 {
 	for (; lex->previous_head < lex->head; ++lex->previous_head)
 	{
@@ -204,7 +204,7 @@ LangC_UpdateLexerPreviousHead(LangC_Lexer* lex)
 }
 
 internal void
-LangC_IgnoreWhitespaces(const char** p, bool32 newline)
+C_IgnoreWhitespaces(const char** p, bool32 newline)
 {
 	for (;;)
 	{
@@ -250,7 +250,7 @@ LangC_IgnoreWhitespaces(const char** p, bool32 newline)
 }
 
 internal int32
-LangC_ValueOfEscaped(const char** ptr)
+C_ValueOfEscaped(const char** ptr)
 {
 	int32 value = 0;
 	int32 chars_in_hex = 0;
@@ -319,7 +319,7 @@ LangC_ValueOfEscaped(const char** ptr)
 }
 
 internal String
-LangC_TokenizeStringLiteral(LangC_Lexer* lex)
+C_TokenizeStringLiteral(C_Lexer* lex)
 {
 	const char* begin = lex->head;
 	const char* end = begin + 1;
@@ -342,7 +342,7 @@ LangC_TokenizeStringLiteral(LangC_Lexer* lex)
 	
 	if (*end != '"')
 	{
-		LangC_LexerError(lex, "missing closing quote.");
+		C_LexerError(lex, "missing closing quote.");
 		return StrNull;
 	}
 	
@@ -359,7 +359,7 @@ LangC_TokenizeStringLiteral(LangC_Lexer* lex)
 }
 
 internal void
-LangC_NextToken(LangC_Lexer* lex)
+C_NextToken(C_Lexer* lex)
 {
 	Trace();
 	
@@ -374,7 +374,7 @@ LangC_NextToken(LangC_Lexer* lex)
 	lex->token_was_pushed = false;
 	
 	beginning:;
-	LangC_IgnoreWhitespaces(&lex->head, !lex->preprocessor);
+	C_IgnoreWhitespaces(&lex->head, !lex->preprocessor);
 	
 	lex->token.dont_expand = false;
 	lex->token.as_string.data = lex->head;
@@ -385,12 +385,12 @@ LangC_NextToken(LangC_Lexer* lex)
 	{
 		case 0:
 		{
-			lex->token.kind = LangC_TokenKind_Eof;
+			lex->token.kind = C_TokenKind_Eof;
 		} break;
 		
 		case '\n':
 		{
-			lex->token.kind = LangC_TokenKind_NewLine;
+			lex->token.kind = C_TokenKind_NewLine;
 			++lex->head;
 		} break;
 		
@@ -400,36 +400,36 @@ LangC_NextToken(LangC_Lexer* lex)
 			{
 				if (lex->head[1] == '#')
 				{
-					lex->token.kind = LangC_TokenKind_DoubleHashtag;
+					lex->token.kind = C_TokenKind_DoubleHashtag;
 					lex->head += 2;
 				}
 				else
 				{
-					lex->token.kind = LangC_TokenKind_Hashtag;
+					lex->token.kind = C_TokenKind_Hashtag;
 					++lex->head;
 				}
 			}
 			else
 			{
 				++lex->head;
-				LangC_IgnoreWhitespaces(&lex->head, false);
+				C_IgnoreWhitespaces(&lex->head, false);
 				
-				if (LangC_IsNumeric(lex->head[0], 10))
+				if (C_IsNumeric(lex->head[0], 10))
 				{
 					// NOTE(ljre): Parse pre-processor's metadata.
 					//             https://gcc.gnu.org/onlinedocs/gcc-11.1.0/cpp/Preprocessor-Output.html
 					
 					int32 line = strtol(lex->head, (char**)&lex->head, 10);
 					
-					LangC_IgnoreWhitespaces(&lex->head, false);
-					String file = LangC_TokenizeStringLiteral(lex);
+					C_IgnoreWhitespaces(&lex->head, false);
+					String file = C_TokenizeStringLiteral(lex);
 					
 					int32 flags = 0;
 					
-					while (LangC_IgnoreWhitespaces(&lex->head, false),
+					while (C_IgnoreWhitespaces(&lex->head, false),
 						   lex->head[0] && lex->head[0] != '\n')
 					{
-						if (LangC_IsNumeric(lex->head[0], 10))
+						if (C_IsNumeric(lex->head[0], 10))
 						{
 							flags |= 1 << (lex->head[0] - '0' - 1);
 						}
@@ -446,13 +446,13 @@ LangC_NextToken(LangC_Lexer* lex)
 					// NOTE(ljre): "This indicates the start of a new file."
 					if (flags & 1 || !lex->file)
 					{
-						LangC_PushLexerFile(lex, file, NULL);
+						C_PushLexerFile(lex, file, NULL);
 					}
 					
 					// NOTE(ljre): "This indicates returning to a file (after having included another file)."
 					if (flags & 2)
 					{
-						LangC_PopLexerFile(lex);
+						C_PopLexerFile(lex);
 					}
 					
 					lex->line = line;
@@ -482,16 +482,16 @@ LangC_NextToken(LangC_Lexer* lex)
 		
 		case '.':
 		{
-			if (!LangC_IsNumeric(lex->head[1], 10))
+			if (!C_IsNumeric(lex->head[1], 10))
 			{
 				if (lex->head[1] == '.' && lex->head[2] == '.')
 				{
-					lex->token.kind = LangC_TokenKind_VarArgs;
+					lex->token.kind = C_TokenKind_VarArgs;
 					lex->head += 3;
 				}
 				else
 				{
-					lex->token.kind = LangC_TokenKind_Dot;
+					lex->token.kind = C_TokenKind_Dot;
 					++lex->head;
 				}
 				
@@ -525,7 +525,7 @@ LangC_NextToken(LangC_Lexer* lex)
 			const char* begin = lex->head;
 			const char* end = begin;
 			
-			while (LangC_IsNumeric(*end, base))
+			while (C_IsNumeric(*end, base))
 				++end;
 			
 			if (*end == 'e' || *end == 'E')
@@ -535,11 +535,11 @@ LangC_NextToken(LangC_Lexer* lex)
 			{
 				++end;
 				
-				while (LangC_IsNumeric(*end, base))
+				while (C_IsNumeric(*end, base))
 					++end;
 				
 				if (base == 2)
-					LangC_LexerError(lex, "floats cannot begin with '0b'.");
+					C_LexerError(lex, "floats cannot begin with '0b'.");
 				
 				if (*end == 'e' || *end == 'E' || (base == 16 && (*end == 'p' || *end == 'P')))
 				{
@@ -549,14 +549,14 @@ LangC_NextToken(LangC_Lexer* lex)
 					if (*end == '+' || *end == '-')
 						++end;
 					
-					while (LangC_IsNumeric(*end, 10))
+					while (C_IsNumeric(*end, 10))
 						++end;
 				}
 				
 				if (*end == 'f' || *end == 'F')
 				{
 					++end;
-					lex->token.kind = LangC_TokenKind_FloatLiteral;
+					lex->token.kind = C_TokenKind_FloatLiteral;
 					lex->token.value_float = strtof(begin, NULL);
 				}
 				else
@@ -564,17 +564,17 @@ LangC_NextToken(LangC_Lexer* lex)
 					if (*end == 'l' || *end == 'L')
 						++end;
 					
-					lex->token.kind = LangC_TokenKind_DoubleLiteral;
+					lex->token.kind = C_TokenKind_DoubleLiteral;
 					lex->token.value_double = strtod(begin, NULL);
 				}
 			}
 			else
 			{
 				bool32 is_unsig = false;
-				lex->token.kind = LangC_TokenKind_IntLiteral;
+				lex->token.kind = C_TokenKind_IntLiteral;
 				
 				if ((is_unsig = *end == 'u' || *end == 'U'))
-					++end, lex->token.kind = LangC_TokenKind_UintLiteral;
+					++end, lex->token.kind = C_TokenKind_UintLiteral;
 				if (*end == 'l' || *end == 'L')
 					++end, lex->token.kind += 1;
 				if (*end == 'l' || *end == 'L')
@@ -595,8 +595,8 @@ LangC_NextToken(LangC_Lexer* lex)
 			{
 				++lex->head;
 				
-				lex->token.value_str = LangC_TokenizeStringLiteral(lex);
-				lex->token.kind = LangC_TokenKind_WideStringLiteral;
+				lex->token.value_str = C_TokenizeStringLiteral(lex);
+				lex->token.kind = C_TokenKind_WideStringLiteral;
 				break;
 			}
 			//else
@@ -611,7 +611,7 @@ LangC_NextToken(LangC_Lexer* lex)
 		case 't': case 'u': case 'v': case 'w': case 'x': case 'y': case 'z': case '_':
 		{
 			const char* begin = lex->head;
-			while (LangC_IsIdentChar(lex->head[0]))
+			while (C_IsIdentChar(lex->head[0]))
 				++lex->head;
 			
 			String ident = {
@@ -619,14 +619,14 @@ LangC_NextToken(LangC_Lexer* lex)
 				.size = (uintsize)(lex->head - begin),
 			};
 			
-			lex->token.kind = LangC_TokenKind_Identifier;
+			lex->token.kind = C_TokenKind_Identifier;
 			lex->token.value_ident = ident;
 			
 			if (!lex->preprocessor)
 			{
-				for (int32 keyword = LangC_TokenKind__FirstKeyword; keyword <= LangC_TokenKind__LastKeyword; ++keyword)
+				for (int32 keyword = C_TokenKind__FirstKeyword; keyword <= C_TokenKind__LastKeyword; ++keyword)
 				{
-					if (MatchCString(LangC_token_str_table[keyword], ident))
+					if (MatchCString(C_token_str_table[keyword], ident))
 					{
 						lex->token.kind = keyword;
 						break;
@@ -637,8 +637,8 @@ LangC_NextToken(LangC_Lexer* lex)
 		
 		case '"':
 		{
-			lex->token.value_str = LangC_TokenizeStringLiteral(lex);
-			lex->token.kind = LangC_TokenKind_StringLiteral;
+			lex->token.value_str = C_TokenizeStringLiteral(lex);
+			lex->token.kind = C_TokenKind_StringLiteral;
 		} break;
 		
 		case '\'':
@@ -658,7 +658,7 @@ LangC_NextToken(LangC_Lexer* lex)
 				if (lex->head[0] == '\\')
 				{
 					const char* end = ++lex->head;
-					value |= LangC_ValueOfEscaped(&end);
+					value |= C_ValueOfEscaped(&end);
 					lex->head = end;
 				}
 				else
@@ -669,226 +669,226 @@ LangC_NextToken(LangC_Lexer* lex)
 				}
 			}
 			
-			lex->token.kind = LangC_TokenKind_IntLiteral;
+			lex->token.kind = C_TokenKind_IntLiteral;
 			lex->token.value_int = value;
 			
 			if (lex->head[0] != '\'')
 			{
-				LangC_LexerError(lex, "missing pair of character literal.");
+				C_LexerError(lex, "missing pair of character literal.");
 				break;
 			}
 			
 			++lex->head;
 		} break;
 		
-		case '(': lex->token.kind = LangC_TokenKind_LeftParen; ++lex->head; break;
-		case ')': lex->token.kind = LangC_TokenKind_RightParen; ++lex->head; break;
-		case '[': lex->token.kind = LangC_TokenKind_LeftBrkt; ++lex->head; break;
-		case ']': lex->token.kind = LangC_TokenKind_RightBrkt; ++lex->head; break;
-		case '{': lex->token.kind = LangC_TokenKind_LeftCurl; ++lex->head; break;
-		case '}': lex->token.kind = LangC_TokenKind_RightCurl; ++lex->head; break;
-		case ',': lex->token.kind = LangC_TokenKind_Comma; ++lex->head; break;
-		case ':': lex->token.kind = LangC_TokenKind_Colon; ++lex->head; break;
-		case ';': lex->token.kind = LangC_TokenKind_Semicolon; ++lex->head; break;
-		case '?': lex->token.kind = LangC_TokenKind_QuestionMark; ++lex->head; break;
-		case '~': lex->token.kind = LangC_TokenKind_Not; ++lex->head; break;
+		case '(': lex->token.kind = C_TokenKind_LeftParen; ++lex->head; break;
+		case ')': lex->token.kind = C_TokenKind_RightParen; ++lex->head; break;
+		case '[': lex->token.kind = C_TokenKind_LeftBrkt; ++lex->head; break;
+		case ']': lex->token.kind = C_TokenKind_RightBrkt; ++lex->head; break;
+		case '{': lex->token.kind = C_TokenKind_LeftCurl; ++lex->head; break;
+		case '}': lex->token.kind = C_TokenKind_RightCurl; ++lex->head; break;
+		case ',': lex->token.kind = C_TokenKind_Comma; ++lex->head; break;
+		case ':': lex->token.kind = C_TokenKind_Colon; ++lex->head; break;
+		case ';': lex->token.kind = C_TokenKind_Semicolon; ++lex->head; break;
+		case '?': lex->token.kind = C_TokenKind_QuestionMark; ++lex->head; break;
+		case '~': lex->token.kind = C_TokenKind_Not; ++lex->head; break;
 		
 		case '/':
 		{
 			if (lex->head[1] == '=')
 			{
-				lex->token.kind = LangC_TokenKind_DivAssign;
+				lex->token.kind = C_TokenKind_DivAssign;
 				lex->head += 2;
 			}
 			else
 			{
-				lex->token.kind = LangC_TokenKind_Div;
+				lex->token.kind = C_TokenKind_Div;
 				++lex->head;
 			}
 		} break;
 		
 		case '-':
 		{
-			lex->token.kind = LangC_TokenKind_Minus;
+			lex->token.kind = C_TokenKind_Minus;
 			++lex->head;
 			
 			if (lex->head[0] == '>')
 			{
-				lex->token.kind = LangC_TokenKind_Arrow;
+				lex->token.kind = C_TokenKind_Arrow;
 				++lex->head;
 			}
 			else if (lex->head[0] == '-')
 			{
-				lex->token.kind = LangC_TokenKind_Dec;
+				lex->token.kind = C_TokenKind_Dec;
 				++lex->head;
 			}
 			else if (lex->head[0] == '=')
 			{
-				lex->token.kind = LangC_TokenKind_MinusAssign;
+				lex->token.kind = C_TokenKind_MinusAssign;
 				++lex->head;
 			}
 		} break;
 		
 		case '+':
 		{
-			lex->token.kind = LangC_TokenKind_Plus;
+			lex->token.kind = C_TokenKind_Plus;
 			++lex->head;
 			
 			if (lex->head[0] == '+')
 			{
-				lex->token.kind = LangC_TokenKind_Inc;
+				lex->token.kind = C_TokenKind_Inc;
 				++lex->head;
 			}
 			else if (lex->head[0] == '=')
 			{
-				lex->token.kind = LangC_TokenKind_PlusAssign;
+				lex->token.kind = C_TokenKind_PlusAssign;
 				++lex->head;
 			}
 		} break;
 		
 		case '*':
 		{
-			lex->token.kind = LangC_TokenKind_Mul;
+			lex->token.kind = C_TokenKind_Mul;
 			++lex->head;
 			
 			if (lex->head[0] == '=')
 			{
-				lex->token.kind = LangC_TokenKind_MulAssign;
+				lex->token.kind = C_TokenKind_MulAssign;
 				++lex->head;
 			}
 		} break;
 		
 		case '%':
 		{
-			lex->token.kind = LangC_TokenKind_Mod;
+			lex->token.kind = C_TokenKind_Mod;
 			++lex->head;
 			
 			if (lex->head[0] == '=')
 			{
-				lex->token.kind = LangC_TokenKind_ModAssign;
+				lex->token.kind = C_TokenKind_ModAssign;
 				++lex->head;
 			}
 		} break;
 		
 		case '<':
 		{
-			lex->token.kind = LangC_TokenKind_LThan;
+			lex->token.kind = C_TokenKind_LThan;
 			++lex->head;
 			
 			if (lex->head[0] == '<')
 			{
-				lex->token.kind = LangC_TokenKind_LeftShift;
+				lex->token.kind = C_TokenKind_LeftShift;
 				++lex->head;
 				
 				if (lex->head[0] == '=')
 				{
-					lex->token.kind = LangC_TokenKind_LeftShiftAssign;
+					lex->token.kind = C_TokenKind_LeftShiftAssign;
 					++lex->head;
 				}
 			}
 			else if (lex->head[0] == '=')
 			{
-				lex->token.kind = LangC_TokenKind_LEqual;
+				lex->token.kind = C_TokenKind_LEqual;
 				++lex->head;
 			}
 		} break;
 		
 		case '>':
 		{
-			lex->token.kind = LangC_TokenKind_GThan;
+			lex->token.kind = C_TokenKind_GThan;
 			++lex->head;
 			
 			if (lex->head[0] == '>')
 			{
-				lex->token.kind = LangC_TokenKind_RightShift;
+				lex->token.kind = C_TokenKind_RightShift;
 				++lex->head;
 				
 				if (lex->head[0] == '=')
 				{
-					lex->token.kind = LangC_TokenKind_RightShiftAssign;
+					lex->token.kind = C_TokenKind_RightShiftAssign;
 					++lex->head;
 				}
 			}
 			else if (lex->head[0] == '=')
 			{
-				lex->token.kind = LangC_TokenKind_GEqual;
+				lex->token.kind = C_TokenKind_GEqual;
 				++lex->head;
 			}
 		} break;
 		
 		case '=':
 		{
-			lex->token.kind = LangC_TokenKind_Assign;
+			lex->token.kind = C_TokenKind_Assign;
 			++lex->head;
 			
 			if (lex->head[0] == '=')
 			{
-				lex->token.kind = LangC_TokenKind_Equals;
+				lex->token.kind = C_TokenKind_Equals;
 				++lex->head;
 			}
 		} break;
 		
 		case '!':
 		{
-			lex->token.kind = LangC_TokenKind_LNot;
+			lex->token.kind = C_TokenKind_LNot;
 			++lex->head;
 			
 			if (lex->head[0] == '=')
 			{
-				lex->token.kind = LangC_TokenKind_NotEquals;
+				lex->token.kind = C_TokenKind_NotEquals;
 				++lex->head;
 			}
 		} break;
 		
 		case '&':
 		{
-			lex->token.kind = LangC_TokenKind_And;
+			lex->token.kind = C_TokenKind_And;
 			++lex->head;
 			
 			if (lex->head[0] == '&')
 			{
-				lex->token.kind = LangC_TokenKind_LAnd;
+				lex->token.kind = C_TokenKind_LAnd;
 				++lex->head;
 			}
 			else if (lex->head[0] == '=')
 			{
-				lex->token.kind = LangC_TokenKind_AndAssign;
+				lex->token.kind = C_TokenKind_AndAssign;
 				++lex->head;
 			}
 		} break;
 		
 		case '|':
 		{
-			lex->token.kind = LangC_TokenKind_Or;
+			lex->token.kind = C_TokenKind_Or;
 			++lex->head;
 			
 			if (lex->head[0] == '|')
 			{
-				lex->token.kind = LangC_TokenKind_LOr;
+				lex->token.kind = C_TokenKind_LOr;
 				++lex->head;
 			}
 			else if (lex->head[0] == '=')
 			{
-				lex->token.kind = LangC_TokenKind_OrAssign;
+				lex->token.kind = C_TokenKind_OrAssign;
 				++lex->head;
 			}
 		} break;
 		
 		case '^':
 		{
-			lex->token.kind = LangC_TokenKind_Xor;
+			lex->token.kind = C_TokenKind_Xor;
 			++lex->head;
 			
 			if (lex->head[0] == '=')
 			{
-				lex->token.kind = LangC_TokenKind_XorAssign;
+				lex->token.kind = C_TokenKind_XorAssign;
 				++lex->head;
 			}
 		} break;
 		
 		default:
 		{
-			LangC_LexerError(lex, "unexpected token '%c'.", lex->head[0]);
+			C_LexerError(lex, "unexpected token '%c'.", lex->head[0]);
 			++lex->head;
 		} break;
 	}
@@ -896,14 +896,14 @@ LangC_NextToken(LangC_Lexer* lex)
 	lex->token.as_string.size = (uintsize)(lex->head - lex->token.as_string.data);
 	
 	lex->token.leading_spaces.data = lex->head;
-	LangC_IgnoreWhitespaces(&lex->head, !lex->preprocessor);
+	C_IgnoreWhitespaces(&lex->head, !lex->preprocessor);
 	lex->token.leading_spaces.size = (uintsize)(lex->head - lex->token.leading_spaces.data);
 	
-	LangC_UpdateLexerPreviousHead(lex);
+	C_UpdateLexerPreviousHead(lex);
 }
 
 internal bool32
-LangC_AssertToken(LangC_Lexer* lex, LangC_TokenKind kind)
+C_AssertToken(C_Lexer* lex, C_TokenKind kind)
 {
 	bool32 result = true;
 	
@@ -911,29 +911,29 @@ LangC_AssertToken(LangC_Lexer* lex, LangC_TokenKind kind)
 	{
 		result = false;
 		if (lex->token.kind)
-			LangC_LexerError(lex, "expected '%s', but got '%S'.",
-							 LangC_token_str_table[kind], StrFmt(lex->token.as_string));
+			C_LexerError(lex, "expected '%s', but got '%S'.",
+						 C_token_str_table[kind], StrFmt(lex->token.as_string));
 		else
-			LangC_LexerError(lex, "expected '%s' before end of file.", LangC_token_str_table[kind]);
+			C_LexerError(lex, "expected '%s' before end of file.", C_token_str_table[kind]);
 	}
 	
 	return result;
 }
 
 internal bool32
-LangC_EatToken(LangC_Lexer* lex, LangC_TokenKind kind)
+C_EatToken(C_Lexer* lex, C_TokenKind kind)
 {
-	bool32 result = LangC_AssertToken(lex, kind);
-	LangC_NextToken(lex);
+	bool32 result = C_AssertToken(lex, kind);
+	C_NextToken(lex);
 	return result;
 }
 
 internal bool32
-LangC_TryToEatToken(LangC_Lexer* lex, LangC_TokenKind kind)
+C_TryToEatToken(C_Lexer* lex, C_TokenKind kind)
 {
 	if (lex->token.kind == kind)
 	{
-		LangC_NextToken(lex);
+		C_NextToken(lex);
 		return true;
 	}
 	

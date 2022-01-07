@@ -549,7 +549,7 @@ OS_ReserveMemory(uintsize size)
 internal void*
 OS_CommitMemory(void* ptr, uintsize size)
 {
-	return mprotect(ptr, size PROT_READ | PROT_WRITE);
+	return mprotect(ptr, size, PROT_READ | PROT_WRITE);
 }
 
 internal void
