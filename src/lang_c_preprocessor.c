@@ -231,13 +231,14 @@ C_DefineMacro(C_Context* ctx, String definition, const C_SourceTrace* from)
 	};
 	
 	bool32 is_func_like = (head[0] == '(');
-	uint32 param_count = 0;
+	uint32 param_count;
 	
 	if (is_func_like)
 	{
 		// TODO(ljre): Check if parameter names are valid identifiers.
 		C_IgnoreWhitespaces(&head, false);
 		
+		param_count = 0;
 		if (*++head != ')')
 		{
 			++param_count;
@@ -249,15 +250,19 @@ C_DefineMacro(C_Context* ctx, String definition, const C_SourceTrace* from)
 			}
 		}
 	}
+	else
+	{
+		param_count = UINT32_MAX;
+	}
 	
-	C_Macro obj = {
-		.def = def,
-		.name = name,
-		.param_count = param_count,
-	};
+	C_Macro* result = Arena_Push((ctx->tokens) ? ctx->persistent_arena : ctx->stage_arena, sizeof(*result));
+	
+	result->def = def;
+	result->name = name;
+	result->param_count = param_count;
 	
 	if (from)
-		obj.trace = *from;
+		result->trace = *from;
 	
 	uint64 hash = SimpleHash(name);
 	
@@ -266,11 +271,10 @@ C_DefineMacro(C_Context* ctx, String definition, const C_SourceTrace* from)
 		// TODO(ljre): Warn macro redefinition
 	}
 	
-	void* result;
 	if (is_func_like)
-		result = Map_CreateEntry(&pp->func_macros, hash, &obj);
+		Map_CreateEntry(&pp->func_macros, hash, &result);
 	else
-		result = Map_CreateEntry(&pp->obj_macros, hash, &obj);
+		Map_CreateEntry(&pp->obj_macros, hash, &result);
 	
 	return result;
 }
@@ -301,7 +305,7 @@ C_FindMacro(C_Context* ctx, String name, int32 type)
 	C_Preprocessor* pp = &ctx->pp;
 	uint64 hash = SimpleHash(name);
 	
-	C_Macro* result = NULL;
+	C_Macro** result = NULL;
 	
 	switch (type)
 	{
@@ -316,7 +320,10 @@ C_FindMacro(C_Context* ctx, String name, int32 type)
 		} break;
 	}
 	
-	return result;
+	if (result)
+		return *result;
+	else
+		return NULL;
 }
 
 internal C_MacroParameter*
@@ -405,13 +412,12 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 	}
 	
 	// NOTE(ljre): Normal macro expansion.
-	macro->expanding = true;
 	const char* def_head = macro->def;
 	
 	C_MacroParameter* params = NULL;
 	uint32 param_count = 0;
 	
-	bool8 is_func_like = Map_Owns(&ctx->pp.func_macros, macro);
+	bool8 is_func_like = (macro->param_count != UINT32_MAX);
 	
 	// NOTE(ljre): Ignore macro name
 	//while (C_IsIdentChar(*def_head))
@@ -684,8 +690,6 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 	// NOTE(ljre): At this point, the parent_lex is going to have the macro name *or*
 	//             the ending ')' of the parameter list. We can eat a token safely.
 	C_NextToken(parent_lex);
-	
-	macro->expanding = false;
 }
 
 internal int32 C_EvalPreprocessorExprBinary(C_Context* ctx, C_Lexer* lex, int32 level);

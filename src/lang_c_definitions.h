@@ -417,7 +417,6 @@ struct C_Macro
 	const char* def;
 	C_SourceTrace trace;
 	uint32 param_count;
-	bool8 expanding;
 	bool8 persistent; // cant #undef it if true
 };
 
