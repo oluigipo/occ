@@ -14,6 +14,7 @@
 
 #define CString char*
 #define OTHER_STR STR
+#define char char
 
 const CString name = OTHER_STR(pepe);
 void* hello(void)

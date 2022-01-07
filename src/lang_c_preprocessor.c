@@ -262,7 +262,11 @@ C_DefineMacro(C_Context* ctx, String definition, const C_SourceTrace* from)
 	result->param_count = param_count;
 	
 	if (from)
-		result->trace = *from;
+	{
+		result->file = from->file;
+		result->line = from->line;
+		result->col = from->col;
+	}
 	
 	uint64 hash = SimpleHash(name);
 	
@@ -289,8 +293,7 @@ C_UndefineMacro(C_Context* ctx, String name)
 		Map_DeleteEntry(&pp->obj_macros, hash);
 }
 
-// NOTE(ljre): first of all, this function will never return a macro being expanded.
-//             returns NULL if it couldn't find it.
+// NOTE(ljre): returns NULL if it couldn't find it.
 //
 //             if type is 0, then it will return an object-like macro.
 //             if type is 1, then it will return a function-like macro.
@@ -324,6 +327,21 @@ C_FindMacro(C_Context* ctx, String name, int32 type)
 		return *result;
 	else
 		return NULL;
+}
+
+internal bool32
+C_TokenWasGeneratedByMacro(const C_Token* token, const C_Macro* macro)
+{
+	const C_SourceTrace* trace = &token->trace;
+	while (trace->invocation)
+	{
+		if (trace->macro_def == macro)
+			return true;
+		
+		trace = trace->invocation;
+	}
+	
+	return false;
 }
 
 internal C_MacroParameter*
@@ -365,9 +383,9 @@ C_TracePreprocessor(C_Context* ctx, C_Lexer* lex, uint32 flags)
 		};
 		
 		if (flags)
-			Arena_Printf(ctx->persistent_arena, "# %i \"%S\" %s\n", lex->line, StrFmt(lex->file->path), flag_table[flags]);
+			Arena_Printf(ctx->persistent_arena, "# %i \"%S\" %s\n", lex->trace.line, StrFmt(lex->trace.file->path), flag_table[flags]);
 		else
-			Arena_Printf(ctx->persistent_arena, "# %i \"%S\"\n", lex->line, StrFmt(lex->file->path));
+			Arena_Printf(ctx->persistent_arena, "# %i \"%S\"\n", lex->trace.line, StrFmt(lex->trace.file->path));
 	}
 }
 
@@ -380,7 +398,7 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 	// NOTE(ljre): Handle special macros
 	if (MatchCString("__LINE__", macro->name))
 	{
-		int32 line = parent_lex->line;
+		int32 line = parent_lex->trace.line;
 		
 		C_Token tok = {
 			.kind = C_TokenKind_IntLiteral,
@@ -396,7 +414,7 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 	}
 	else if (MatchCString("__FILE__", macro->name))
 	{
-		String file = parent_lex->file->path;
+		String file = parent_lex->trace.file->path;
 		
 		C_Token tok = {
 			.kind = C_TokenKind_StringLiteral,
@@ -546,10 +564,11 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 	// NOTE(ljre): Expand macro
 	C_Lexer* lex = &(C_Lexer) {
 		.preprocessor = true,
-		.file = macro->trace.file,
-		.line = macro->trace.line,
-		.col = macro->trace.col,
-		.ctx = ctx,
+		.trace = {
+			.file = macro->file,
+			.line = macro->line,
+			.col = macro->col,
+		},
 	};
 	
 	// NOTE(ljre): If the lexer already has waiting tokens, we want to insert right before them.
@@ -559,7 +578,7 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 	
 	parent_lex->waiting_token = NULL;
 	
-	C_SetupLexer(lex, def_head, parent_lex->arena);
+	C_SetupLexer(lex, def_head, ctx, parent_lex->arena);
 	
 	// NOTE(ljre): Insert Trace
 	{
@@ -567,8 +586,8 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 		C_SourceTrace* trace = Arena_Push(arena, sizeof(*trace));
 		*trace = invocation_trace;
 		
-		lex->invocation = trace;
-		lex->macro_def = macro;
+		lex->trace.invocation = trace;
+		lex->trace.macro_def = macro;
 	}
 	
 	C_NextToken(lex);
@@ -587,7 +606,7 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 					!C_AssertToken(lex, C_TokenKind_Identifier) ||
 					!(param = C_FindMacroParameter(params, macro->param_count, lex->token.value_ident)))
 				{
-					C_LexerError(parent_lex, "expected a macro parameter for stringification.");
+					C_TraceError(ctx, &lex->trace, "expected a macro parameter for stringification.");
 				}
 				else
 				{
@@ -602,6 +621,7 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 							.size = str.size - 2,
 							.data = str.data + 1,
 						},
+						.trace = lex->trace,
 					};
 					
 					C_PushToken(parent_lex, &tok);
@@ -666,9 +686,6 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 				else
 				{
 					C_NextToken(lex);
-					if (tok.kind == C_TokenKind_Identifier && CompareStringFast(macro->name, tok.value_ident) == 0)
-						tok.dont_expand = true;
-					
 					C_PushToken(parent_lex, &tok);
 				}
 			} break;
@@ -915,7 +932,7 @@ C_IgnoreUntilEndOfIf(C_Context* ctx, C_Lexer* lex, bool32 already_matched)
 		{
 			case C_TokenKind_Eof:
 			{
-				C_LexerError(lex, "unclosed conditional pre-processor block.");
+				C_TraceError(ctx, &lex->token.trace, "unclosed conditional pre-processor block.");
 				goto out_of_the_loop;
 			}
 			
@@ -1037,7 +1054,7 @@ C_PreprocessInclude(C_Context* ctx, C_Lexer* lex)
 		
 		if (*head != '>')
 		{
-			C_LexerError(lex, "missing '>' at the end of file path.");
+			C_TraceError(ctx, &lex->token.trace, "missing '>' at the end of file path.");
 			C_IgnoreUntilNewline(lex);
 			return;
 		}
@@ -1052,20 +1069,20 @@ C_PreprocessInclude(C_Context* ctx, C_Lexer* lex)
 	}
 	else
 	{
-		C_LexerError(lex, "'#include' should have a path to a file sorrounded by \"\" or <>.");
+		C_TraceError(ctx, &lex->token.trace, "'#include' should have a path to a file sorrounded by \"\" or <>.");
 		C_IgnoreUntilNewline(lex);
 		return;
 	}
 	
 	String fullpath;
-	const char* contents = C_TryToLoadFile(ctx, path, relative, lex->file->path, &fullpath);
+	const char* contents = C_TryToLoadFile(ctx, path, relative, lex->trace.file->path, &fullpath);
 	if (contents)
 	{
 		C_Preprocess2(ctx, fullpath, contents, lex);
 		C_TracePreprocessor(ctx, lex, 2);
 	}
 	else
-		C_LexerError(lex, "could not find file '%S' when including.", StrFmt(path));
+		C_TraceError(ctx, &lex->token.trace, "could not find file '%S' when including.", StrFmt(path));
 }
 
 internal void
@@ -1075,11 +1092,10 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 	
 	C_Lexer* lex = &(C_Lexer) {
 		.preprocessor = true,
-		.file = from ? from->file : NULL,
-		.ctx = ctx,
+		.trace.file = from ? from->trace.file : NULL,
 	};
 	
-	C_SetupLexer(lex, source, ctx->stage_arena);
+	C_SetupLexer(lex, source, ctx, ctx->stage_arena);
 	C_PushFileTrace(lex, path, from);
 	
 	C_TracePreprocessor(ctx, lex, 1);
@@ -1095,7 +1111,7 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 			{
 				if (!previous_was_newline)
 				{
-					C_LexerError(lex, "'#' should be the first token in a line.");
+					C_TraceError(ctx, &lex->token.trace, "'#' should be the first token in a line.");
 					C_NextToken(lex);
 					break;
 				}
@@ -1105,7 +1121,7 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 				
 				if (lex->token.kind != C_TokenKind_Identifier)
 				{
-					C_LexerError(lex, "invalid preprocessor directive '%S'.", StrFmt(directive));
+					C_TraceError(ctx, &lex->token.trace, "preprocessor directive has to be identifier.");
 					C_IgnoreUntilNewline(lex);
 					break;
 				}
@@ -1144,11 +1160,11 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 				{
 					C_NextToken(lex);
 					
-					int32 line = lex->line;
+					int32 line = lex->trace.line;
 					if (C_AssertToken(lex, C_TokenKind_IntLiteral))
 						line = lex->token.value_int;
 					
-					lex->line = line-1; // NOTE(ljre): :P
+					lex->trace.line = line-1; // NOTE(ljre): :P
 					C_TracePreprocessor(ctx, lex, 0);
 				}
 				else if (MatchCString("define", directive))
@@ -1187,7 +1203,7 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 						++end;
 					
 					uintsize len = end - begin;
-					C_LexerError(lex, "\"%S\"", len, begin);
+					C_TraceError(ctx, &lex->token.trace, "\"%S\"", len, begin);
 					
 					lex->head = end;
 				}
@@ -1200,7 +1216,7 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 						++end;
 					
 					uintsize len = end - begin;
-					C_LexerWarning(lex, C_Warning_UserWarning, "\"%S\"", len, begin);
+					C_TraceWarning(ctx, &lex->token.trace, C_Warning_UserWarning, "\"%S\"", len, begin);
 					
 					lex->head = end;
 				}
@@ -1221,7 +1237,7 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 					}
 				}
 				else
-					C_LexerError(lex, "unknown pre-processor directive '%S'.", StrFmt(directive));
+					C_TraceError(ctx, &lex->token.trace, "unknown pre-processor directive '%S'.", StrFmt(directive));
 				
 				C_IgnoreUntilNewline(lex);
 				C_NextToken(lex);
@@ -1234,15 +1250,12 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 				String leading_spaces = lex->token.leading_spaces;
 				C_Macro* macro = NULL;
 				
-				if (!lex->token.dont_expand)
-				{
-					if (C_PeekIncomingToken(lex).kind == C_TokenKind_LeftParen)
-						macro = C_FindMacro(ctx, ident, 3);
-					else
-						macro = C_FindMacro(ctx, ident, 0);
-				}
+				if (C_PeekIncomingToken(lex).kind == C_TokenKind_LeftParen)
+					macro = C_FindMacro(ctx, ident, 3);
+				else
+					macro = C_FindMacro(ctx, ident, 0);
 				
-				if (macro)
+				if (macro && !C_TokenWasGeneratedByMacro(&lex->token, macro))
 					C_ExpandMacro(ctx, macro, lex, leading_spaces);
 				else
 				{

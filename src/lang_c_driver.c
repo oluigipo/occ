@@ -263,7 +263,7 @@ C_DefaultDriver(int32 argc, const char** argv)
 				C_FlushWarnings(ctx);
 				Arena_Clear(ctx->stage_arena);
 				
-				//ok = ok && C_ParseFile(ctx); Arena_Clear(ctx->stage_arena);
+				ok = ok && C_ParseFile(ctx); Arena_Clear(ctx->stage_arena);
 				//ok = ok && C_ResolveAst(ctx); Arena_Clear(ctx->stage_arena);
 				
 				//C_FlushWarnings(ctx);

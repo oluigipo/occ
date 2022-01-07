@@ -4,12 +4,12 @@
 internal void C_NextToken(C_Lexer* lex);
 
 internal void
-C_SetupLexer(C_Lexer* lex, const char* source, Arena* arena)
+C_SetupLexer(C_Lexer* lex, const char* source, C_Context* ctx, Arena* arena)
 {
-	if (lex->col == 0)
-		lex->col = 1;
-	if (lex->line == 0)
-		lex->line = 1;
+	if (lex->trace.col == 0)
+		lex->trace.col = 1;
+	if (lex->trace.line == 0)
+		lex->trace.line = 1;
 	
 	lex->head = source;
 	// NOTE(ljre): Ignore BOM.
@@ -19,6 +19,7 @@ C_SetupLexer(C_Lexer* lex, const char* source, Arena* arena)
 	lex->token.kind = C_TokenKind_Eof;
 	lex->previous_head = lex->head;
 	lex->arena = arena;
+	lex->ctx = ctx;
 }
 
 internal void
@@ -30,19 +31,19 @@ C_PushFileTrace(C_Lexer* lex, String path, C_Lexer* trace_from)
 		trace_from = lex;
 	
 	file->path = path;
-	file->included_line = trace_from->line;
-	file->included_from = trace_from->file;
-	file->is_system_file = trace_from->file ? trace_from->file->is_system_file : false;
-	lex->file = file;
+	file->included_line = trace_from->trace.line;
+	file->included_from = trace_from->trace.file;
+	file->is_system_file = trace_from->trace.file ? trace_from->trace.file->is_system_file : false;
+	lex->trace.file = file;
 }
 
 internal void
 C_PopFileTrace(C_Lexer* lex)
 {
-	C_SourceFileTrace* file = lex->file;
+	C_SourceFileTrace* file = lex->trace.file;
 	
-	lex->file = file->included_from;
-	lex->line = file->included_line + 1;
+	lex->trace.file = file->included_from;
+	lex->trace.line = file->included_line + 1;
 }
 
 internal inline bool32
@@ -75,23 +76,27 @@ C_PrintIncludeStack(C_SourceFileTrace* file, uint32 line)
 }
 
 internal void
-C_LexerError(C_Lexer* lex, const char* fmt, ...)
+C_TraceErrorVarargs(C_Context* ctx, C_SourceTrace* trace, const char* fmt, va_list args)
 {
-	C_SourceFileTrace* file = lex->file;
-	C_error_count++;
+	ctx->error_count++;
+	C_SourceFileTrace* file = trace->file;
 	
 	Print("\n");
 	if (file->included_from)
 		C_PrintIncludeStack(file->included_from, file->included_line);
 	
-	Print("%C1%S%C0(%i:%i): %C2error%C0: ", StrFmt(file->path), lex->line, lex->col);
-	
+	Print("%C1%S%C0(%i:%i): %C2error%C0: ", StrFmt(file->path), trace->line, trace->col);
+	PrintVarargs(fmt, args);
+	Print("\n");
+}
+
+internal void
+C_TraceError(C_Context* ctx, C_SourceTrace* trace, const char* fmt, ...)
+{
 	va_list args;
 	va_start(args, fmt);
-	PrintVarargs(fmt, args);
+	C_TraceErrorVarargs(ctx, trace, fmt, args);
 	va_end(args);
-	
-	Print("\n");
 }
 
 internal void
@@ -104,28 +109,32 @@ C_PrintIncludeStackToArena(C_SourceFileTrace* file, uint32 line, Arena* arena)
 }
 
 internal void
-C_LexerWarning(C_Lexer* lex, C_Warning warning, const char* fmt, ...)
+C_TraceWarningVarargs(C_Context* ctx, C_SourceTrace* trace, C_Warning warning, const char* fmt, va_list args)
 {
-	if (lex->ctx && C_IsWarningEnabled(lex->ctx, warning))
-	{
-		C_SourceFileTrace* file = lex->file;
-		char* buf = Arena_End(global_arena);
-		
-		Arena_PushMemory(global_arena, 1, "\n");
-		if (file->included_from)
-			C_PrintIncludeStackToArena(file->included_from, file->included_line, global_arena);
-		
-		Arena_Printf(global_arena, "%C1%S%C0(%i:%i): %C3warning%C0: ", StrFmt(file->path), lex->line, lex->col);
-		
-		va_list args;
-		va_start(args, fmt);
-		Arena_VPrintf(global_arena, fmt, args);
-		va_end(args);
-		
-		Arena_PushMemory(global_arena, 1, "");
-		
-		C_PushWarning(lex->ctx, warning, buf);
-	}
+	if (!C_IsWarningEnabled(ctx, warning))
+		return;
+	
+	C_SourceFileTrace* file = trace->file;
+	char* buf = Arena_End(global_arena);
+	
+	Arena_PushMemory(global_arena, 1, "\n");
+	if (file->included_from)
+		C_PrintIncludeStackToArena(file->included_from, file->included_line, global_arena);
+	
+	Arena_Printf(global_arena, "%C1%S%C0(%i:%i): %C3warning%C0: ", StrFmt(file->path), trace->line, trace->col);
+	Arena_VPrintf(global_arena, fmt, args);
+	Arena_PushMemory(global_arena, 1, "");
+	
+	C_PushWarning(ctx, warning, buf);
+}
+
+internal void
+C_TraceWarning(C_Context* ctx, C_SourceTrace* trace, C_Warning warning, const char* fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	C_TraceWarningVarargs(ctx, trace, warning, fmt, args);
+	va_end(args);
 }
 
 internal C_TokenKind
@@ -180,14 +189,17 @@ C_PushStringOfTokens(C_Lexer* lex, const char* str)
 {
 	C_Lexer temp_lex = {
 		.preprocessor = lex->preprocessor,
+		.trace = lex->trace,
 	};
 	
-	C_SetupLexer(&temp_lex, str, lex->arena);
+	C_SetupLexer(&temp_lex, str, lex->ctx, lex->arena);
 	C_NextToken(&temp_lex);
 	
 	while (temp_lex.token.kind)
 	{
 		C_PushToken(lex, &temp_lex.token);
+		
+		temp_lex.trace = lex->trace;
 		C_NextToken(&temp_lex);
 	}
 }
@@ -209,9 +221,9 @@ C_UpdateLexerPreviousHead(C_Lexer* lex)
 	{
 		switch (lex->previous_head[0])
 		{
-			case '\n': lex->line++;
-			case '\r': lex->col = 1; break;
-			default: lex->col++; break;
+			case '\n': lex->trace.line++;
+			case '\r': lex->trace.col = 1; break;
+			default: lex->trace.col++; break;
 		}
 	}
 }
@@ -355,7 +367,7 @@ C_TokenizeStringLiteral(C_Lexer* lex)
 	
 	if (*end != '"')
 	{
-		C_LexerError(lex, "missing closing quote.");
+		C_TraceError(lex->ctx, &lex->trace, "missing closing quote.");
 		return StrNull;
 	}
 	
@@ -389,14 +401,8 @@ C_NextToken(C_Lexer* lex)
 	beginning:;
 	C_IgnoreWhitespaces(&lex->head, !lex->preprocessor);
 	
-	lex->token.dont_expand = false;
 	lex->token.as_string.data = lex->head;
-	
-	lex->token.trace.line = lex->line;
-	lex->token.trace.col = lex->col;
-	lex->token.trace.file = lex->file;
-	lex->token.trace.invocation = lex->invocation;
-	lex->token.trace.macro_def = lex->macro_def;
+	lex->token.trace = lex->trace;
 	
 	switch (lex->head[0])
 	{
@@ -458,10 +464,10 @@ C_NextToken(C_Lexer* lex)
 						++lex->head;
 					
 					lex->previous_head = lex->head;
-					lex->col = 1;
+					lex->trace.col = 1;
 					
 					// NOTE(ljre): "This indicates the start of a new file."
-					if (flags & 1 || !lex->file)
+					if (flags & 1 || !lex->trace.file)
 					{
 						C_PushFileTrace(lex, file, NULL);
 					}
@@ -472,13 +478,13 @@ C_NextToken(C_Lexer* lex)
 						C_PopFileTrace(lex);
 					}
 					
-					lex->line = line;
+					lex->trace.line = line;
 					
 					// NOTE(ljre): "This indicates that the following text comes from a system header file, so
 					//              certain warnings should be suppressed."
 					if (flags & 4)
 					{
-						lex->file->is_system_file = true;
+						lex->trace.file->is_system_file = true;
 					}
 					
 					// NOTE(ljre): "This indicates that the following text should be treated as being wrapped
@@ -556,7 +562,7 @@ C_NextToken(C_Lexer* lex)
 					++end;
 				
 				if (base == 2)
-					C_LexerError(lex, "floats cannot begin with '0b'.");
+					C_TraceError(lex->ctx, &lex->trace, "floats cannot begin with '0b'.");
 				
 				if (*end == 'e' || *end == 'E' || (base == 16 && (*end == 'p' || *end == 'P')))
 				{
@@ -682,7 +688,7 @@ C_NextToken(C_Lexer* lex)
 			
 			if (lex->head[0] != '\'')
 			{
-				C_LexerError(lex, "missing pair of character literal.");
+				C_TraceError(lex->ctx, &lex->trace, "missing pair of character literal.");
 				break;
 			}
 			
@@ -896,7 +902,7 @@ C_NextToken(C_Lexer* lex)
 		
 		default:
 		{
-			C_LexerError(lex, "unexpected token '%c'.", lex->head[0]);
+			C_TraceError(lex->ctx, &lex->trace, "unexpected token '%c'.", lex->head[0]);
 			++lex->head;
 		} break;
 	}
@@ -919,10 +925,10 @@ C_AssertToken(C_Lexer* lex, C_TokenKind kind)
 	{
 		result = false;
 		if (lex->token.kind)
-			C_LexerError(lex, "expected '%s', but got '%S'.",
+			C_TraceError(lex->ctx, &lex->token.trace, "expected '%s', but got '%S'.",
 						 C_token_str_table[kind], StrFmt(lex->token.as_string));
 		else
-			C_LexerError(lex, "expected '%s' before end of file.", C_token_str_table[kind]);
+			C_TraceError(lex->ctx, &lex->token.trace, "expected '%s' before end of file.", C_token_str_table[kind]);
 	}
 	
 	return result;
@@ -957,4 +963,61 @@ C_PushTokenToStream(C_TokenStream* stream, const C_Token* token, Arena* arena)
 	stream->tokens[stream->len++] = *token;
 	
 	return stream;
+}
+
+internal void
+C_StreamNextToken(C_Context* ctx)
+{
+	if (ctx->token->kind == C_TokenKind_Eof)
+		return;
+	
+	Assert(ctx->token >= ctx->tokens->tokens);
+	uint32 index = ctx->token - ctx->tokens->tokens;
+	
+	++index;
+	if (index >= ArrayLength(ctx->tokens->tokens))
+	{
+		ctx->tokens = ctx->tokens->next;
+		index = 0;
+	}
+	
+	ctx->token = &ctx->tokens->tokens[index];
+}
+
+internal bool32
+C_StreamAssertToken(C_Context* ctx, C_TokenKind kind)
+{
+	bool32 result = true;
+	
+	if (ctx->token->kind != kind)
+	{
+		result = false;
+		if (ctx->token->kind)
+			C_TraceError(ctx, &ctx->token->trace, "expected '%s', but got '%S'.",
+						 C_token_str_table[kind], StrFmt(ctx->token->as_string));
+		else
+			C_TraceError(ctx, &ctx->token->trace, "expected '%s' before end of file.", C_token_str_table[kind]);
+	}
+	
+	return result;
+}
+
+internal bool32
+C_StreamEatToken(C_Context* ctx, C_TokenKind kind)
+{
+	bool32 result = C_StreamAssertToken(ctx, kind);
+	C_StreamNextToken(ctx);
+	return result;
+}
+
+internal bool32
+C_StreamTryEatToken(C_Context* ctx, C_TokenKind kind)
+{
+	if (ctx->token->kind == kind)
+	{
+		C_StreamNextToken(ctx);
+		return true;
+	}
+	
+	return false;
 }
