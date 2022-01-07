@@ -4,9 +4,6 @@
 *    - Validate UTF-8 Codepoints;
 *    - Parsing standard C99 (halfway through);
 *    - Type-checking;
-*    - Code analysis for warnings:
-*        - "a<<b + 10", misleading spacing between operations;
-*        - constness;
 *    - Codegen with Succ3s's backend;
 *    - Flag (-U): Undefine a macro;
 *    - Flag (-v): Print to stdout verbose log;
@@ -60,9 +57,6 @@
 #define C_VERSION_STR StrMacro(C_VERSION_MAJOR) "." StrMacro(C_VERSION_MINOR) "." StrMacro(C_VERSION_PATCH)
 
 #include "lang_c_definitions.h"
-
-// TODO(ljre): Remove this.
-internal int32 C_error_count = 0;
 
 internal void
 C_AddInputFile(StringList** first, StringList** last, String str)
@@ -125,8 +119,8 @@ C_FlushWarnings(C_Context* ctx)
 #include "lang_c_lexer.c"
 #include "lang_c_preprocessor.c"
 #include "lang_c_parser.c"
-//#include "lang_c_analyzer.c"
-//#include "lang_c_gen.c"
+#include "lang_c_analyzer.c"
+#include "lang_c_gen.c"
 
 #include "lang_c_driver.c"
 

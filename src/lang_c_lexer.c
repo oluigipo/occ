@@ -975,7 +975,7 @@ C_StreamNextToken(C_Context* ctx)
 	uint32 index = ctx->token - ctx->tokens->tokens;
 	
 	++index;
-	if (index >= ArrayLength(ctx->tokens->tokens))
+	if (index >= ctx->tokens->len)
 	{
 		ctx->tokens = ctx->tokens->next;
 		index = 0;

@@ -1,5 +1,7 @@
 @echo off
 
-clang -g src/main.c -o "occ.exe" -std=c99 -Wall -Wno-logical-op-parentheses -Wno-switch -Wno-parentheses -Wno-unneeded-internal-declaration -fuse-ld=lld %*
+set WARNINGS=-Wall -Wno-logical-op-parentheses -Wno-switch -Wno-parentheses -Wno-unneeded-internal-declaration
+set WARNINGS=%WARNINGS% -Wno-unused-function
+clang -g src/main.c -o "occ.exe" -std=c99 %WARNINGS% -fuse-ld=lld %*
 
 @echo on

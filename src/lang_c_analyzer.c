@@ -11,9 +11,7 @@ C_CreateNodeFrom(C_Context* ctx, C_Node* other_, C_AstKind kind, uintsize size)
 	
 	result->kind = kind;
 	result->flags = C_AstFlags_Implicit;
-	result->line = other->line;
-	result->col = other->col;
-	result->lexfile = other->lexfile;
+	result->trace = other->trace;
 	
 	return result;
 }
@@ -349,5 +347,5 @@ C_ResolveAst(C_Context* ctx)
 {
 	// TODO
 	
-	return true;
+	return ctx->error_count == 0;
 }

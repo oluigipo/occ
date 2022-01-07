@@ -267,6 +267,16 @@ C_DefineMacro(C_Context* ctx, String definition, const C_SourceTrace* from)
 		result->line = from->line;
 		result->col = from->col;
 	}
+	else
+	{
+		static C_SourceFileTrace command_line = {
+			.path = StrInit("<command_line>"),
+			.is_system_file = true,
+		};
+		
+		result->file = &command_line;
+		result->line = result->col = 1;
+	}
 	
 	uint64 hash = SimpleHash(name);
 	
@@ -1283,6 +1293,8 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 	}
 	
 	// NOTE(ljre): Done preprocessing this file!
+	if (!from)
+		C_PreprocessWriteToken(ctx, &lex->token);
 }
 
 internal bool32
@@ -1337,5 +1349,5 @@ C_Preprocess(C_Context* ctx, String path)
 	
 	ctx->use_stage_arena_for_warnings = false;
 	
-	return C_error_count == 0;
+	return ctx->error_count == 0;
 }

@@ -194,8 +194,8 @@ internal const char* C_token_str_table[C_TokenKind__Count] = {
 	[C_TokenKind_Void] = "void",
 	[C_TokenKind_Volatile] = "volatile",
 	[C_TokenKind_While] = "while",
-	[C_TokenKind_Bool] = "bool",
-	[C_TokenKind_Complex] = "complex",
+	[C_TokenKind_Bool] = "_Bool",
+	[C_TokenKind_Complex] = "_Complex",
 	
 	[C_TokenKind_GccAttribute] = "__attribute__",
 	[C_TokenKind_GccAsm] = "__asm__",
@@ -492,6 +492,8 @@ enum C_AstKind
 	C_AstKind_StmtCompound,
 	C_AstKind_StmtLabel,
 	C_AstKind_StmtCase,
+	C_AstKind_StmtBreak,
+	C_AstKind_StmtContinue,
 	C_AstKind_StmtGccAsm,
 	
 	C_AstKind_ExprFactor = 4 << C_AstKind__Category,
@@ -570,6 +572,7 @@ enum C_AstKind
 	C_AstKind_AttributeAlignas,
 	C_AstKind_AttributeBitfield,
 	C_AstKind_AttributeCallconv,
+	C_AstKind_AttributeMsvcForceinline,
 }
 typedef C_AstKind;
 
