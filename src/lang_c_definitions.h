@@ -641,12 +641,12 @@ struct C_AstType
 	
 	uint64 size;
 	uint16 alignment_mask;
+	bool8 is_unsigned;
 	// NOTE(ljre): there's padding here, so add more stuff if needed.
 	
 	union
 	{
-		struct { C_AstType* of; C_AstExpr* length; } vla_array;
-		struct { C_AstType* of; uint64 length; } array;
+		struct { C_AstType* of; C_AstExpr* length; } array;
 		struct { C_AstType* to; } ptr;
 		struct { C_AstType* ret; C_AstDecl* params; } function;
 		struct { C_AstType* base; } not_base; // NOTE(ljre): This should match the beginning of the above.
@@ -860,10 +860,24 @@ enum C_Warning
 }
 typedef C_Warning;
 
+enum C_CompilerMode
+{
+	C_CompilerMode_InputsToExecutable,
+	C_CompilerMode_InputsToPreprocessed,
+}
+typedef C_CompilerMode;
+
 struct C_CompilerOptions
 {
 	uint64 enabled_warnings[(C_Warning__Count + 63) / 64];
 	StringList* include_dirs;
+	
+	const char* const* defined_macros;
+	const char* const* undefined_macros;
+	uint32 defined_macros_count;
+	uint32 undefined_macros_count;
+	
+	C_CompilerMode mode;
 }
 typedef C_CompilerOptions;
 
@@ -882,6 +896,7 @@ struct C_Context
 	const C_ABI* abi;
 	Arena* persistent_arena; // NOTE(ljre): Permanent arena that will live through various stages.
 	Arena* stage_arena; // NOTE(ljre): This arena is used for a single stage.
+	String input_file;
 	
 	// NOTE(ljre): Warning list
 	C_QueuedWarning* queued_warning;

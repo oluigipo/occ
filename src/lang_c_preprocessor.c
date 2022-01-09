@@ -1,11 +1,43 @@
-internal void C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from);
+/*
+* NOTE(ljre): How does this work
+* There are 2 output modes: text and tokens.
+* To check which one we are working with, just check 'ctx->tokens' for NULL.
+*
+* In text mode:
+*     The 'ctx->persistent_arena' is where the preprocessed source output will be, so all random
+*     objects (O_Macro, O_SourceTrace, etc.) need to be allocated in 'ctx->stage_arena'.
+*     At the end, the output should be in the member 'ctx->pre_source' as a null-terminated string.
+*     It will use GCC's preprocessor metadata for files, line numbers, etc.
+*
+* In token mode:
+*     Now we are outputing 'C_TokenStream's. They are just simple linked lists of arrays of tokens.
+*     Those tokens will have full source-code tracing (including macro expansion).
+*
+*     There is an edge-case that, when reading the token stream, needs to be handled specially if the
+*         preprocessor can't: #pragma
+*     It will be written to the stream as { C_TokenKind_HashtagPragma, ..., C_TokenKind_NewLine }.
+*
+*/
+
+internal C_TokenStream*
+C_PushTokenToStream(C_TokenStream* stream, const C_Token* token, Arena* arena)
+{
+	if (stream->len >= ArrayLength(stream->tokens))
+		stream = stream->next = Arena_Push(arena, sizeof(*stream));
+	
+	stream->tokens[stream->len++] = *token;
+	
+	return stream;
+}
+
+internal void C_PreprocessFile(C_Context* ctx, String path, const char* source, C_Lexer* from);
 internal void C_PreprocessIfDef(C_Context* ctx, C_Lexer* lex, bool32 not);
 internal void C_PreprocessIf(C_Context* ctx, C_Lexer* lex);
 
 internal void
 C_PreprocessWriteToken(C_Context* ctx, const C_Token* token)
 {
-	if (!ctx->pp.stream)
+	if (!ctx->tokens)
 	{
 		Arena_PushMemory(ctx->persistent_arena, StrFmt(token->as_string));
 		Arena_PushMemory(ctx->persistent_arena, StrFmt(token->leading_spaces));
@@ -229,6 +261,8 @@ C_IgnoreUntilNewline(C_Lexer* lex)
 internal C_Macro*
 C_DefineMacro(C_Context* ctx, String definition, const C_SourceTrace* from)
 {
+	// TODO(ljre): Macros redefinitions are OK if the previous definition has the exact same tokens and spaces.
+	
 	C_Preprocessor* const pp = &ctx->pp;
 	const char* def = Arena_NullTerminateString(ctx->stage_arena, definition);
 	
@@ -1122,7 +1156,7 @@ C_PreprocessInclude(C_Context* ctx, C_Lexer* lex)
 	const char* contents = C_TryToLoadFile(ctx, path, relative, lex->trace.file->path, &fullpath);
 	if (contents)
 	{
-		C_Preprocess2(ctx, fullpath, contents, lex);
+		C_PreprocessFile(ctx, fullpath, contents, lex);
 		C_TracePreprocessor(ctx, lex, 2);
 	}
 	else
@@ -1130,7 +1164,7 @@ C_PreprocessInclude(C_Context* ctx, C_Lexer* lex)
 }
 
 internal void
-C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
+C_PreprocessFile(C_Context* ctx, String path, const char* source, C_Lexer* from)
 {
 	TraceName(path);
 	
@@ -1341,13 +1375,13 @@ C_Preprocess2(C_Context* ctx, String path, const char* source, C_Lexer* from)
 		}
 	}
 	
-	// NOTE(ljre): Done preprocessing this file!
+	// NOTE(ljre): If we are the main file, write EOF.
 	if (!from)
 		C_PreprocessWriteToken(ctx, &lex->token);
 }
 
 internal bool32
-C_Preprocess(C_Context* ctx, String path)
+C_Preprocess(C_Context* ctx)
 {
 	Trace();
 	
@@ -1356,7 +1390,7 @@ C_Preprocess(C_Context* ctx, String path)
 	C_DefineMacro(ctx, Str("__FILE__"), NULL)->persistent = true;
 	
 	String fullpath;
-	ctx->source = C_TryToLoadFile(ctx, path, true, StrNull, &fullpath);
+	ctx->source = C_TryToLoadFile(ctx, ctx->input_file, true, StrNull, &fullpath);
 	if (ctx->source)
 	{
 		if (!ctx->tokens)
@@ -1369,11 +1403,11 @@ C_Preprocess(C_Context* ctx, String path)
 			ctx->pp.stream = ctx->tokens;
 		}
 		
-		C_Preprocess2(ctx, fullpath, ctx->source, NULL);
+		C_PreprocessFile(ctx, fullpath, ctx->source, NULL);
 	}
 	else
 	{
-		Print("error: could not open input file '%S'.\n", StrFmt(path));
+		Print("error: could not open input file '%S'.\n", StrFmt(ctx->input_file));
 		++ctx->error_count;
 	}
 	

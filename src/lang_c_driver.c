@@ -13,6 +13,7 @@ C_DefaultDriver_PrintHelp(void)
 		  "%C1  -D<name>=<value> %C0 Defines a Macro.\n"
 		  "%C1  -E               %C0 Runs the preprocessor on the single input file.\n"
 		  "%C1  -I<dir>          %C0 Adds an include directory.\n"
+		  "%C1  -j -j<N>         %C0 Number of worker threads. When specified, defaults to number of system threads.\n"
 		  "%C1  -o<file>         %C0 Changes the output file. (defaults to \"a.out\")\n"
 		  "\n");
 }
@@ -256,17 +257,18 @@ C_DefaultDriver(int32 argc, const char** argv)
 			{
 				bool32 ok = true;
 				ctx->tokens = Arena_Push(ctx->persistent_arena, sizeof(*ctx->tokens));
+				ctx->input_file = it->value;
 				
 				// NOTE(ljre): 'C_Preprocess' pushes warnings to the stage arena, so we need to flush
 				//             before clearing it.
-				ok = ok && C_Preprocess(ctx, it->value);
+				ok = ok && C_Preprocess(ctx);
 				C_FlushWarnings(ctx);
 				Arena_Clear(ctx->stage_arena);
 				
 				ok = ok && C_ParseFile(ctx); Arena_Clear(ctx->stage_arena);
 				//ok = ok && C_ResolveAst(ctx); Arena_Clear(ctx->stage_arena);
 				
-				//C_FlushWarnings(ctx);
+				C_FlushWarnings(ctx);
 				
 				//ok = ok && C_GenIr(ctx); Arena_Clear(ctx->stage_arena);
 				// TODO
@@ -276,7 +278,9 @@ C_DefaultDriver(int32 argc, const char** argv)
 		// NOTE(ljre): Run Preprocessor
 		case 1:
 		{
-			C_Preprocess(ctx, input_files->value);
+			ctx->input_file = input_files->value;
+			
+			C_Preprocess(ctx);
 			C_FlushWarnings(ctx);
 			Arena_Clear(ctx->stage_arena);
 			

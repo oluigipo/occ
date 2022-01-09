@@ -1,3 +1,78 @@
+internal void C_StreamNextToken(C_Context* ctx);
+internal void
+C_StreamDealWithPragmaToken(C_Context* ctx)
+{
+	if (Unlikely(ctx->token->kind == C_TokenKind_HashtagPragma))
+	{
+		// TODO(ljre): Deal with pragma token.
+		
+		do
+			C_StreamNextToken(ctx);
+		while (ctx->token->kind != C_TokenKind_NewLine);
+		
+		C_StreamNextToken(ctx);
+	}
+}
+
+internal void
+C_StreamNextToken(C_Context* ctx)
+{
+	if (ctx->token->kind == C_TokenKind_Eof)
+		return;
+	
+	Assert(ctx->token >= ctx->tokens->tokens);
+	uint32 index = ctx->token - ctx->tokens->tokens;
+	
+	++index;
+	if (index >= ctx->tokens->len)
+	{
+		ctx->tokens = ctx->tokens->next;
+		index = 0;
+	}
+	
+	ctx->token = &ctx->tokens->tokens[index];
+	
+	C_StreamDealWithPragmaToken(ctx);
+}
+
+internal bool32
+C_StreamAssertToken(C_Context* ctx, C_TokenKind kind)
+{
+	bool32 result = true;
+	
+	if (ctx->token->kind != kind)
+	{
+		result = false;
+		if (ctx->token->kind)
+			C_TraceError(ctx, &ctx->token->trace, "expected '%s', but got '%S'.",
+						 C_token_str_table[kind], StrFmt(ctx->token->as_string));
+		else
+			C_TraceError(ctx, &ctx->token->trace, "expected '%s' before end of file.", C_token_str_table[kind]);
+	}
+	
+	return result;
+}
+
+internal bool32
+C_StreamEatToken(C_Context* ctx, C_TokenKind kind)
+{
+	bool32 result = C_StreamAssertToken(ctx, kind);
+	C_StreamNextToken(ctx);
+	return result;
+}
+
+internal bool32
+C_StreamTryEatToken(C_Context* ctx, C_TokenKind kind)
+{
+	if (ctx->token->kind == kind)
+	{
+		C_StreamNextToken(ctx);
+		return true;
+	}
+	
+	return false;
+}
+
 internal inline void
 C_UpdateNode(C_Context* ctx, C_AstKind kind, C_AstNode* node)
 {
@@ -1202,9 +1277,9 @@ C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstA
 				C_StreamNextToken(ctx);
 				
 				C_AstType* newtype = C_CreateNode(ctx, C_AstKind_TypePointer, SizeofPoly(C_AstType, ptr));
-				*head = newtype;
+				newtype->as->ptr.to = *head;
 				
-				head = &newtype->as->ptr.to;
+				*head = newtype;
 				flags_head = &newtype->h.flags;
 				attrib_head = &newtype->h.attributes;
 			} continue;
@@ -1338,7 +1413,7 @@ C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstA
 				result = head;
 				
 				if (ctx->token->kind != C_TokenKind_RightBrkt)
-					newtype->as->vla_array.length = C_ParseExpr(ctx, 0, false);
+					newtype->as->array.length = C_ParseExpr(ctx, 0, false);
 				
 				C_StreamEatToken(ctx, C_TokenKind_RightBrkt);
 			} continue;

@@ -1,6 +1,6 @@
 internal C_SymbolScope* C_ResolveBlock(C_Context* ctx, C_AstStmt* block);
-internal C_Node* C_ResolveExpr(C_Context* ctx, C_AstExpr* expr);
-internal C_Node* C_AddCastToExprIfNeeded(C_Context* ctx, C_AstExpr* expr, C_AstType* type);
+internal C_AstExpr* C_ResolveExpr(C_Context* ctx, C_AstExpr* expr);
+internal C_AstExpr* C_AddCastToExprIfNeeded(C_Context* ctx, C_AstExpr* expr, C_AstType* type);
 internal bool32 C_ResolveInitializerOfType(C_Context* ctx, C_AstExpr* init, C_AstType* type);
 
 internal C_Node*
@@ -21,7 +21,9 @@ C_CreateArrayType(C_Context* ctx, C_AstType* of, uint64 len)
 {
 	C_AstType* result = C_CreateNodeFrom(ctx, of, C_AstKind_TypeArray, SizeofPoly(C_AstType, array));
 	result->as->array.of = of;
-	result->as->array.length = len;
+	result->as->array.length = C_CreateNodeFrom(ctx, of, C_AstKind_ExprULLInt, sizeof(C_AstExpr));
+	result->as->array.length->h.flags |= C_AstFlags_ComptimeKnown;
+	result->as->array.length->value_uint = len;
 	result->size = len * of->size;
 	result->alignment_mask = of->alignment_mask;
 	
@@ -185,6 +187,49 @@ internal bool32
 C_IsTypeComplete(C_Context* ctx, C_AstType* type)
 {
 	return type->size > 0;
+}
+
+internal bool32
+C_IsIntegerType(C_Context* ctx, C_AstType* type)
+{
+	switch (type->h.kind)
+	{
+		case C_AstKind_TypeChar:
+		case C_AstKind_TypeInt:
+		case C_AstKind_TypeBool:
+		case C_AstKind_TypeEnum:
+		case C_AstKind_TypePointer: return true;
+	}
+	
+	return false;
+}
+
+internal C_AstType*
+C_DecayType(C_Context* ctx, C_AstType* type)
+{
+	switch (type->h.kind)
+	{
+		case C_AstKind_TypeArray:
+		case C_AstKind_TypeVlaArray:
+		case C_AstKind_TypeFunction:
+		{
+			C_AstType* newtype = C_CreateNodeFrom(ctx, type, C_AstKind_TypePointer, SizeofPoly(C_AstType, ptr));
+			newtype->as->ptr.to = type;
+			newtype->size = ctx->abi->t_ptr.size;
+			newtype->alignment_mask = ctx->abi->t_ptr.alignment_mask;
+			newtype->is_unsigned = ctx->abi->t_ptr.unsig;
+			
+			type = newtype;
+		} break;
+	}
+	
+	return type;
+}
+
+internal bool32
+C_TryToEval(C_Context* ctx, C_AstExpr* expr)
+{
+	return false;
 }
 
 internal void
@@ -390,14 +435,12 @@ C_NodeCount(C_Node* node)
 	return count;
 }
 
-// NOTE(ljre): Resolve type and return new one (if it decays, etc.)
+// NOTE(ljre): Resolve type
 //
 //             Flags:
 //                 1 - is global decl
 //                 2 - inlined struct/union -- pass 'C_SymbolScope*' to argument aux
-//                 4 - function return
-//                 8 - struct member
-internal C_AstType*
+internal void
 C_ResolveType(C_Context* ctx, C_AstType* type, bool32* out_is_complete, uint32 flags, void* aux)
 {
 	bool32 is_complete = false;
@@ -416,6 +459,7 @@ C_ResolveType(C_Context* ctx, C_AstType* type, bool32* out_is_complete, uint32 f
 			{
 				type->size = typedefed->size;
 				type->alignment_mask = typedefed->alignment_mask;
+				type->is_unsigned = typedefed->is_unsigned;
 			}
 		} break;
 		
@@ -453,8 +497,6 @@ C_ResolveType(C_Context* ctx, C_AstType* type, bool32* out_is_complete, uint32 f
 		
 		case C_AstKind_TypeVoid:
 		{
-			if (flags & 4)
-				is_complete = true;
 		} break;
 		
 		// NOTE(ljre): Structs and Unions
@@ -503,16 +545,13 @@ C_ResolveType(C_Context* ctx, C_AstType* type, bool32* out_is_complete, uint32 f
 					for (; decl; decl = (void*)decl->h.next)
 					{
 						bool32 complete;
-						bool32 named = (decl->name.size > 0);
 						
-						C_AstType* newtype = C_ResolveType(ctx, decl->type, &complete, named ? 10 : 8, NULL);
+						C_ResolveType(ctx, decl->type, &complete, decl->name.size == 0 ? 2 : 0, NULL);
 						if (!complete)
 						{
 							C_NodeError(ctx, decl->type, "struct member needs to be of complete type.");
 							continue;
 						}
-						
-						decl->type = newtype;
 						
 						alignment_mask = Max(alignment_mask, decl->type->alignment_mask);
 						size = AlignUp(size, alignment_mask);
@@ -539,26 +578,117 @@ C_ResolveType(C_Context* ctx, C_AstType* type, bool32* out_is_complete, uint32 f
 				type->h.symbol = sym;
 			} break;
 		}
+		
+		case C_AstKind_TypeFunction:
+		{
+			C_ResolveType(ctx, type->as->function.ret, NULL, 0, NULL);
+			
+			for (C_AstDecl* param = type->as->function.params; param; param = (void*)param->h.next)
+			{
+				C_ResolveType(ctx, param->type, NULL, 0, NULL);
+				param->type = C_DecayType(ctx, param->type);
+				
+				if (param->init)
+					C_NodeError(ctx, param->init, "default arguments are not a C feature.");
+			}
+			
+			type->size = 0;
+			type->alignment_mask = 0;
+		} break;
+		
+		case C_AstKind_TypePointer:
+		{
+			C_ResolveType(ctx, type->as->ptr.to, NULL, 0, NULL);
+			
+			type->size = ctx->abi->t_ptr.size;
+			type->alignment_mask = ctx->abi->t_ptr.alignment_mask;
+			type->is_unsigned = true;
+			is_complete = true;
+		} break;
+		
+		case C_AstKind_TypeArray:
+		{
+			bool32 complete;
+			C_ResolveType(ctx, type->as->array.of, &complete, 0, NULL);
+			
+			if (!complete)
+				C_NodeError(ctx, type->as->array.of, "arrays cannot be of incomplete type.");
+			if (type->as->array.length->value_uint == 0)
+				C_NodeError(ctx, type->as->array.length, "arrays cannot have length of 0.");
+			
+			type->size = type->as->array.length->value_uint * type->as->array.of->size;
+			type->alignment_mask = type->as->array.of->alignment_mask;
+			is_complete = true;
+		} break;
+		
+		case C_AstKind_TypeVlaArray:
+		{
+			bool32 complete;
+			C_ResolveType(ctx, type->as->array.of, &complete, 0, NULL);
+			
+			if (!complete)
+				C_NodeError(ctx, type->as->array.of, "arrays cannot be of incomplete type.");
+			if (type->as->array.length)
+			{
+				C_ResolveExpr(ctx, type->as->array.length);
+				
+				if (!C_IsIntegerType(ctx, type->as->array.length->type))
+					C_NodeError(ctx, type->as->array.length, "array length needs to be of integral type.");
+				else if (C_TryToEval(ctx, type->as->array.length))
+				{
+					if (!type->as->array.length->type->is_unsigned && type->as->array.length->value_int < 0)
+						C_NodeError(ctx, type->as->array.length, "arrays cannot have negative length.");
+					else if (type->as->array.length->value_uint == 0)
+						C_NodeError(ctx, type->as->array.length, "arrays cannot have length of 0.");
+					else
+					{
+						type->h.kind = C_AstKind_TypeArray;
+						type->size = type->as->array.length->value_uint * type->as->array.of->size;
+						type->alignment_mask = type->as->array.of->alignment_mask;
+						is_complete = true;
+					}
+				}
+			}
+		} break;
+		
+		case C_AstKind_TypeEnum:
+		{
+			type->size = ctx->abi->t_int.size;
+			type->alignment_mask = ctx->abi->t_int.alignment_mask;
+			type->is_unsigned = ctx->abi->t_int.unsig;
+			is_complete = true;
+		} break;
+		
+		default: Unreachable(); break;
 	}
 	
 	if (abitype)
 	{
 		type->size = abitype->size;
 		type->alignment_mask = abitype->alignment_mask;
+		type->is_unsigned = abitype->unsig;
 		
 		is_complete = true;
 	}
 	
 	if (out_is_complete)
 		*out_is_complete = is_complete;
+}
+
+internal C_AstExpr*
+C_ResolveExpr(C_Context* ctx, C_AstExpr* expr)
+{
+	// TODO(ljre)
 	
-	return type;
+	return expr;
 }
 
 // NOTE(ljre): Same flags as C_ResolveType
 internal bool32
 C_ResolveTypeWithInitializer(C_Context* ctx, C_AstType** ptype, C_AstExpr** pinit, uint32 flags)
 {
+	// TODO(ljre)
+	
 	return true;
 }
 
@@ -568,6 +698,7 @@ C_ResolveGlobalDecl(C_Context* ctx, C_AstDecl* decl)
 	bool32 complete = false;
 	C_ResolveType(ctx, decl->type, &complete, 1, NULL);
 	
+	// TODO(ljre)
 	switch (decl->h.kind)
 	{
 		case C_AstKind_Decl:

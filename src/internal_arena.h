@@ -13,6 +13,8 @@ struct Arena
 
 internal Arena* Arena_Create(uintsize size);
 internal void Arena_CommitAtLeast(Arena* arena, uintsize desired_offset);
+internal void* Arena_PushDirtyAligned(Arena* arena, uintsize size, uintsize alignment);
+internal inline void* Arena_PushDirty(Arena* arena, uintsize size);
 internal void* Arena_PushAligned(Arena* arena, uintsize size, uintsize alignment);
 internal inline void* Arena_Push(Arena* arena, uintsize size);
 internal inline void Arena_Pop(Arena* arena, void* ptr);

@@ -121,6 +121,59 @@ C_FlushWarnings(C_Context* ctx)
 #include "lang_c_analyzer.c"
 #include "lang_c_gen.c"
 
+struct C_ThreadWork
+{
+	C_Context ctx;
+}
+typedef C_ThreadWork;
+
+struct C_ThreadWorkList
+{
+	C_ThreadWork* works;
+	uint32 work_count;
+	volatile uint32 work_done;
+	OS_RWLock lock;
+}
+typedef C_ThreadWorkList;
+
+internal void
+C_ThreadDoWork(C_ThreadWork* work)
+{
+	C_Context* ctx = &work->ctx;
+	
+	bool32 ok = true;
+	
+	ok = ok && C_Preprocess(ctx); C_FlushWarnings(ctx); Arena_Clear(ctx->stage_arena);
+	ok = ok && C_ParseFile(ctx); Arena_Clear(ctx->stage_arena);
+	ok = ok && C_ResolveAst(ctx); Arena_Clear(ctx->stage_arena);
+	ok = ok && C_GenIr(ctx); Arena_Clear(ctx->stage_arena);
+	
+	// TODO(ljre);
+}
+
+internal void
+C_WorkerThreadProc(void* user_data)
+{
+	C_ThreadWorkList* worklist = user_data;
+	
+	for (;;)
+	{
+		C_ThreadWork* work = NULL;
+		
+		OS_LockRWLockWrite(worklist->lock);
+		if (worklist->work_done < worklist->work_count)
+			work = &worklist->works[worklist->work_done++];
+		OS_UnlockRWLockWrite(worklist->lock);
+		
+		if (!work)
+			break;
+		
+		C_ThreadDoWork(work);
+	}
+	
+	OS_ExitThisThread(0);
+}
+
 #include "lang_c_driver.c"
 
 internal int32

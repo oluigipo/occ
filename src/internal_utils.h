@@ -155,6 +155,8 @@ CompareStringFast(String a, String b)
 internal int32
 CompareString(String a, String b)
 {
+	Trace();
+	
 	a = IgnoreNullTerminator(a);
 	b = IgnoreNullTerminator(b);
 	
@@ -194,6 +196,21 @@ StringStartsWith(String str, const char* prefix)
 }
 
 internal uintsize
+StringLastChar(String str, char ch)
+{
+	uintsize last_match = SIZE_MAX;
+	uintsize i = 0;
+	
+	for (; i < str.size; ++i)
+	{
+		if (str.data[i] == ch)
+			last_match = i;
+	}
+	
+	return last_match != SIZE_MAX ? last_match : i;
+}
+
+internal uintsize
 OurStrCopy_(char* restrict buf, const char* restrict from, uintsize max)
 {
 	char* old_buf = buf;
@@ -224,6 +241,8 @@ OurStrCopy_(char* restrict buf, const char* restrict from, uintsize max)
 internal uintsize
 OurVPrintf(char* buf, uintsize len, const char* fmt, va_list args)
 {
+	Trace();
+	
 	char* outhead = buf;
 	char* outend = buf + len;
 	
@@ -338,6 +357,8 @@ OurPrintf(char* buf, uintsize len, const char* fmt, ...)
 internal uintsize
 OurVPrintfSize(const char* fmt, va_list args)
 {
+	Trace();
+	
 	uintsize result = 0;
 	for (; *fmt; ++fmt)
 	{

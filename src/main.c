@@ -52,8 +52,6 @@ PushMemory(uintsize size)
 int main(int argc, char* argv[])
 {
 #ifdef TRACY_ENABLE
-	getchar();
-	
 	TracyCFrameMark;
 #endif
 	

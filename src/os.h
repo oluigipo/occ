@@ -7,8 +7,17 @@
 #   define MAX_PATH_SIZE (4096+1)
 #endif
 
+#define OS_ScopedLockWrite(lock) for (int32 il__ = (OS_LockRWLockWrite(lock), 0); !il__; ++il__, OS_UnlockRWLockWrite(lock))
+#define OS_ScopedLockRead(lock)  for (int32 il__ = (OS_LockRWLockRead(lock), 0); !il__; ++il__, OS_UnlockRWLockRead(lock))
+
 typedef void* OS_Thread;
 typedef void* OS_RWLock;
+
+struct OS_Info
+{
+	uint32 num_threads;
+}
+typedef OS_Info;
 
 internal void OS_Exit(int32 code);
 
@@ -20,20 +29,21 @@ internal void OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE], Arena
 internal void* OS_ReserveMemory(uintsize size);
 internal void* OS_CommitMemory(void* ptr, uintsize size);
 internal void OS_FreeMemory(void* ptr, uintsize size);
+internal bool32 OS_GetInfo(OS_Info* out_info);
 
-internal OS_Thread OS_CreateThread(void* func(void* user_data), void* user_data);
+internal OS_Thread OS_CreateThread(void func(void* user_data), void* user_data);
 internal void OS_ExitThisThread(int32 result);
 internal int32 OS_JoinThread(OS_Thread thrd);
 internal bool32 OS_JoinableThread(OS_Thread thrd);
 
 internal OS_RWLock OS_CreateRWLock(void);
-internal void OS_LockRWLockRead(OS_RWLock mtx);
-internal void OS_LockRWLockWrite(OS_RWLock mtx);
-internal bool32 OS_TryLockRWLockRead(OS_RWLock mtx);
-internal bool32 OS_TryLockRWLockWrite(OS_RWLock mtx);
-internal void OS_UnlockRWLockRead(OS_RWLock mtx);
-internal void OS_UnlockRWLockWrite(OS_RWLock mtx);
-internal void OS_DestroyRWLock(OS_RWLock mtx);
+internal void OS_LockRWLockRead(OS_RWLock lock);
+internal void OS_LockRWLockWrite(OS_RWLock lock);
+internal bool32 OS_TryLockRWLockRead(OS_RWLock lock);
+internal bool32 OS_TryLockRWLockWrite(OS_RWLock lock);
+internal void OS_UnlockRWLockRead(OS_RWLock lock);
+internal void OS_UnlockRWLockWrite(OS_RWLock lock);
+internal void OS_DestroyRWLock(OS_RWLock lock);
 
 #endif //OS_H
 
@@ -195,7 +205,7 @@ OS_ConvertWcharToChar_(Arena* arena, wchar_t* wstr)
 	if (str_len == 0)
 		return 0;
 	
-	char* str = Arena_PushAligned(arena, str_len, 1);
+	char* str = Arena_PushDirtyAligned(arena, str_len, 1);
 	WideCharToMultiByte(CP_UTF8, 0, wstr, -1, str, str_len, NULL, NULL);
 	str[str_len-1] = 0;
 	
@@ -242,7 +252,7 @@ OS_Time(void)
 internal uintsize
 OS_GetMyPath(Arena* arena)
 {
-	wchar_t* wpath = Arena_PushAligned(arena, MAX_PATH_SIZE * sizeof(*wpath), 1);
+	wchar_t* wpath = Arena_PushDirtyAligned(arena, MAX_PATH_SIZE * sizeof(*wpath), 1);
 	DWORD wpath_len = GetModuleFileNameW(NULL, wpath, MAX_PATH_SIZE);
 	if (wpath_len == 0 || wpath_len == MAX_PATH_SIZE)
 	{
@@ -277,7 +287,7 @@ OS_ReadWholeFile(const char* path, Arena* arena)
 	if (wpath_len <= 0)
 		return 0;
 	
-	wchar_t* wpath = Arena_PushAligned(arena, wpath_len * sizeof(*wpath), 1);
+	wchar_t* wpath = Arena_PushDirtyAligned(arena, wpath_len * sizeof(*wpath), 1);
 	MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, wpath_len);
 	
 	HANDLE file = CreateFileW(wpath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
@@ -293,7 +303,7 @@ OS_ReadWholeFile(const char* path, Arena* arena)
 	}
 	
 	uintsize file_size = large_int.QuadPart;
-	char* file_data = Arena_PushAligned(arena, file_size + 1, 1);
+	char* file_data = Arena_PushDirtyAligned(arena, file_size + 1, 1);
 	
 	uintsize still_to_read = file_size;
 	char* p = file_data;
@@ -334,7 +344,7 @@ OS_WriteWholeFile(const char* path, const void* data, uintsize size, Arena* scra
 	if (wpath_len <= 0)
 		return false;
 	
-	wchar_t* wpath = Arena_PushAligned(scratch_arena, wpath_len * sizeof(*wpath), 1);
+	wchar_t* wpath = Arena_PushDirtyAligned(scratch_arena, wpath_len * sizeof(*wpath), 1);
 	MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, wpath_len);
 	
 	bool32 result = true;
@@ -378,11 +388,11 @@ OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE], Arena* scratch_aren
 		return;
 	++len;
 	
-	wpath = Arena_PushAligned(scratch_arena, len * sizeof(*wpath), 1);
+	wpath = Arena_PushDirtyAligned(scratch_arena, len * sizeof(*wpath), 1);
 	MultiByteToWideChar(CP_UTF8, 0, path.data, path.size, wpath, len);
 	wpath[len-1] = 0;
 	
-	wfullpath = Arena_PushAligned(scratch_arena, MAX_PATH_SIZE * sizeof(*wfullpath), 1);
+	wfullpath = Arena_PushDirtyAligned(scratch_arena, MAX_PATH_SIZE * sizeof(*wfullpath), 1);
 	GetFullPathNameW(wpath, MAX_PATH_SIZE, wfullpath, NULL);
 	len = WideCharToMultiByte(CP_UTF8, 0, wfullpath, -1, out_buf, MAX_PATH_SIZE, NULL, NULL);
 	
@@ -408,7 +418,7 @@ OS_FreeMemory(void* ptr, uintsize size)
 { VirtualFree(ptr, 0, MEM_RELEASE); }
 
 internal OS_Thread
-OS_CreateThread(void* func(void* user_data), void* user_data)
+OS_CreateThread(void func(void* user_data), void* user_data)
 { return CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)func, user_data, 0, NULL); }
 
 internal void
@@ -421,10 +431,11 @@ OS_JoinThread(OS_Thread thrd)
 	WaitForSingleObject(thrd, INFINITE);
 	
 	DWORD code;
-	if (GetExitCodeThread(thrd, &code))
-		return (int32)code;
+	if (!GetExitCodeThread(thrd, &code))
+		code = -1;
 	
-	return -1;
+	CloseHandle(thrd);
+	return (int32)code;
 }
 
 internal bool32
@@ -489,7 +500,7 @@ OS_Exit(int32 code)
 internal uintsize
 OS_GetMyPath(Arena* arena)
 {
-	char* link = Arena_PushAligned(arena, MAX_PATH_SIZE, 1);
+	char* link = Arena_PushDirtyAligned(arena, MAX_PATH_SIZE, 1);
 	ssize_t count = readlink("/proc/self/exe", link, MAX_PATH_SIZE);
 	
 	const char* result;
@@ -514,6 +525,8 @@ OS_GetMyPath(Arena* arena)
 internal uintsize
 OS_ReadWholeFile(const char* path, Arena* arena)
 {
+	TraceName(StrFrom(path));
+	
 	FILE* file = fopen(path, "rb");
 	if (!file)
 		return NULL;
@@ -522,7 +535,7 @@ OS_ReadWholeFile(const char* path, Arena* arena)
 	uintsize size = ftell(file);
 	rewind(file);
 	
-	char* data = Arena_PushAligned(arena, size+1, 1);
+	char* data = Arena_PushDirtyAligned(arena, size+1, 1);
 	size = fread(data, 1, size, file);
 	data[size] = 0;
 	
@@ -576,7 +589,7 @@ OS_FreeMemory(void* ptr, uintsize size)
 { munmap(ptr, size); }
 
 internal OS_Thread
-OS_CreateThread(int32 func(void* user_data), void* user_data)
+OS_CreateThread(void func(void* user_data), void* user_data)
 {
 	pthread_t result;
 	int32 err = pthread_create(&result, NULL, (void*)func, user_data);
