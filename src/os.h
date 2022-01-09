@@ -8,46 +8,45 @@
 #endif
 
 typedef void* OS_Thread;
-typedef void* OS_Mutex;
+typedef void* OS_RWLock;
 
 internal void OS_Exit(int32 code);
 
 internal uint64 OS_Time(void);
 internal uintsize OS_GetMyPath(Arena* arena);
 internal uintsize OS_ReadWholeFile(const char* path, Arena* arena);
-internal bool32 OS_WriteWholeFile(const char* path, const void* data, uintsize size);
+internal bool32 OS_WriteWholeFile(const char* path, const void* data, uintsize size, Arena* scratch_arena);
 internal void OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE], Arena* scratch_arena);
 internal void* OS_ReserveMemory(uintsize size);
 internal void* OS_CommitMemory(void* ptr, uintsize size);
 internal void OS_FreeMemory(void* ptr, uintsize size);
 
-internal OS_Thread OS_CreateThread(int32 func(void* user_data), void* user_data);
-internal void OS_ExitThread(OS_Thread thrd, int32 code);
-internal void OS_JoinThread(OS_Thread thrd);
+internal OS_Thread OS_CreateThread(void* func(void* user_data), void* user_data);
+internal void OS_ExitThisThread(int32 result);
+internal int32 OS_JoinThread(OS_Thread thrd);
 internal bool32 OS_JoinableThread(OS_Thread thrd);
-internal void OS_DestroyThread(OS_Thread thrd);
 
-internal OS_Mutex OS_CreateMutex(void);
-internal void OS_LockMutexRead(OS_Mutex mtx);
-internal void OS_LockMutexWrite(OS_Mutex mtx);
-internal bool32 OS_TryLockMutexRead(OS_Mutex mtx);
-internal bool32 OS_TryLockMutexWrite(OS_Mutex mtx);
-internal void OS_UnlockMutexRead(OS_Mutex mtx);
-internal void OS_UnlockMutexWrite(OS_Mutex mtx);
-internal void OS_DestroyMutex(OS_Mutex mtx);
+internal OS_RWLock OS_CreateRWLock(void);
+internal void OS_LockRWLockRead(OS_RWLock mtx);
+internal void OS_LockRWLockWrite(OS_RWLock mtx);
+internal bool32 OS_TryLockRWLockRead(OS_RWLock mtx);
+internal bool32 OS_TryLockRWLockWrite(OS_RWLock mtx);
+internal void OS_UnlockRWLockRead(OS_RWLock mtx);
+internal void OS_UnlockRWLockWrite(OS_RWLock mtx);
+internal void OS_DestroyRWLock(OS_RWLock mtx);
 
 #endif //OS_H
 
 #ifdef OS_H_IMPLEMENTATION
 #if defined(_WIN32)
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-
-#if 0
-#ifndef WINAPI
-#   define WINAPI __stdcall
-#endif
+#if 1
+#   define WIN32_LEAN_AND_MEAN
+#   include <windows.h>
+#else
+#   ifndef WINAPI
+#       define WINAPI __stdcall
+#   endif
 
 #define CP_UTF8 65001
 #define FILE_SHARE_READ 0x00000001
@@ -81,6 +80,7 @@ typedef const char* LPCCH;
 typedef const wchar_t* LPCWCH;
 typedef void* HANDLE;
 typedef void* LPVOID;
+typedef const void* LPCVOID;
 typedef void* PVOID;
 typedef uintsize SIZE_T;
 typedef DWORD WINAPI THREAD_START_ROUTINE(LPVOID lpParameter);
@@ -159,6 +159,8 @@ HANDLE WINAPI CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwSha
 BOOL WINAPI GetFileSizeEx(HANDLE hFile, PLARGE_INTEGER lpFileSize);
 BOOL WINAPI CloseHandle(HANDLE hObject);
 BOOL WINAPI ReadFile(HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfBytesToRead, LPDWORD lpNumberOfBytesRead, LPOVERLAPPED lpOverlapped);
+BOOL WINAPI WriteFile(HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite, LPDWORD lpNumberOfBytesWritten,
+					  LPOVERLAPPED lpOverlapped);
 DWORD WINAPI GetFullPathNameW(LPCWSTR lpFileName, DWORD nBufferLength, LPWSTR lpBuffer, LPWSTR* lpFilePart);
 int WINAPI WideCharToMultiByte(UINT CodePage, DWORD dwFlags, LPCWCH lpWideCharStr, int cchWideChar, LPSTR lpMultiByteStr, int cbMultiByte, LPCCH lpDefaultChar, LPBOOL lpUsedDefaultChar);
 LPVOID WINAPI VirtualAlloc(LPVOID lpAddress, SIZE_T dwSize, DWORD  flAllocationType, DWORD  flProtect);
@@ -169,7 +171,7 @@ HANDLE WINAPI CreateThread(LPSECURITY_ATTRIBUTES lpThreadAttributes,
 						   LPVOID lpParameter,
 						   DWORD dwCreationFlags,
 						   LPDWORD lpThreadId);
-BOOL WINAPI TerminateThread(HANDLE hThread, DWORD dwExitCode);
+void WINAPI ExitThread(DWORD dwExitCode);
 BOOL WINAPI GetExitCodeThread(HANDLE hThread, LPDWORD lpExitCode);
 DWORD WINAPI WaitForSingleObject(HANDLE hHandle, DWORD dwMilliseconds);
 void WINAPI InitializeSRWLock(PSRWLOCK SRWLock);
@@ -205,9 +207,7 @@ OS_ConvertWcharToChar_(Arena* arena, wchar_t* wstr)
 
 internal void
 OS_Exit(int32 code)
-{
-	ExitProcess(code);
-}
+{ ExitProcess(code); }
 
 internal uint64
 OS_Time(void)
@@ -274,7 +274,7 @@ OS_ReadWholeFile(const char* path, Arena* arena)
 	TraceName(StrFrom(path));
 	
 	int32 wpath_len = MultiByteToWideChar(CP_UTF8, 0, path, -1, NULL, 0);
-	if (wpath_len <= 0 || wpath_len >= MAX_PATH_SIZE)
+	if (wpath_len <= 0)
 		return 0;
 	
 	wchar_t* wpath = Arena_PushAligned(arena, wpath_len * sizeof(*wpath), 1);
@@ -326,18 +326,43 @@ OS_ReadWholeFile(const char* path, Arena* arena)
 }
 
 internal bool32
-OS_WriteWholeFile(const char* path, const void* data, uintsize size)
+OS_WriteWholeFile(const char* path, const void* data, uintsize size, Arena* scratch_arena)
 {
 	TraceName(StrFrom(path));
 	
-	FILE* file = fopen(path, "wb");
-	if (!file)
+	int32 wpath_len = MultiByteToWideChar(CP_UTF8, 0, path, -1, NULL, 0);
+	if (wpath_len <= 0)
 		return false;
 	
-	bool32 success = (fwrite(data, 1, size, file) == size);
-	fclose(file);
+	wchar_t* wpath = Arena_PushAligned(scratch_arena, wpath_len * sizeof(*wpath), 1);
+	MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, wpath_len);
 	
-	return success;
+	bool32 result = true;
+	DWORD bytes_written = 0;
+	
+	HANDLE file = CreateFileW(wpath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+	if (file == INVALID_HANDLE_VALUE)
+		result = false;
+	else
+	{
+		while (size > 0)
+		{
+			DWORD to_write = Min(size, UINT32_MAX);
+			if (!WriteFile(file, data, to_write, &bytes_written, NULL))
+			{
+				result = false;
+				break;
+			}
+			
+			size -= bytes_written;
+			data = (uint8*)data + bytes_written;
+		}
+		
+		CloseHandle(file);
+	}
+	
+	Arena_Pop(scratch_arena, wpath);
+	return result;
 }
 
 internal void
@@ -372,38 +397,34 @@ OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE], Arena* scratch_aren
 
 internal void*
 OS_ReserveMemory(uintsize size)
-{
-	return VirtualAlloc(NULL, size, MEM_RESERVE, PAGE_READWRITE);
-}
+{ return VirtualAlloc(NULL, size, MEM_RESERVE, PAGE_READWRITE); }
 
 internal void*
 OS_CommitMemory(void* ptr, uintsize size)
-{
-	return VirtualAlloc(ptr, size, MEM_COMMIT, PAGE_READWRITE);
-}
+{ return VirtualAlloc(ptr, size, MEM_COMMIT, PAGE_READWRITE); }
 
 internal void
-OS_FreeMemory(void* ptr, uintsize size /* ignored */)
-{
-	VirtualFree(ptr, 0, MEM_RELEASE);
-}
+OS_FreeMemory(void* ptr, uintsize size)
+{ VirtualFree(ptr, 0, MEM_RELEASE); }
 
 internal OS_Thread
-OS_CreateThread(int32 func(void* user_data), void* user_data)
-{
-	return CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)func, user_data, 0, NULL);
-}
+OS_CreateThread(void* func(void* user_data), void* user_data)
+{ return CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)func, user_data, 0, NULL); }
 
 internal void
-OS_ExitThread(OS_Thread thrd, int32 code)
-{
-	TerminateThread(thrd, (DWORD)code);
-}
+OS_ExitThisThread(int32 result)
+{ ExitThread((DWORD)result); }
 
-internal void
+internal int32
 OS_JoinThread(OS_Thread thrd)
 {
 	WaitForSingleObject(thrd, INFINITE);
+	
+	DWORD code;
+	if (GetExitCodeThread(thrd, &code))
+		return (int32)code;
+	
+	return -1;
 }
 
 internal bool32
@@ -412,91 +433,86 @@ OS_JoinableThread(OS_Thread thrd)
 	DWORD code;
 	
 	if (GetExitCodeThread(thrd, &code))
-	{
 		return code != STILL_ACTIVE;
-	}
 	
 	return true;
 }
 
-internal void
-OS_DestroyThread(OS_Thread thrd)
+internal OS_RWLock
+OS_CreateRWLock(void)
 {
-	TerminateThread(thrd, 1);
-	CloseHandle(thrd);
-}
-
-internal OS_Mutex
-OS_CreateMutex(void)
-{
-	SRWLOCK* mtx = HeapAlloc(GetProcessHeap(), 0, sizeof *mtx);
-	InitializeSRWLock(mtx);
-	return mtx;
+	SRWLOCK* lock = HeapAlloc(GetProcessHeap(), 0, sizeof(*lock));
+	InitializeSRWLock(lock);
+	return lock;
 }
 
 internal void
-OS_LockMutexRead(OS_Mutex mtx)
-{ AcquireSRWLockShared(mtx); }
+OS_LockRWLockRead(OS_RWLock lock)
+{ AcquireSRWLockShared(lock); }
 
 internal void
-OS_LockMutexWrite(OS_Mutex mtx)
-{ AcquireSRWLockExclusive(mtx); }
+OS_LockRWLockWrite(OS_RWLock lock)
+{ AcquireSRWLockExclusive(lock); }
 
 internal bool32
-OS_TryLockMutexRead(OS_Mutex mtx)
-{ return TryAcquireSRWLockShared(mtx); }
+OS_TryLockRWLockRead(OS_RWLock lock)
+{ return TryAcquireSRWLockShared(lock); }
 
 internal bool32
-OS_TryLockMutexWrite(OS_Mutex mtx)
-{ return TryAcquireSRWLockExclusive(mtx); }
+OS_TryLockRWLockWrite(OS_RWLock lock)
+{ return TryAcquireSRWLockExclusive(lock); }
 
 internal void
-OS_UnlockMutexRead(OS_Mutex mtx)
-{ ReleaseSRWLockShared(mtx); }
+OS_UnlockRWLockRead(OS_RWLock lock)
+{ ReleaseSRWLockShared(lock); }
 
 internal void
-OS_UnlockMutexWrite(OS_Mutex mtx)
-{ ReleaseSRWLockExclusive(mtx); }
+OS_UnlockRWLockWrite(OS_RWLock lock)
+{ ReleaseSRWLockExclusive(lock); }
 
 internal void
-OS_DestroyMutex(OS_Mutex mtx)
-{ HeapFree(GetProcessHeap(), 0, mtx); }
+OS_DestroyRWLock(OS_RWLock lock)
+{ HeapFree(GetProcessHeap(), 0, lock); }
 
 #elif defined(__linux__) //_WIN32
 #include <sys/mman.h>
+#include <pthread.h>
 #include <stdio.h>
-#include <libgen.h>         // dirname
-#include <unistd.h>         // readlink
-#include <linux/limits.h>   // PATH_MAX
+#include <libgen.h>       // dirname
+#include <linux/limits.h> // PATH_MAX
+#include <unistd.h>       // readlink
 
 internal void
 OS_Exit(int32 code)
-{
-	exit(code);
-}
+{ exit(code); }
 
-internal String
-OS_GetMyPath(void)
+internal uintsize
+OS_GetMyPath(Arena* arena)
 {
-	char link[MAX_PATH_SIZE];
-	ssize_t count = readlink("/proc/self/exe", link, PATH_MAX);
+	char* link = Arena_PushAligned(arena, MAX_PATH_SIZE, 1);
+	ssize_t count = readlink("/proc/self/exe", link, MAX_PATH_SIZE);
 	
 	const char* result;
+	uintsize length;
+	
 	if (count != -1)
 	{
 		link[count] = 0;
 		result = dirname(link);
+		length = OurStrLen(result) + 1;
 	}
 	else
 	{
 		result = "/usr/";
+		length = sizeof("/usr/");
 	}
 	
-	return StrFrom(result);
+	Arena_Pop(arena, result + length);
+	return length;
 }
 
-internal const char*
-OS_ReadWholeFile(const char* path, uintsize* out_size)
+internal uintsize
+OS_ReadWholeFile(const char* path, Arena* arena)
 {
 	FILE* file = fopen(path, "rb");
 	if (!file)
@@ -506,13 +522,12 @@ OS_ReadWholeFile(const char* path, uintsize* out_size)
 	uintsize size = ftell(file);
 	rewind(file);
 	
-	char* data = PushMemory(size+1);
+	char* data = Arena_PushAligned(arena, size+1, 1);
 	size = fread(data, 1, size, file);
 	data[size] = 0;
-	*out_size = size+1;
 	
 	fclose(file);
-	return data;
+	return size;
 }
 
 internal bool32
@@ -531,9 +546,15 @@ OS_WriteWholeFile(const char* path, const void* data, uintsize size)
 }
 
 internal void
-OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE])
+OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE], Arena* scratch_arena)
 {
-	Assert(false);
+	const char* cpath = Arena_NullTerminateString(scratch_arena, path);
+	char* result = realpath(cpath, out_buf);
+	
+	if (!result)
+		out_buf[0] = 0;
+	if (Arena_Owns(scratch_arena, cpath))
+		Arena_Pop(scratch_arena, cpath);
 }
 
 internal void*
@@ -548,14 +569,88 @@ OS_ReserveMemory(uintsize size)
 
 internal void*
 OS_CommitMemory(void* ptr, uintsize size)
-{
-	return mprotect(ptr, size, PROT_READ | PROT_WRITE);
-}
+{ return mprotect(ptr, size, PROT_READ | PROT_WRITE); }
 
 internal void
 OS_FreeMemory(void* ptr, uintsize size)
+{ munmap(ptr, size); }
+
+internal OS_Thread
+OS_CreateThread(int32 func(void* user_data), void* user_data)
 {
-	munmap(ptr, size);
+	pthread_t result;
+	int32 err = pthread_create(&result, NULL, (void*)func, user_data);
+	
+	if (err)
+		result = NULL;
+	
+	return result;
+}
+
+internal void
+OS_ExitThisThread(int32 result)
+{ pthread_exit((void*)result); }
+
+internal int32
+OS_JoinThread(OS_Thread thrd)
+{
+	void* result;
+	if (pthread_join((pthread_t)thrd, &result))
+		return -1;
+	
+	return (int32)result;
+}
+
+internal bool32
+OS_JoinableThread(OS_Thread thrd)
+{
+	Assert(false);
+}
+
+internal OS_RWLock
+OS_CreateRWLock(void)
+{
+	pthread_rwlock_t lock;
+	
+	if (!pthread_rwlock_init(&lock, NULL))
+	{
+		pthread_rwlock_t* result = malloc(sizeof(*result));
+		*result = lock;
+		return result;
+	}
+	
+	return NULL;
+}
+
+internal void
+OS_LockRWLockRead(OS_RWLock lock)
+{ pthread_rwlock_rdlock(lock); }
+
+internal void
+OS_LockRWLockWrite(OS_RWLock lock)
+{ pthread_rwlock_wrlock(lock); }
+
+internal bool32
+OS_TryLockRWLockRead(OS_RWLock lock)
+{ return pthread_rwlock_tryrdlock(lock) == 0; }
+
+internal bool32
+OS_TryLockRWLockWrite(OS_RWLock lock)
+{ return pthread_rwlock_trywrlock(lock) == 0; }
+
+internal void
+OS_UnlockRWLockRead(OS_RWLock lock)
+{ pthread_rwlock_unlock(lock); }
+
+internal void
+OS_UnlockRWLockWrite(OS_RWLock lock)
+{ pthread_rwlock_unlock(lock); }
+
+internal void
+OS_DestroyRWLock(OS_RWLock lock)
+{
+	pthread_rwlock_destroy(lock);
+	free(lock);
 }
 
 #endif //__linux__

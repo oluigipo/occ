@@ -170,3 +170,10 @@ Arena_SPrintf(Arena* arena, const char* fmt, ...)
 	va_end(args);
 	return result;
 }
+
+internal bool32
+Arena_Owns(Arena* arena, const void* ptr)
+{
+	const uint8* p = ptr;
+	return (p >= arena->memory && p < arena->memory + arena->reserved);
+}

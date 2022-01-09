@@ -287,13 +287,16 @@ C_DefaultDriver(int32 argc, const char** argv)
 			{
 				Print("%s", ctx->pre_source);
 			}
-			else if (!OS_WriteWholeFile(NullTerminateString(output_file), ctx->pre_source, OurStrLen(ctx->pre_source)))
+			else if (!OS_WriteWholeFile(Arena_NullTerminateString(ctx->stage_arena, output_file), ctx->pre_source, OurStrLen(ctx->pre_source), ctx->stage_arena))
 			{
 				Print("error: could not open output file.\n");
 				result = 1;
 			}
 		} break;
 	}
+	
+	Print("\n====== Memory Usage:\nStage Commited: \t%z bytes\nPersistent Offset:\t%z bytes\n",
+		  ctx->stage_arena->commited, ctx->persistent_arena->offset);
 	
 	//~ NOTE(ljre): Clean-up.
 	Arena_Destroy(ctx->stage_arena);

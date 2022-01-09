@@ -9,6 +9,8 @@
 
 #include "internal.h"
 
+internal Arena* global_arena;
+
 internal void
 Print(const char* fmt, ...)
 {
@@ -19,7 +21,7 @@ Print(const char* fmt, ...)
 	va_end(args);
 	
 	fwrite(mem, 1, len, stdout);
-	global_arena->offset = (uint8*)mem - global_arena->memory;
+	Arena_Pop(global_arena, mem);
 }
 
 internal void
@@ -29,7 +31,7 @@ PrintVarargs(const char* fmt, va_list args)
 	uintsize len = Arena_VPrintf(global_arena, fmt, args);
 	
 	fwrite(mem, 1, len, stdout);
-	global_arena->offset = (uint8*)mem - global_arena->memory;
+	Arena_Pop(global_arena, mem);
 }
 
 internal void
@@ -42,9 +44,7 @@ Panic(const char* str)
 
 internal void*
 PushMemory(uintsize size)
-{
-	return Arena_Push(global_arena, size);
-}
+{ return Arena_Push(global_arena, size); }
 
 #include "ir.c"
 #include "lang_c.c"

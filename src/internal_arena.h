@@ -23,5 +23,6 @@ internal uintsize Arena_VPrintf(Arena* arena, const char* fmt, va_list args);
 internal uintsize Arena_Printf(Arena* arena, const char* fmt, ...);
 internal const char* Arena_NullTerminateString(Arena* arena, String str);
 internal void Arena_Destroy(Arena* arena);
+internal bool32 Arena_Owns(Arena* arena, const void* ptr);
 
 #endif //INTERNAL_ARENA_H

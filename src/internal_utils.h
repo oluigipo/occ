@@ -31,7 +31,7 @@ OurMemCopy(void* restrict dst, const void* restrict src, uintsize size)
 
 // NOTE(ljre): For overlapping memory where 'dst > src'.
 internal inline void*
-OurMemCopyReserved(void* dst, const void* src, uintsize size)
+OurMemCopyReversed(void* dst, const void* src, uintsize size)
 {
 	uint8* d = dst;
 	const uint8* s = src;
@@ -111,22 +111,6 @@ SimpleHashNullTerminated(const char* str)
 	}
 	
 	return hash;
-}
-
-internal const char*
-NullTerminateString(String str)
-{
-	if (str.size == 0)
-		return "";
-	
-	if (str.data[str.size-1] == 0)
-		return str.data;
-	
-	char* result = PushMemory(str.size+1);
-	OurMemCopy(result, str.data, str.size);
-	result[str.size] = 0;
-	
-	return result;
 }
 
 internal String
@@ -448,57 +432,6 @@ OurPrintfSize(const char* fmt, ...)
 	va_start(args, fmt);
 	uintsize result = OurVPrintfSize(fmt, args);
 	va_end(args);
-	return result;
-}
-
-internal double
-OurStrToDouble(const char* str, const char** out_end)
-{
-	// TODO(ljre)
-	return 0.0;
-}
-
-// TODO(ljre): Check if this is correct
-internal uint64
-OurStrToU64(const char* str, const char** out_end, uint32 base)
-{
-	const uint8* buf = (const uint8*)str;
-	const uint8 case_mask = 0b11011111;
-	
-	uint64 result = 0;
-	
-	if (base > 10)
-	{
-		uint8 c;
-		uint8 max = 'A' + base-11;
-		
-		for (; c = *buf&case_mask, *buf; ++buf)
-		{
-			uint8 r;
-			if (c >= 'A' && c <= max)
-				r = c - 'A';
-			else if (c >= '0' && c <= '9')
-				r = c - '0';
-			else
-				break;
-			result += r;
-			result *= base;
-		}
-	}
-	else
-	{
-		uint8 max = '0' + base-1;
-		
-		for (; *buf >= '0' && *buf <= max; ++buf)
-		{
-			result *= base;
-			result += *buf - '0';
-		}
-	}
-	
-	if (out_end)
-		*out_end = (const char*)buf;
-	
 	return result;
 }
 

@@ -44,7 +44,6 @@
 *            - directive #embed ident "path", defines 'ident' as an 'unsigned char[]' of the file's contents;
 *            - macro __builtin_embed(path) expands to comma separated integers;
 *            - directive #embed "path", expands to { comma separated integers };
-*        - Make type 'T[N]' a subset of type 'T[M]' when N < M;
 *        - Make type 'struct A' a subset of 'struct B' if the beginning of B is *the same* as A (duck typing):
 *            - Example: struct A { int n; }; struct B { int pp; double k; }; -- here A is a subset of B;
 *            - Example: struct A { long n; }; struct B { int pp; double k; }; -- here A is *not* a subset of B;

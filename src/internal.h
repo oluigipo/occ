@@ -138,6 +138,5 @@ internal const char* const* global_colors = (const char* const[]) {
 #include "internal_arena.c"
 
 internal String global_my_path;
-internal Arena* global_arena;
 
 #endif //INTERNAL_H
