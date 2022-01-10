@@ -654,7 +654,7 @@ struct C_AstType
 		struct { C_AstDecl* body; String name; } structure;
 		struct { String name; } typedefed;
 		struct { C_AstDecl* entries; String name; } enumerator;
-	} as[];
+	};
 };
 
 struct C_AstStmt
@@ -669,7 +669,7 @@ struct C_AstStmt
 		struct { String name; C_AstStmt* stmt; } label;
 		struct { String label_name; } go_to;
 		struct { C_AstExpr* leafs[5]; } gcc_asm;
-	} as[];
+	};
 };
 
 struct C_AstExpr
@@ -693,7 +693,7 @@ struct C_AstExpr
 		struct { C_AstExpr* init; C_AstType* type; } compound;
 		struct { C_AstExpr* expr; } sizeof_expr;
 		struct { C_AstType* type; } sizeof_type;
-	} as[];
+	};
 };
 
 struct C_AstAttribute
@@ -704,7 +704,7 @@ struct C_AstAttribute
 	{
 		struct { C_AstExpr* expr; } bitfield;
 		struct { C_AstExpr* expr; } aligned;
-	} as[];
+	};
 };
 
 internal const C_AstKind C_token_to_op[C_TokenKind__Count] = {
@@ -800,7 +800,7 @@ struct C_Symbol
 		struct { int32 value; } enum_const;
 		struct { uint64 offset; } field;
 		struct { uint64 index; } parameter;
-	} as[];
+	};
 };
 
 //~ NOTE(ljre): Basic ABI information

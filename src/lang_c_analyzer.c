@@ -19,11 +19,11 @@ C_CreateNodeFrom(C_Context* ctx, C_Node* other_, C_AstKind kind, uintsize size)
 internal C_AstType*
 C_CreateArrayType(C_Context* ctx, C_AstType* of, uint64 len)
 {
-	C_AstType* result = C_CreateNodeFrom(ctx, of, C_AstKind_TypeArray, SizeofPoly(C_AstType, array));
-	result->as->array.of = of;
-	result->as->array.length = C_CreateNodeFrom(ctx, of, C_AstKind_ExprULLInt, sizeof(C_AstExpr));
-	result->as->array.length->h.flags |= C_AstFlags_ComptimeKnown;
-	result->as->array.length->value_uint = len;
+	C_AstType* result = C_CreateNodeFrom(ctx, of, C_AstKind_TypeArray, sizeof(C_AstType));
+	result->array.of = of;
+	result->array.length = C_CreateNodeFrom(ctx, of, C_AstKind_ExprULLInt, sizeof(C_AstExpr));
+	result->array.length->h.flags |= C_AstFlags_ComptimeKnown;
+	result->array.length->value_uint = len;
 	result->size = len * of->size;
 	result->alignment_mask = of->alignment_mask;
 	
@@ -33,8 +33,8 @@ C_CreateArrayType(C_Context* ctx, C_AstType* of, uint64 len)
 internal C_AstType*
 C_CreatePointerType(C_Context* ctx, C_AstType* of)
 {
-	C_AstType* result = C_CreateNodeFrom(ctx, of, C_AstKind_TypePointer, SizeofPoly(C_AstType, ptr));
-	result->as->ptr.to = of;
+	C_AstType* result = C_CreateNodeFrom(ctx, of, C_AstKind_TypePointer, sizeof(C_AstType));
+	result->ptr.to = of;
 	result->size = ctx->abi->t_ptr.size;
 	result->alignment_mask = ctx->abi->t_ptr.alignment_mask;
 	
@@ -70,34 +70,10 @@ C_GetMapFromSymbolKind(C_Context* ctx, C_SymbolScope* scope, C_SymbolKind kind, 
 	return *map;
 }
 
-internal uintsize
-C_SizeForSymbolKind(C_SymbolKind kind)
-{
-	switch (kind)
-	{
-		case C_SymbolKind_Typename:
-		case C_SymbolKind_Var:
-		case C_SymbolKind_VarDecl:
-		case C_SymbolKind_StaticVar: return sizeof(C_Symbol);
-		case C_SymbolKind_Function:
-		case C_SymbolKind_FunctionDecl: return SizeofPoly(C_Symbol, function);
-		case C_SymbolKind_Parameter: return SizeofPoly(C_Symbol, parameter);
-		case C_SymbolKind_Field: return SizeofPoly(C_Symbol, field);
-		case C_SymbolKind_EnumConstant: return SizeofPoly(C_Symbol, enum_const);
-		case C_SymbolKind_Struct:
-		case C_SymbolKind_Union: return SizeofPoly(C_Symbol, structure);
-		case C_SymbolKind_Enum: return SizeofPoly(C_Symbol, enumerator);
-		
-		default: Unreachable(); break;
-	}
-	
-	return 0;
-}
-
 internal C_Symbol*
 C_CreateSymbolInScope(C_Context* ctx, String name, C_SymbolKind kind, C_AstDecl* decl, C_SymbolScope* scope)
 {
-	C_Symbol* sym = Arena_Push(ctx->persistent_arena, C_SizeForSymbolKind(kind));
+	C_Symbol* sym = Arena_Push(ctx->persistent_arena, sizeof(*sym));
 	
 	sym->kind = kind;
 	sym->decl = decl;
@@ -175,7 +151,7 @@ C_TypeFromTypename(C_Context* ctx, C_AstType* type)
 {
 	while (type->h.kind == C_AstKind_TypeTypename ||
 		   (type->h.kind == C_AstKind_TypeStruct || type->h.kind == C_AstKind_TypeUnion) &&
-		   !type->as->structure.body && type->h.symbol)
+		   !type->structure.body && type->h.symbol)
 	{
 		type = type->h.symbol->decl->type;
 	}
@@ -213,8 +189,8 @@ C_DecayType(C_Context* ctx, C_AstType* type)
 		case C_AstKind_TypeVlaArray:
 		case C_AstKind_TypeFunction:
 		{
-			C_AstType* newtype = C_CreateNodeFrom(ctx, type, C_AstKind_TypePointer, SizeofPoly(C_AstType, ptr));
-			newtype->as->ptr.to = type;
+			C_AstType* newtype = C_CreateNodeFrom(ctx, type, C_AstKind_TypePointer, sizeof(C_AstType));
+			newtype->ptr.to = type;
 			newtype->size = ctx->abi->t_ptr.size;
 			newtype->alignment_mask = ctx->abi->t_ptr.alignment_mask;
 			newtype->is_unsigned = ctx->abi->t_ptr.unsig;
@@ -236,13 +212,13 @@ internal void
 C_WriteTypeToPersistentArena(C_Context* ctx, C_AstType* type)
 {
 	int32 count = 0;
-	for (C_AstType* it = type; it; it = it->as->not_base.base, ++count);
+	for (C_AstType* it = type; it; it = it->not_base.base, ++count);
 	if (count == 0)
 		return;
 	
 	C_AstType** stack = Arena_Push(ctx->stage_arena, count * sizeof(*stack));
 	C_AstType* it = type;
-	for (int32 i = 0; it; it = it->as->not_base.base, ++i)
+	for (int32 i = 0; it; it = it->not_base.base, ++i)
 		stack[i] = it;
 	
 	// NOTE(ljre): Print base type
@@ -303,15 +279,15 @@ C_WriteTypeToPersistentArena(C_Context* ctx, C_AstType* type)
 			
 			case C_AstKind_TypeTypename:
 			{
-				Arena_PushMemory(ctx->persistent_arena, StrFmt(base->as->typedefed.name));
+				Arena_PushMemory(ctx->persistent_arena, StrFmt(base->typedefed.name));
 			} break;
 			
 			if (0) case C_AstKind_TypeStruct: Arena_PushMemory(ctx->persistent_arena, 7, "struct ");
 			if (0) case C_AstKind_TypeUnion: Arena_PushMemory(ctx->persistent_arena, 6, "union ");
 			if (0) case C_AstKind_TypeEnum: Arena_PushMemory(ctx->persistent_arena, 5, "enum ");
 			{
-				if (base->as->structure.name.size > 0)
-					Arena_PushMemory(ctx->persistent_arena, StrFmt(base->as->structure.name));
+				if (base->structure.name.size > 0)
+					Arena_PushMemory(ctx->persistent_arena, StrFmt(base->structure.name));
 				else
 					Arena_PushMemory(ctx->persistent_arena, 11, "(anonymous)");
 			} break;
@@ -320,7 +296,7 @@ C_WriteTypeToPersistentArena(C_Context* ctx, C_AstType* type)
 	
 	// NOTE(ljre): Print prefixes
 	it = type;
-	for (int32 i = count - 2; i >= 0; it = it->as->not_base.base, --i)
+	for (int32 i = count - 2; i >= 0; it = it->not_base.base, --i)
 	{
 		C_AstType* curr = stack[i];
 		C_AstType* prev = stack[i+1];
@@ -341,7 +317,7 @@ C_WriteTypeToPersistentArena(C_Context* ctx, C_AstType* type)
 	
 	// NOTE(ljre): Print postfixes
 	it = type;
-	for (int32 i = count - 2; i >= 0; it = it->as->not_base.base, --i)
+	for (int32 i = count - 2; i >= 0; it = it->not_base.base, --i)
 	{
 		C_AstType* curr = stack[i];
 		C_AstType* next = i > 0 ? stack[i-1] : NULL;
@@ -354,7 +330,7 @@ C_WriteTypeToPersistentArena(C_Context* ctx, C_AstType* type)
 					Arena_PushMemory(ctx->persistent_arena, 1, ")");
 				
 				Arena_PushMemory(ctx->persistent_arena, 1, "(");
-				for (C_AstDecl* param = curr->as->function.params;
+				for (C_AstDecl* param = curr->function.params;
 					 param;
 					 (param = (void*)param->h.next) && Arena_PushMemory(ctx->persistent_arena, 2, ", "))
 				{
@@ -374,7 +350,7 @@ C_WriteTypeToPersistentArena(C_Context* ctx, C_AstType* type)
 				if (curr->h.kind == C_AstKind_TypeVlaArray)
 					Arena_PushMemory(ctx->persistent_arena, 3, "VLA");
 				else
-					Arena_Printf(ctx->persistent_arena, "%llu", curr->as->array.length);
+					Arena_Printf(ctx->persistent_arena, "%llu", curr->array.length);
 				
 				Arena_PushMemory(ctx->persistent_arena, 1, "]");
 			} break;
@@ -450,7 +426,7 @@ C_ResolveType(C_Context* ctx, C_AstType* type, bool32* out_is_complete, uint32 f
 	{
 		case C_AstKind_TypeTypename:
 		{
-			type->h.symbol = C_FindSymbol(ctx, type->as->typedefed.name, C_SymbolKind_Typename);
+			type->h.symbol = C_FindSymbol(ctx, type->typedefed.name, C_SymbolKind_Typename);
 			Assert(type->h.symbol);
 			
 			C_AstType* typedefed = type->h.symbol->decl->type;
@@ -508,26 +484,26 @@ C_ResolveType(C_Context* ctx, C_AstType* type, bool32* out_is_complete, uint32 f
 			{
 				C_Symbol* sym = NULL;
 				bool32 same_scope = false;
-				bool32 named = (type->as->structure.name.size > 0);
+				bool32 named = (type->structure.name.size > 0);
 				
 				if (named)
 				{
-					sym = C_SymbolDefinedInScope(ctx, type->as->structure.name, C_SymbolKind_Struct, ctx->working_scope);
+					sym = C_SymbolDefinedInScope(ctx, type->structure.name, C_SymbolKind_Struct, ctx->working_scope);
 					
 					if (!sym)
-						sym = C_FindSymbol(ctx, type->as->structure.name, C_SymbolKind_Struct);
+						sym = C_FindSymbol(ctx, type->structure.name, C_SymbolKind_Struct);
 					else
 						same_scope = true;
 				}
 				
-				if (type->as->structure.body)
+				if (type->structure.body)
 				{
 					if (same_scope)
 						C_NodeError(ctx, type, "struct redefinition in the same scope is not allowed.");
 					else
-						sym = C_CreateSymbol(ctx, type->as->structure.name, kind, (void*)type);
+						sym = C_CreateSymbol(ctx, type->structure.name, kind, (void*)type);
 					
-					C_AstDecl* decl = type->as->structure.body;
+					C_AstDecl* decl = type->structure.body;
 					is_complete = true;
 					
 					C_SymbolScope* scope;
@@ -537,7 +513,7 @@ C_ResolveType(C_Context* ctx, C_AstType* type, bool32* out_is_complete, uint32 f
 					else
 						scope = Arena_Push(ctx->persistent_arena, sizeof(C_SymbolScope));
 					
-					sym->as->structure.fields = scope;
+					sym->structure.fields = scope;
 					
 					uint64 size = 0;
 					uint64 alignment_mask = 0;
@@ -563,12 +539,12 @@ C_ResolveType(C_Context* ctx, C_AstType* type, bool32* out_is_complete, uint32 f
 						if (kind == C_SymbolKind_Struct)
 						{
 							size += decl->type->size;
-							field->as->field.offset = size;
+							field->field.offset = size;
 						}
 						else
 						{
 							size = Max(size, decl->type->size);
-							field->as->field.offset = 0;
+							field->field.offset = 0;
 						}
 					}
 					
@@ -581,9 +557,9 @@ C_ResolveType(C_Context* ctx, C_AstType* type, bool32* out_is_complete, uint32 f
 		
 		case C_AstKind_TypeFunction:
 		{
-			C_ResolveType(ctx, type->as->function.ret, NULL, 0, NULL);
+			C_ResolveType(ctx, type->function.ret, NULL, 0, NULL);
 			
-			for (C_AstDecl* param = type->as->function.params; param; param = (void*)param->h.next)
+			for (C_AstDecl* param = type->function.params; param; param = (void*)param->h.next)
 			{
 				C_ResolveType(ctx, param->type, NULL, 0, NULL);
 				param->type = C_DecayType(ctx, param->type);
@@ -598,7 +574,7 @@ C_ResolveType(C_Context* ctx, C_AstType* type, bool32* out_is_complete, uint32 f
 		
 		case C_AstKind_TypePointer:
 		{
-			C_ResolveType(ctx, type->as->ptr.to, NULL, 0, NULL);
+			C_ResolveType(ctx, type->ptr.to, NULL, 0, NULL);
 			
 			type->size = ctx->abi->t_ptr.size;
 			type->alignment_mask = ctx->abi->t_ptr.alignment_mask;
@@ -609,42 +585,42 @@ C_ResolveType(C_Context* ctx, C_AstType* type, bool32* out_is_complete, uint32 f
 		case C_AstKind_TypeArray:
 		{
 			bool32 complete;
-			C_ResolveType(ctx, type->as->array.of, &complete, 0, NULL);
+			C_ResolveType(ctx, type->array.of, &complete, 0, NULL);
 			
 			if (!complete)
-				C_NodeError(ctx, type->as->array.of, "arrays cannot be of incomplete type.");
-			if (type->as->array.length->value_uint == 0)
-				C_NodeError(ctx, type->as->array.length, "arrays cannot have length of 0.");
+				C_NodeError(ctx, type->array.of, "arrays cannot be of incomplete type.");
+			if (type->array.length->value_uint == 0)
+				C_NodeError(ctx, type->array.length, "arrays cannot have length of 0.");
 			
-			type->size = type->as->array.length->value_uint * type->as->array.of->size;
-			type->alignment_mask = type->as->array.of->alignment_mask;
+			type->size = type->array.length->value_uint * type->array.of->size;
+			type->alignment_mask = type->array.of->alignment_mask;
 			is_complete = true;
 		} break;
 		
 		case C_AstKind_TypeVlaArray:
 		{
 			bool32 complete;
-			C_ResolveType(ctx, type->as->array.of, &complete, 0, NULL);
+			C_ResolveType(ctx, type->array.of, &complete, 0, NULL);
 			
 			if (!complete)
-				C_NodeError(ctx, type->as->array.of, "arrays cannot be of incomplete type.");
-			if (type->as->array.length)
+				C_NodeError(ctx, type->array.of, "arrays cannot be of incomplete type.");
+			if (type->array.length)
 			{
-				C_ResolveExpr(ctx, type->as->array.length);
+				C_ResolveExpr(ctx, type->array.length);
 				
-				if (!C_IsIntegerType(ctx, type->as->array.length->type))
-					C_NodeError(ctx, type->as->array.length, "array length needs to be of integral type.");
-				else if (C_TryToEval(ctx, type->as->array.length))
+				if (!C_IsIntegerType(ctx, type->array.length->type))
+					C_NodeError(ctx, type->array.length, "array length needs to be of integral type.");
+				else if (C_TryToEval(ctx, type->array.length))
 				{
-					if (!type->as->array.length->type->is_unsigned && type->as->array.length->value_int < 0)
-						C_NodeError(ctx, type->as->array.length, "arrays cannot have negative length.");
-					else if (type->as->array.length->value_uint == 0)
-						C_NodeError(ctx, type->as->array.length, "arrays cannot have length of 0.");
+					if (!type->array.length->type->is_unsigned && type->array.length->value_int < 0)
+						C_NodeError(ctx, type->array.length, "arrays cannot have negative length.");
+					else if (type->array.length->value_uint == 0)
+						C_NodeError(ctx, type->array.length, "arrays cannot have length of 0.");
 					else
 					{
 						type->h.kind = C_AstKind_TypeArray;
-						type->size = type->as->array.length->value_uint * type->as->array.of->size;
-						type->alignment_mask = type->as->array.of->alignment_mask;
+						type->size = type->array.length->value_uint * type->array.of->size;
+						type->alignment_mask = type->array.of->alignment_mask;
 						is_complete = true;
 					}
 				}

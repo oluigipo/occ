@@ -308,8 +308,8 @@ C_ParseStructBody(C_Context* ctx)
 	// NOTE(ljre): Bitfields
 	if (C_StreamTryEatToken(ctx, C_TokenKind_Colon))
 	{
-		C_AstAttribute* attrib = C_CreateNode(ctx, C_AstKind_AttributeBitfield, SizeofPoly(C_AstAttribute, bitfield));
-		attrib->as->bitfield.expr = C_ParseExpr(ctx, 1, false);
+		C_AstAttribute* attrib = C_CreateNode(ctx, C_AstKind_AttributeBitfield, sizeof(C_AstAttribute));
+		attrib->bitfield.expr = C_ParseExpr(ctx, 1, false);
 		attrib->h.next = (void*)result->h.attributes;
 		result->h.attributes = attrib;
 	}
@@ -328,8 +328,8 @@ C_ParseStructBody(C_Context* ctx)
 		// NOTE(ljre): Bitfields
 		if (C_StreamTryEatToken(ctx, C_TokenKind_Colon))
 		{
-			C_AstAttribute* attrib = C_CreateNode(ctx, C_AstKind_AttributeBitfield, SizeofPoly(C_AstAttribute, bitfield));
-			attrib->as->bitfield.expr = C_ParseExpr(ctx, 1, false);
+			C_AstAttribute* attrib = C_CreateNode(ctx, C_AstKind_AttributeBitfield, sizeof(C_AstAttribute));
+			attrib->bitfield.expr = C_ParseExpr(ctx, 1, false);
 			attrib->h.next = (void*)last->attributes;
 			last->attributes = attrib;
 		}
@@ -373,27 +373,27 @@ C_ParseInitializerField(C_Context* ctx)
 		{
 			case C_TokenKind_Dot:
 			{
-				C_AstExpr* newnode = C_CreateNode(ctx, C_AstKind_ExprInitializerMember, SizeofPoly(C_AstExpr, desig_entry));
+				C_AstExpr* newnode = C_CreateNode(ctx, C_AstKind_ExprInitializerMember, sizeof(C_AstExpr));
 				if (head)
-					head = head->as->desig_entry.next = newnode;
+					head = head->desig_entry.next = newnode;
 				else
 					result = head = newnode;
 				
 				C_StreamNextToken(ctx);
 				if (C_StreamAssertToken(ctx, C_TokenKind_Identifier))
-					newnode->as->desig_entry.name = ctx->token->value_ident;
+					newnode->desig_entry.name = ctx->token->value_ident;
 			} continue;
 			
 			case C_TokenKind_LeftBrkt:
 			{
-				C_AstExpr* newnode = C_CreateNode(ctx, C_AstKind_ExprInitializerIndex, SizeofPoly(C_AstExpr, desig_entry));
+				C_AstExpr* newnode = C_CreateNode(ctx, C_AstKind_ExprInitializerIndex, sizeof(C_AstExpr));
 				if (head)
-					head = head->as->desig_entry.next = newnode;
+					head = head->desig_entry.next = newnode;
 				else
 					result = head = newnode;
 				
 				C_StreamNextToken(ctx);
-				newnode->as->desig_entry.index = C_ParseExpr(ctx, 0, false);
+				newnode->desig_entry.index = C_ParseExpr(ctx, 0, false);
 				
 				C_StreamEatToken(ctx, C_TokenKind_RightBrkt);
 			} continue;
@@ -404,9 +404,9 @@ C_ParseInitializerField(C_Context* ctx)
 				{
 					C_StreamEatToken(ctx, C_TokenKind_Assign);
 					
-					C_AstExpr* newnode = C_CreateNode(ctx, C_AstKind_ExprInitializerIndex, SizeofPoly(C_AstExpr, desig_init));
-					newnode->as->desig_init.desig = result;
-					newnode->as->desig_init.expr = C_ParseExpr(ctx, 1, true);
+					C_AstExpr* newnode = C_CreateNode(ctx, C_AstKind_ExprInitializerIndex, sizeof(C_AstExpr));
+					newnode->desig_init.desig = result;
+					newnode->desig_init.expr = C_ParseExpr(ctx, 1, true);
 					
 					result = newnode;
 				}
@@ -450,7 +450,7 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 {
 	Trace();
 	
-	C_AstExpr* result = C_CreateNode(ctx, C_AstKind_ExprFactor, SizeofPolyAny(C_AstExpr));
+	C_AstExpr* result = C_CreateNode(ctx, C_AstKind_ExprFactor, sizeof(C_AstExpr));
 	C_AstExpr* head = result;
 	bool32 has_unary = false;
 	bool32 dont_parse_postfix = true;
@@ -464,7 +464,7 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 			case C_TokenKind_Minus:
 			{
 				head->h.kind = C_AstKind_Expr1Negative;
-				head = head->as->unary.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, SizeofPolyAny(C_AstExpr));
+				head = head->unary.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, sizeof(C_AstExpr));
 				
 				C_StreamNextToken(ctx);
 			} continue;
@@ -472,7 +472,7 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 			case C_TokenKind_Mul:
 			{
 				head->h.kind = C_AstKind_Expr1Deref;
-				head = head->as->unary.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, SizeofPolyAny(C_AstExpr));
+				head = head->unary.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, sizeof(C_AstExpr));
 				
 				C_StreamNextToken(ctx);
 			} continue;
@@ -480,7 +480,7 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 			case C_TokenKind_And:
 			{
 				head->h.kind = C_AstKind_Expr1Ref;
-				head = head->as->unary.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, SizeofPolyAny(C_AstExpr));
+				head = head->unary.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, sizeof(C_AstExpr));
 				
 				C_StreamNextToken(ctx);
 			} continue;
@@ -488,7 +488,7 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 			case C_TokenKind_Not:
 			{
 				head->h.kind = C_AstKind_Expr1Not;
-				head = head->as->unary.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, SizeofPolyAny(C_AstExpr));
+				head = head->unary.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, sizeof(C_AstExpr));
 				
 				C_StreamNextToken(ctx);
 			} continue;
@@ -496,7 +496,7 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 			case C_TokenKind_LNot:
 			{
 				head->h.kind = C_AstKind_Expr1LogicalNot;
-				head = head->as->unary.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, SizeofPolyAny(C_AstExpr));
+				head = head->unary.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, sizeof(C_AstExpr));
 				
 				C_StreamNextToken(ctx);
 			} continue;
@@ -504,7 +504,7 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 			case C_TokenKind_Inc:
 			{
 				head->h.kind = C_AstKind_Expr1PrefixInc;
-				head = head->as->unary.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, SizeofPolyAny(C_AstExpr));
+				head = head->unary.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, sizeof(C_AstExpr));
 				
 				C_StreamNextToken(ctx);
 			} continue;
@@ -512,7 +512,7 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 			case C_TokenKind_Dec:
 			{
 				head->h.kind = C_AstKind_Expr1PrefixDec;
-				head = head->as->unary.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, SizeofPolyAny(C_AstExpr));
+				head = head->unary.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, sizeof(C_AstExpr));
 				
 				C_StreamNextToken(ctx);
 			} continue;
@@ -529,13 +529,13 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 						head->h.kind = C_AstKind_Expr1SizeofType;
 						
 						C_UpdateNode(ctx, C_AstKind_Decl, &head->h);
-						head->as->sizeof_type.type = C_ParseDecl(ctx, NULL, 1, NULL);
+						head->sizeof_type.type = C_ParseDecl(ctx, NULL, 1, NULL);
 					}
 					else
 					{
-						head->as->sizeof_expr.expr = C_ParseExpr(ctx, 0, false);
+						head->sizeof_expr.expr = C_ParseExpr(ctx, 0, false);
 						C_UpdateNode(ctx, 0, &head->h);
-						head = head->as->sizeof_expr.expr;
+						head = head->sizeof_expr.expr;
 					}
 					
 					C_StreamEatToken(ctx, C_TokenKind_RightParen);
@@ -543,7 +543,7 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 				}
 				else
 				{
-					head = head->as->sizeof_expr.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, SizeofPolyAny(C_AstExpr));
+					head = head->sizeof_expr.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, sizeof(C_AstExpr));
 				}
 			} continue;
 			
@@ -559,21 +559,21 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 					{
 						C_UpdateNode(ctx, 0, &head->h);
 						head->h.kind = C_AstKind_ExprCompoundLiteral;
-						head->as->compound.type = type;
+						head->compound.type = type;
 						
 						goto parse_init;
 					}
 					else
 					{
 						head->h.kind = C_AstKind_Expr1Cast;
-						head->as->cast.to = type;
-						head = head->as->cast.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, SizeofPolyAny(C_AstExpr));
+						head->cast.to = type;
+						head = head->cast.expr = C_CreateNode(ctx, C_AstKind_ExprFactor, sizeof(C_AstExpr));
 					}
 				}
 				else
 				{
 					// yes. this is a "leak"
-					OurMemCopy(head, C_ParseExpr(ctx, 0, false), SizeofPolyAny(C_AstExpr));
+					OurMemCopy(head, C_ParseExpr(ctx, 0, false), sizeof(C_AstExpr));
 					
 					C_StreamEatToken(ctx, C_TokenKind_RightParen);
 					dont_parse_postfix = false;
@@ -599,8 +599,8 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 			parse_init: dont_parse_postfix = false;
 		}
 		
-		head->as->init.exprs = C_ParseInitializerField(ctx);
-		C_AstNode* last_init = (void*)head->as->init.exprs;
+		head->init.exprs = C_ParseInitializerField(ctx);
+		C_AstNode* last_init = (void*)head->init.exprs;
 		
 		while (C_StreamTryEatToken(ctx, C_TokenKind_Comma) &&
 			   ctx->token->kind != C_TokenKind_RightCurl)
@@ -698,7 +698,7 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 					C_TraceError(ctx, &ctx->token->trace, "unexpected typename.");
 				
 				C_UpdateNode(ctx, C_AstKind_ExprIdent, &head->h);
-				head->as->ident.name = ctx->token->value_ident;
+				head->ident.name = ctx->token->value_ident;
 				
 				C_StreamNextToken(ctx);
 			} break;
@@ -728,8 +728,8 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 		{
 			case C_TokenKind_Inc:
 			{
-				C_AstExpr* new_node = C_CreateNode(ctx, C_AstKind_Expr1PostfixInc, SizeofPolyAny(C_AstExpr));
-				new_node->as->unary.expr = head;
+				C_AstExpr* new_node = C_CreateNode(ctx, C_AstKind_Expr1PostfixInc, sizeof(C_AstExpr));
+				new_node->unary.expr = head;
 				head = new_node;
 				
 				C_StreamNextToken(ctx);
@@ -737,8 +737,8 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 			
 			case C_TokenKind_Dec:
 			{
-				C_AstExpr* new_node = C_CreateNode(ctx, C_AstKind_Expr1PostfixInc, SizeofPolyAny(C_AstExpr));
-				new_node->as->unary.expr = head;
+				C_AstExpr* new_node = C_CreateNode(ctx, C_AstKind_Expr1PostfixInc, sizeof(C_AstExpr));
+				new_node->unary.expr = head;
 				head = new_node;
 				
 				C_StreamNextToken(ctx);
@@ -746,15 +746,15 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 			
 			case C_TokenKind_LeftParen:
 			{
-				C_AstExpr* new_node = C_CreateNode(ctx, C_AstKind_Expr2Call, SizeofPolyAny(C_AstExpr));
-				new_node->as->binary.left = head;
+				C_AstExpr* new_node = C_CreateNode(ctx, C_AstKind_Expr2Call, sizeof(C_AstExpr));
+				new_node->binary.left = head;
 				head = new_node;
 				
 				C_StreamNextToken(ctx);
 				if (ctx->token->kind != C_TokenKind_RightParen)
 				{
 					C_AstNode* last_param = C_ParseExpr(ctx, 1, false);
-					head->as->binary.right = (void*)last_param;
+					head->binary.right = (void*)last_param;
 					
 					while (C_StreamTryEatToken(ctx, C_TokenKind_Comma))
 					{
@@ -767,12 +767,12 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 			
 			case C_TokenKind_LeftBrkt:
 			{
-				C_AstExpr* new_node = C_CreateNode(ctx, C_AstKind_Expr2Index, SizeofPolyAny(C_AstExpr));
-				new_node->as->binary.left = head;
+				C_AstExpr* new_node = C_CreateNode(ctx, C_AstKind_Expr2Index, sizeof(C_AstExpr));
+				new_node->binary.left = head;
 				head = new_node;
 				
 				C_StreamNextToken(ctx);
-				head->as->binary.right = C_ParseExpr(ctx, 0, false);
+				head->binary.right = C_ParseExpr(ctx, 0, false);
 				
 				C_StreamEatToken(ctx, C_TokenKind_RightBrkt);
 			} continue;
@@ -786,14 +786,14 @@ C_ParseExprFactor(C_Context* ctx, bool32 allow_init)
 					case C_TokenKind_Arrow: kind = C_AstKind_Expr2DerefAccess;
 				}
 				
-				C_AstExpr* new_node = C_CreateNode(ctx, kind, SizeofPolyAny(C_AstExpr));
-				new_node->as->access.expr = head;
+				C_AstExpr* new_node = C_CreateNode(ctx, kind, sizeof(C_AstExpr));
+				new_node->access.expr = head;
 				head = new_node;
 				
 				C_StreamNextToken(ctx);
 				if (C_StreamAssertToken(ctx, C_TokenKind_Identifier))
 				{
-					head->as->access.field = ctx->token->value_ident;
+					head->access.field = ctx->token->value_ident;
 					C_StreamNextToken(ctx);
 				}
 			} continue;
@@ -831,16 +831,16 @@ C_ParseExpr(C_Context* ctx, int32 level, bool32 allow_init)
 			C_AstExpr* tmp;
 			
 			if (lookahead == C_TokenKind_QuestionMark) {
-				tmp = C_CreateNode(ctx, C_AstKind_Expr3Condition, SizeofPolyAny(C_AstExpr));
-				tmp->as->ternary.left = right;
-				tmp->as->ternary.middle = C_ParseExpr(ctx, 0, false);
+				tmp = C_CreateNode(ctx, C_AstKind_Expr3Condition, sizeof(C_AstExpr));
+				tmp->ternary.left = right;
+				tmp->ternary.middle = C_ParseExpr(ctx, 0, false);
 				
 				C_StreamEatToken(ctx, C_TokenKind_Colon);
-				tmp->as->ternary.right = C_ParseExpr(ctx, lookahead_prec.level - 1, false);
+				tmp->ternary.right = C_ParseExpr(ctx, lookahead_prec.level - 1, false);
 			} else {
-				tmp = C_CreateNode(ctx, C_token_to_op[lookahead], SizeofPolyAny(C_AstExpr));
-				tmp->as->binary.left = right;
-				tmp->as->binary.right = C_ParseExpr(ctx, level + 1, false);
+				tmp = C_CreateNode(ctx, C_token_to_op[lookahead], sizeof(C_AstExpr));
+				tmp->binary.left = right;
+				tmp->binary.right = C_ParseExpr(ctx, level + 1, false);
 			}
 			
 			lookahead = ctx->token->kind;
@@ -848,20 +848,20 @@ C_ParseExpr(C_Context* ctx, int32 level, bool32 allow_init)
 			right = tmp;
 		}
 		
-		C_AstExpr* tmp = C_CreateNode(ctx, op, SizeofPolyAny(C_AstExpr));
+		C_AstExpr* tmp = C_CreateNode(ctx, op, sizeof(C_AstExpr));
 		
 		if (op == C_AstKind_Expr3Condition)
 		{
-			tmp->as->ternary.left = result;
-			tmp->as->ternary.middle = right;
+			tmp->ternary.left = result;
+			tmp->ternary.middle = right;
 			
 			C_StreamEatToken(ctx, C_TokenKind_Colon);
-			tmp->as->ternary.right = C_ParseExpr(ctx, prec.level, false);
+			tmp->ternary.right = C_ParseExpr(ctx, prec.level, false);
 		}
 		else
 		{
-			tmp->as->binary.left = result;
-			tmp->as->binary.right = right;
+			tmp->binary.left = result;
+			tmp->binary.right = right;
 		}
 		
 		result = tmp;
@@ -891,18 +891,18 @@ C_ParsePossibleGnuAttribute(C_Context* ctx, C_AstNode* apply_to)
 				String name = ctx->token->value_ident;
 				if (MatchCString("packed", name) || MatchCString("__packed__", name))
 				{
-					attrib = C_CreateNode(ctx, C_AstKind_AttributePacked, SizeofPoly(C_AstAttribute, aligned));
+					attrib = C_CreateNode(ctx, C_AstKind_AttributePacked, sizeof(C_AstAttribute));
 					
 					C_StreamNextToken(ctx);
 				}
 				else if (MatchCString("aligned", name))
 				{
-					attrib = C_CreateNode(ctx, C_AstKind_AttributePacked, SizeofPoly(C_AstAttribute, aligned));
+					attrib = C_CreateNode(ctx, C_AstKind_AttributePacked, sizeof(C_AstAttribute));
 					
 					C_StreamNextToken(ctx);
 					if (C_StreamTryEatToken(ctx, C_TokenKind_LeftParen))
 					{
-						attrib->as->aligned.expr = C_ParseExpr(ctx, 0, false);
+						attrib->aligned.expr = C_ParseExpr(ctx, 0, false);
 						
 						C_StreamEatToken(ctx, C_TokenKind_RightParen);
 					}
@@ -969,62 +969,62 @@ C_ParseStmt(C_Context* ctx, C_Node** out_last, bool32 allow_decl)
 		
 		case C_TokenKind_If:
 		{
-			last = result = C_CreateNode(ctx, C_AstKind_StmtIf, SizeofPoly(C_AstStmt, generic));
+			last = result = C_CreateNode(ctx, C_AstKind_StmtIf, sizeof(C_AstStmt));
 			
 			C_StreamNextToken(ctx);
 			C_StreamEatToken(ctx, C_TokenKind_LeftParen);
-			result->as->generic.leafs[0] = C_ParseExpr(ctx, 0, false);
+			result->generic.leafs[0] = C_ParseExpr(ctx, 0, false);
 			
 			C_StreamEatToken(ctx, C_TokenKind_RightParen);
-			result->as->generic.leafs[1] = C_ParseStmt(ctx, NULL, false);
+			result->generic.leafs[1] = C_ParseStmt(ctx, NULL, false);
 			
 			if (C_StreamTryEatToken(ctx, C_TokenKind_Else))
-				result->as->generic.leafs[2] = C_ParseStmt(ctx, NULL, false);
+				result->generic.leafs[2] = C_ParseStmt(ctx, NULL, false);
 		} break;
 		
 		case C_TokenKind_While:
 		{
-			last = result = C_CreateNode(ctx, C_AstKind_StmtWhile, SizeofPoly(C_AstStmt, generic));
+			last = result = C_CreateNode(ctx, C_AstKind_StmtWhile, sizeof(C_AstStmt));
 			
 			C_StreamNextToken(ctx);
 			C_StreamEatToken(ctx, C_TokenKind_LeftParen);
-			result->as->generic.leafs[0] = C_ParseExpr(ctx, 0, false);
+			result->generic.leafs[0] = C_ParseExpr(ctx, 0, false);
 			
 			C_StreamEatToken(ctx, C_TokenKind_RightParen);
-			result->as->generic.leafs[1] = C_ParseStmt(ctx, NULL, false);
+			result->generic.leafs[1] = C_ParseStmt(ctx, NULL, false);
 		} break;
 		
 		case C_TokenKind_For:
 		{
-			last = result = C_CreateNode(ctx, C_AstKind_StmtFor, SizeofPoly(C_AstStmt, generic));
+			last = result = C_CreateNode(ctx, C_AstKind_StmtFor, sizeof(C_AstStmt));
 			
 			C_StreamNextToken(ctx);
 			C_StreamEatToken(ctx, C_TokenKind_LeftParen);
 			if (ctx->token->kind != C_TokenKind_Semicolon)
-				result->as->generic.leafs[0] = C_ParseDeclOrExpr(ctx, NULL, false, 0);
+				result->generic.leafs[0] = C_ParseDeclOrExpr(ctx, NULL, false, 0);
 			
 			C_StreamEatToken(ctx, C_TokenKind_Semicolon);
 			if (ctx->token->kind != C_TokenKind_Semicolon)
-				result->as->generic.leafs[1] = C_ParseExpr(ctx, 0, false);
+				result->generic.leafs[1] = C_ParseExpr(ctx, 0, false);
 			
 			C_StreamEatToken(ctx, C_TokenKind_Semicolon);
 			if (ctx->token->kind != C_TokenKind_RightParen)
-				result->as->generic.leafs[2] = C_ParseExpr(ctx, 0, false);
+				result->generic.leafs[2] = C_ParseExpr(ctx, 0, false);
 			
 			C_StreamEatToken(ctx, C_TokenKind_RightParen);
-			result->as->generic.leafs[3] = C_ParseStmt(ctx, NULL, false);
+			result->generic.leafs[3] = C_ParseStmt(ctx, NULL, false);
 		} break;
 		
 		case C_TokenKind_Do:
 		{
-			last = result = C_CreateNode(ctx, C_AstKind_StmtDoWhile, SizeofPoly(C_AstStmt, generic));
+			last = result = C_CreateNode(ctx, C_AstKind_StmtDoWhile, sizeof(C_AstStmt));
 			
 			C_StreamNextToken(ctx);
-			result->as->generic.leafs[0] = C_ParseStmt(ctx, NULL, false);
+			result->generic.leafs[0] = C_ParseStmt(ctx, NULL, false);
 			
 			C_StreamEatToken(ctx, C_TokenKind_While);
 			C_StreamEatToken(ctx, C_TokenKind_LeftParen);
-			result->as->generic.leafs[1] = C_ParseExpr(ctx, 0, false);
+			result->generic.leafs[1] = C_ParseExpr(ctx, 0, false);
 			
 			C_StreamEatToken(ctx, C_TokenKind_RightParen);
 			C_StreamEatToken(ctx, C_TokenKind_Semicolon);
@@ -1056,46 +1056,46 @@ C_ParseStmt(C_Context* ctx, C_Node** out_last, bool32 allow_decl)
 		
 		case C_TokenKind_Switch:
 		{
-			last = result = C_CreateNode(ctx, C_AstKind_StmtSwitch, SizeofPoly(C_AstStmt, generic));
+			last = result = C_CreateNode(ctx, C_AstKind_StmtSwitch, sizeof(C_AstStmt));
 			
 			C_StreamNextToken(ctx);
 			C_StreamEatToken(ctx, C_TokenKind_LeftParen);
-			result->as->generic.leafs[0] = C_ParseExpr(ctx, 0, false);
+			result->generic.leafs[0] = C_ParseExpr(ctx, 0, false);
 			
 			C_StreamEatToken(ctx, C_TokenKind_RightParen);
-			result->as->generic.leafs[1] = C_ParseStmt(ctx, NULL, false);
+			result->generic.leafs[1] = C_ParseStmt(ctx, NULL, false);
 		} break;
 		
 		case C_TokenKind_Return:
 		{
-			last = result = C_CreateNode(ctx, C_AstKind_StmtReturn, SizeofPoly(C_AstStmt, generic));
+			last = result = C_CreateNode(ctx, C_AstKind_StmtReturn, sizeof(C_AstStmt));
 			
 			C_StreamNextToken(ctx);
 			if (ctx->token->kind != C_TokenKind_Semicolon)
-				result->as->generic.leafs[0] = C_ParseExpr(ctx, 0, false);
+				result->generic.leafs[0] = C_ParseExpr(ctx, 0, false);
 			
 			C_StreamEatToken(ctx, C_TokenKind_Semicolon);
 		} break;
 		
 		case C_TokenKind_Case:
 		{
-			last = result = C_CreateNode(ctx, C_AstKind_StmtCase, SizeofPoly(C_AstStmt, generic));
+			last = result = C_CreateNode(ctx, C_AstKind_StmtCase, sizeof(C_AstStmt));
 			
 			C_StreamNextToken(ctx);
-			result->as->generic.leafs[0] = C_ParseExpr(ctx, 0, false);
+			result->generic.leafs[0] = C_ParseExpr(ctx, 0, false);
 			
 			C_StreamEatToken(ctx, C_TokenKind_Colon);
-			result->as->generic.leafs[1] = C_ParseStmt(ctx, NULL, false);
+			result->generic.leafs[1] = C_ParseStmt(ctx, NULL, false);
 		} break;
 		
 		case C_TokenKind_Goto:
 		{
-			last = result = C_CreateNode(ctx, C_AstKind_StmtGoto, SizeofPoly(C_AstStmt, go_to));
+			last = result = C_CreateNode(ctx, C_AstKind_StmtGoto, sizeof(C_AstStmt));
 			
 			C_StreamNextToken(ctx);
 			if (C_StreamAssertToken(ctx, C_TokenKind_Identifier))
 			{
-				result->as->go_to.label_name = ctx->token->value_ident;
+				result->go_to.label_name = ctx->token->value_ident;
 				
 				C_StreamNextToken(ctx);
 			}
@@ -1121,11 +1121,11 @@ C_ParseStmt(C_Context* ctx, C_Node** out_last, bool32 allow_decl)
 		
 		case C_TokenKind_Default:
 		{
-			last = result = C_CreateNode(ctx, C_AstKind_StmtContinue, SizeofPoly(C_AstStmt, label));
+			last = result = C_CreateNode(ctx, C_AstKind_StmtContinue, sizeof(C_AstStmt));
 			C_StreamNextToken(ctx);
 			C_StreamEatToken(ctx, C_TokenKind_Colon);
 			
-			result->as->label.stmt = C_ParseStmt(ctx, NULL, false);
+			result->label.stmt = C_ParseStmt(ctx, NULL, false);
 		} break;
 		
 		case C_TokenKind_MsvcAsm:
@@ -1147,7 +1147,7 @@ C_ParseStmt(C_Context* ctx, C_Node** out_last, bool32 allow_decl)
 		
 		case C_TokenKind_GccAsm:
 		{
-			last = result = C_CreateNode(ctx, C_AstKind_StmtGccAsm, SizeofPoly(C_AstStmt, gcc_asm));
+			last = result = C_CreateNode(ctx, C_AstKind_StmtGccAsm, sizeof(C_AstStmt));
 			
 			C_StreamNextToken(ctx);
 			for (;; C_StreamNextToken(ctx))
@@ -1165,7 +1165,7 @@ C_ParseStmt(C_Context* ctx, C_Node** out_last, bool32 allow_decl)
 			C_StreamEatToken(ctx, C_TokenKind_LeftParen);
 			if (C_StreamAssertToken(ctx, C_TokenKind_StringLiteral))
 			{
-				result->as->gcc_asm.leafs[0] = C_ParseExprFactor(ctx, false);
+				result->gcc_asm.leafs[0] = C_ParseExprFactor(ctx, false);
 				
 				for (int32 i = 1; i <= 4; ++i)
 				{
@@ -1176,7 +1176,7 @@ C_ParseStmt(C_Context* ctx, C_Node** out_last, bool32 allow_decl)
 						ctx->token->kind == C_TokenKind_Identifier)
 					{
 						C_AstNode* head = C_ParseExprFactor(ctx, false);
-						result->as->gcc_asm.leafs[i] = (void*)head;
+						result->gcc_asm.leafs[i] = (void*)head;
 						
 						while (C_StreamTryEatToken(ctx, C_TokenKind_Comma))
 							head = head->next = C_ParseExprFactor(ctx, false);
@@ -1198,15 +1198,15 @@ C_ParseStmt(C_Context* ctx, C_Node** out_last, bool32 allow_decl)
 				if (result->h.kind == C_AstKind_ExprIdent && C_StreamTryEatToken(ctx, C_TokenKind_Colon))
 				{
 					result->h.kind = C_AstKind_StmtLabel;
-					result->as->label.stmt = C_ParseStmt(ctx, NULL, false);
+					result->label.stmt = C_ParseStmt(ctx, NULL, false);
 					
-					if (result->as->label.stmt->h.kind == C_AstKind_StmtEmpty)
-						result->h.attributes = result->as->label.stmt->h.attributes; // NOTE(ljre): For GCC __attribute__ only.
+					if (result->label.stmt->h.kind == C_AstKind_StmtEmpty)
+						result->h.attributes = result->label.stmt->h.attributes; // NOTE(ljre): For GCC __attribute__ only.
 				}
 				else
 				{
-					C_AstStmt* s = C_CreateNode(ctx, C_AstKind_StmtExpr, SizeofPoly(C_AstStmt, expr));
-					s->as->expr.expr = (void*)result;
+					C_AstStmt* s = C_CreateNode(ctx, C_AstKind_StmtExpr, sizeof(C_AstStmt));
+					s->expr.expr = (void*)result;
 					last = result = s;
 					
 					C_StreamEatToken(ctx, C_TokenKind_Semicolon);
@@ -1227,7 +1227,7 @@ C_ParseBlock(C_Context* ctx, C_Node** out_last)
 	Trace();
 	
 	C_StreamEatToken(ctx, C_TokenKind_LeftCurl);
-	C_AstStmt* result = C_CreateNode(ctx, C_AstKind_StmtCompound, SizeofPoly(C_AstStmt, compound));
+	C_AstStmt* result = C_CreateNode(ctx, C_AstKind_StmtCompound, sizeof(C_AstStmt));
 	C_AstNode* last = NULL;
 	
 	if (ctx->token->kind == C_TokenKind_RightCurl)
@@ -1239,8 +1239,8 @@ C_ParseBlock(C_Context* ctx, C_Node** out_last)
 	}
 	else if (ctx->token->kind)
 	{
-		result->as->compound.scope = C_PushSymbolScope(ctx);
-		result->as->compound.stmts = C_ParseStmt(ctx, (void*)&last, true);
+		result->compound.scope = C_PushSymbolScope(ctx);
+		result->compound.stmts = C_ParseStmt(ctx, (void*)&last, true);
 		
 		while (ctx->token->kind && !C_StreamTryEatToken(ctx, C_TokenKind_RightCurl))
 		{
@@ -1276,8 +1276,8 @@ C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstA
 			{
 				C_StreamNextToken(ctx);
 				
-				C_AstType* newtype = C_CreateNode(ctx, C_AstKind_TypePointer, SizeofPoly(C_AstType, ptr));
-				newtype->as->ptr.to = *head;
+				C_AstType* newtype = C_CreateNode(ctx, C_AstKind_TypePointer, sizeof(C_AstType));
+				newtype->ptr.to = *head;
 				
 				*head = newtype;
 				flags_head = &newtype->h.flags;
@@ -1343,7 +1343,7 @@ C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstA
 			case C_TokenKind_LeftParen:
 			{
 				C_StreamNextToken(ctx);
-				C_AstType* newtype = C_CreateNode(ctx, C_AstKind_TypeFunction, SizeofPoly(C_AstType, function));
+				C_AstType* newtype = C_CreateNode(ctx, C_AstKind_TypeFunction, sizeof(C_AstType));
 				
 				if (saved_attrib)
 				{
@@ -1360,7 +1360,7 @@ C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstA
 					saved_flags = 0;
 				}
 				
-				newtype->as->function.ret = *head;
+				newtype->function.ret = *head;
 				*head = newtype;
 				result = head;
 				
@@ -1369,7 +1369,7 @@ C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstA
 				else
 				{
 					C_AstNode* last_param;
-					newtype->as->function.params = C_ParseDecl(ctx, (void*)&last_param, 8, NULL);
+					newtype->function.params = C_ParseDecl(ctx, (void*)&last_param, 8, NULL);
 					
 					while (C_StreamTryEatToken(ctx, C_TokenKind_Comma))
 					{
@@ -1391,7 +1391,7 @@ C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstA
 			case C_TokenKind_LeftBrkt:
 			{
 				C_StreamNextToken(ctx);
-				C_AstType* newtype = C_CreateNode(ctx, C_AstKind_TypeVlaArray, SizeofPolyAny(C_AstType));
+				C_AstType* newtype = C_CreateNode(ctx, C_AstKind_TypeVlaArray, sizeof(C_AstType));
 				
 				if (saved_attrib)
 				{
@@ -1408,12 +1408,12 @@ C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstA
 					saved_flags = 0;
 				}
 				
-				newtype->as->array.of = *head;
+				newtype->array.of = *head;
 				*head = newtype;
 				result = head;
 				
 				if (ctx->token->kind != C_TokenKind_RightBrkt)
-					newtype->as->array.length = C_ParseExpr(ctx, 0, false);
+					newtype->array.length = C_ParseExpr(ctx, 0, false);
 				
 				C_StreamEatToken(ctx, C_TokenKind_RightBrkt);
 			} continue;
@@ -1436,9 +1436,8 @@ C_ParseRestOfDecl(C_Context* ctx, C_AstType* base, C_AstDecl* decl, bool32 type_
 	
 	if (flags || attrib)
 	{
-		C_AstType* tmp = C_CreateNode(ctx, base->h.kind, SizeofPolyAny(C_AstType));
+		C_AstType* tmp = C_CreateNode(ctx, base->h.kind, sizeof(C_AstType));
 		*tmp = *base;
-		*tmp->as = *base->as;
 		
 		tmp->h.flags |= flags;
 		
@@ -1475,7 +1474,7 @@ C_ParseDecl(C_Context* ctx, C_Node** out_last, int32 options, bool32* out_should
 	if (!(options & 1))
 		decl = C_CreateNode(ctx, C_AstKind_Decl, sizeof(C_AstDecl));
 	
-	C_AstType* base = C_CreateNode(ctx, C_AstKind_Type, SizeofPolyAny(C_AstType));
+	C_AstType* base = C_CreateNode(ctx, C_AstKind_Type, sizeof(C_AstType));
 	C_AstAttribute* callconv = NULL;
 	
 	beginning:;
@@ -1549,13 +1548,13 @@ C_ParseDecl(C_Context* ctx, C_Node** out_last, int32 options, bool32* out_should
 				C_StreamNextToken(ctx);
 				if (ctx->token->kind == C_TokenKind_Identifier)
 				{
-					base->as->enumerator.name = ctx->token->value_ident;
+					base->enumerator.name = ctx->token->value_ident;
 					
 					C_StreamNextToken(ctx);
 				}
 				
 				if (ctx->token->kind == C_TokenKind_LeftCurl)
-					base->as->enumerator.entries = C_ParseEnumBody(ctx);
+					base->enumerator.entries = C_ParseEnumBody(ctx);
 				
 				C_ParsePossibleGnuAttribute(ctx, (void*)base);
 			} continue;  // ignore the C_NextToken() at the end.
@@ -1723,13 +1722,13 @@ C_ParseDecl(C_Context* ctx, C_Node** out_last, int32 options, bool32* out_should
 				C_StreamNextToken(ctx);
 				if (ctx->token->kind == C_TokenKind_Identifier)
 				{
-					base->as->structure.name = ctx->token->value_ident;
+					base->structure.name = ctx->token->value_ident;
 					
 					C_StreamNextToken(ctx);
 				}
 				
 				if (ctx->token->kind == C_TokenKind_LeftCurl)
-					base->as->structure.body = C_ParseStructBody(ctx);
+					base->structure.body = C_ParseStructBody(ctx);
 				
 				C_ParsePossibleGnuAttribute(ctx, (void*)base);
 			} continue;  // ignore the C_NextToken() at the end.
@@ -1758,13 +1757,13 @@ C_ParseDecl(C_Context* ctx, C_Node** out_last, int32 options, bool32* out_should
 				C_StreamNextToken(ctx);
 				if (ctx->token->kind == C_TokenKind_Identifier)
 				{
-					base->as->structure.name = ctx->token->value_ident;
+					base->structure.name = ctx->token->value_ident;
 					
 					C_StreamNextToken(ctx);
 				}
 				
 				if (ctx->token->kind == C_TokenKind_LeftCurl)
-					base->as->structure.body = C_ParseStructBody(ctx);
+					base->structure.body = C_ParseStructBody(ctx);
 				
 				C_ParsePossibleGnuAttribute(ctx, (void*)base);
 			} continue; // ignore the C_NextToken() at the end.
@@ -1819,7 +1818,7 @@ C_ParseDecl(C_Context* ctx, C_Node** out_last, int32 options, bool32* out_should
 						C_TraceError(ctx, &ctx->token->trace, "object cannot have more than one type.");
 					
 					base->h.kind = C_AstKind_TypeTypename;
-					base->as->typedefed.name = ctx->token->value_ident;
+					base->typedefed.name = ctx->token->value_ident;
 					break;
 				}
 				else if (options & 1)
@@ -1907,8 +1906,8 @@ C_ParseDecl(C_Context* ctx, C_Node** out_last, int32 options, bool32* out_should
 		}
 		else if (type->h.kind == C_AstKind_TypeFunction)
 		{
-			C_AstType* newtype = C_CreateNode(ctx, C_AstKind_TypePointer, SizeofPoly(C_AstType, ptr));
-			newtype->as->ptr.to = type;
+			C_AstType* newtype = C_CreateNode(ctx, C_AstKind_TypePointer, sizeof(C_AstType));
+			newtype->ptr.to = type;
 			type = newtype;
 			
 			type->h.flags |= C_AstFlags_Decayed;
@@ -1964,8 +1963,8 @@ C_ParseDecl(C_Context* ctx, C_Node** out_last, int32 options, bool32* out_should
 				}
 				else if (new_node->type->h.kind == C_AstKind_TypeFunction)
 				{
-					C_AstType* newtype = C_CreateNode(ctx, C_AstKind_TypePointer, SizeofPoly(C_AstType, ptr));
-					newtype->as->ptr.to = new_node->type;
+					C_AstType* newtype = C_CreateNode(ctx, C_AstKind_TypePointer, sizeof(C_AstType));
+					newtype->ptr.to = new_node->type;
 					new_node->type = newtype;
 					
 					new_node->type->h.flags |= C_AstFlags_Decayed;

@@ -62,9 +62,6 @@ typedef String;
 #define internal static
 #define Max(a,b) ((a) > (b) ? (a) : (b))
 #define Min(a,b) ((a) < (b) ? (a) : (b))
-#define SizeofMember(Struct, name) sizeof(((Struct*)0)->name)
-#define SizeofPoly(Struct, name) (sizeof(Struct) + SizeofMember(Struct, as->name))
-#define SizeofPolyAny(Struct) (sizeof(Struct) + SizeofMember(Struct, as[0]))
 
 // NOTE(ljre): Unreachable may be used in release builds.
 #define Unreachable() do { Panic("\nUnreachable code was reached, at '" __FILE__ "' line " StrMacro(__LINE__) ".\n"); } while (0)
