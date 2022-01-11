@@ -1,4 +1,6 @@
-#define _CRT_SECURE_NO_WARNINGS
+#ifndef _CRT_SECURE_NO_WARNINGS
+#   define _CRT_SECURE_NO_WARNINGS
+#endif
 
 #include <stdint.h>
 #include <stddef.h>
@@ -9,6 +11,7 @@
 
 #include "internal.h"
 
+internal String global_my_path;
 internal Arena* global_arena;
 
 internal void

@@ -93,8 +93,10 @@ C_CreateNode(C_Context* ctx, C_AstKind kind, uintsize size)
 }
 
 internal void
-C_PoisonNode(C_Context* ctx, C_AstNode* node)
+C_PoisonNode(C_Context* ctx, C_Node* node_)
 {
+	C_AstNode* node = node_;
+	
 	if (node->flags & C_AstFlags_Poisoned)
 		return;
 	

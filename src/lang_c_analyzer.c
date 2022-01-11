@@ -1,7 +1,7 @@
-internal C_SymbolScope* C_ResolveBlock(C_Context* ctx, C_AstStmt* block);
 internal C_AstExpr* C_ResolveExpr(C_Context* ctx, C_AstExpr* expr);
 internal C_AstExpr* C_AddCastToExprIfNeeded(C_Context* ctx, C_AstExpr* expr, C_AstType* type);
-internal bool32 C_ResolveInitializerOfType(C_Context* ctx, C_AstExpr* init, C_AstType* type);
+internal void C_ResolveLocalDecl(C_Context* ctx, C_AstDecl* decl);
+internal bool32 C_ResolveTypeWithInitializer(C_Context* ctx, C_AstType** ptype, C_AstExpr** pinit, uint32 flags);
 
 internal C_Node*
 C_CreateNodeFrom(C_Context* ctx, C_Node* other_, C_AstKind kind, uintsize size)
@@ -48,6 +48,7 @@ C_GetMapFromSymbolKind(C_Context* ctx, C_SymbolScope* scope, C_SymbolKind kind, 
 	
 	switch (kind)
 	{
+		default:
 		case C_SymbolKind_Var:
 		case C_SymbolKind_VarDecl:
 		case C_SymbolKind_StaticVar:
@@ -60,8 +61,6 @@ C_GetMapFromSymbolKind(C_Context* ctx, C_SymbolScope* scope, C_SymbolKind kind, 
 		case C_SymbolKind_Struct: map = &scope->structs; break;
 		case C_SymbolKind_Union: map = &scope->unions; break;
 		case C_SymbolKind_Enum: map = &scope->enums; break;
-		
-		default: Unreachable(); break;
 	}
 	
 	if (create_new && !*map)
@@ -186,7 +185,7 @@ C_DecayType(C_Context* ctx, C_AstType* type)
 	switch (type->h.kind)
 	{
 		case C_AstKind_TypeArray:
-		case C_AstKind_TypeVlaArray:
+		case C_AstKind_TypeVlaArray: type = type->array.of;
 		case C_AstKind_TypeFunction:
 		{
 			C_AstType* newtype = C_CreateNodeFrom(ctx, type, C_AstKind_TypePointer, sizeof(C_AstType));
@@ -202,9 +201,51 @@ C_DecayType(C_Context* ctx, C_AstType* type)
 	return type;
 }
 
+internal C_AstType*
+C_TypeFromAbiType(C_Context* ctx, const C_ABIType* abitype, C_Node* for_trace)
+{
+	C_AstType* result = C_CreateNodeFrom(ctx, for_trace, C_AstKind_Type, sizeof(C_AstType));
+	
+	uint32 offset = (uint8*)abitype - (uint8*)ctx->abi->t;
+	switch (offset)
+	{
+		case offsetof(C_ABI, t_bool): result->h.kind = C_AstKind_TypeBool; break;
+		case offsetof(C_ABI, t_schar): result->h.kind = C_AstKind_TypeChar; result->h.flags |= C_AstFlags_Signed; break;
+		case offsetof(C_ABI, t_char): result->h.kind = C_AstKind_TypeChar; break;
+		case offsetof(C_ABI, t_uchar): result->h.kind = C_AstKind_TypeChar; result->h.flags |= C_AstFlags_Unsigned; break;
+		case offsetof(C_ABI, t_short): result->h.kind = C_AstKind_TypeInt; result->h.flags |= C_AstFlags_Short; break;
+		case offsetof(C_ABI, t_ushort): result->h.kind = C_AstKind_TypeInt; result->h.flags |= C_AstFlags_Unsigned|C_AstFlags_Short; break;
+		case offsetof(C_ABI, t_int): result->h.kind = C_AstKind_TypeInt; break;
+		case offsetof(C_ABI, t_uint): result->h.kind = C_AstKind_TypeInt; result->h.flags |= C_AstFlags_Unsigned; break;
+		case offsetof(C_ABI, t_long): result->h.kind = C_AstKind_TypeInt; result->h.flags |= C_AstFlags_Long; break;
+		case offsetof(C_ABI, t_ulong): result->h.kind = C_AstKind_TypeInt; result->h.flags |= C_AstFlags_Unsigned|C_AstFlags_Long; break;
+		case offsetof(C_ABI, t_longlong): result->h.kind = C_AstKind_TypeInt; result->h.flags |= C_AstFlags_LongLong; break;
+		case offsetof(C_ABI, t_ulonglong): result->h.kind = C_AstKind_TypeInt; result->h.flags |= C_AstFlags_Unsigned|C_AstFlags_LongLong; break;
+		case offsetof(C_ABI, t_float): result->h.kind = C_AstKind_TypeFloat; break;
+		case offsetof(C_ABI, t_double): result->h.kind = C_AstKind_TypeDouble; break;
+		
+		case offsetof(C_ABI, t_ptr):
+		default: Unreachable(); break;
+	}
+	
+	result->size = abitype->size;
+	result->alignment_mask = abitype->alignment_mask;
+	result->is_unsigned = abitype->unsig;
+	
+	return result;
+}
+
 internal bool32
 C_TryToEval(C_Context* ctx, C_AstExpr* expr)
 {
+	if (expr->h.flags & C_AstFlags_ComptimeKnown)
+		return true;
+	
+	switch (expr->h.kind)
+	{
+		// TODO
+	}
+	
 	return false;
 }
 
@@ -654,7 +695,172 @@ C_ResolveType(C_Context* ctx, C_AstType* type, bool32* out_is_complete, uint32 f
 internal C_AstExpr*
 C_ResolveExpr(C_Context* ctx, C_AstExpr* expr)
 {
-	// TODO(ljre)
+	switch (expr->h.kind)
+	{
+		case C_AstKind_ExprIdent:
+		{
+			expr->h.symbol = C_FindSymbol(ctx, expr->ident.name, 0);
+			if (!expr->h.symbol)
+				C_NodeError(ctx, expr, "'%S' is not defined.", expr->ident.name);
+			else
+			{
+				if(expr->h.symbol->flags & C_AstFlags_Poisoned)
+					C_PoisonNode(ctx, expr);
+				
+				expr->type = expr->h.symbol->decl->type;
+				
+				if (expr->h.symbol->kind == C_SymbolKind_EnumConstant)
+				{
+					expr->h.flags |= C_AstFlags_ComptimeKnown;
+					expr->value_int = expr->h.symbol->enum_const.value;
+				}
+			}
+		} break;
+		
+		case C_AstKind_ExprInt:
+		{
+			expr->h.flags |= C_AstFlags_ComptimeKnown;
+			expr->type = C_TypeFromAbiType(ctx, &ctx->abi->t_int, expr);
+		} break;
+		
+		case C_AstKind_ExprLInt:
+		{
+			expr->h.flags |= C_AstFlags_ComptimeKnown;
+			expr->type = C_TypeFromAbiType(ctx, &ctx->abi->t_long, expr);
+		} break;
+		
+		case C_AstKind_ExprLLInt:
+		{
+			expr->h.flags |= C_AstFlags_ComptimeKnown;
+			expr->type = C_TypeFromAbiType(ctx, &ctx->abi->t_longlong, expr);
+		} break;
+		
+		case C_AstKind_ExprUInt:
+		{
+			expr->h.flags |= C_AstFlags_ComptimeKnown;
+			expr->type = C_TypeFromAbiType(ctx, &ctx->abi->t_uint, expr);
+		} break;
+		
+		case C_AstKind_ExprULInt:
+		{
+			expr->h.flags |= C_AstFlags_ComptimeKnown;
+			expr->type = C_TypeFromAbiType(ctx, &ctx->abi->t_ulong, expr);
+		} break;
+		
+		case C_AstKind_ExprULLInt:
+		{
+			expr->h.flags |= C_AstFlags_ComptimeKnown;
+			expr->type = C_TypeFromAbiType(ctx, &ctx->abi->t_ulonglong, expr);
+		} break;
+		
+		case C_AstKind_ExprFloat:
+		{
+			expr->h.flags |= C_AstFlags_ComptimeKnown;
+			expr->type = C_TypeFromAbiType(ctx, &ctx->abi->t_float, expr);
+		} break;
+		
+		case C_AstKind_ExprDouble:
+		{
+			expr->h.flags |= C_AstFlags_ComptimeKnown;
+			expr->type = C_TypeFromAbiType(ctx, &ctx->abi->t_double, expr);
+		} break;
+		
+		case C_AstKind_ExprString:
+		{
+			expr->h.flags |= C_AstFlags_ComptimeKnown;
+			expr->type = C_CreateArrayType(ctx, C_TypeFromAbiType(ctx, &ctx->abi->t_char, expr), expr->value_str.size + 1);
+		} break;
+		
+		case C_AstKind_ExprWideString:
+		{
+			expr->h.flags |= C_AstFlags_ComptimeKnown;
+			expr->type = C_CreateArrayType(ctx, C_TypeFromAbiType(ctx, &ctx->abi->t_ushort, expr), expr->value_str.size + 1);
+		} break;
+		
+		case C_AstKind_ExprCompoundLiteral:
+		{
+			expr->type = expr->compound.type;
+			C_ResolveTypeWithInitializer(ctx, &expr->type, &expr->compound.init, 0);
+		} break;
+		
+		case C_AstKind_ExprInitializer:
+		{
+			
+		} break;
+		
+		case C_AstKind_ExprInitializerMember:
+		{
+			
+		} break;
+		
+		case C_AstKind_ExprInitializerIndex:
+		{
+			
+		} break;
+		
+		// TODO(ljre)
+		case C_AstKind_Expr1Plus:
+		case C_AstKind_Expr1Negative:
+		case C_AstKind_Expr1Not:
+		case C_AstKind_Expr1LogicalNot:
+		case C_AstKind_Expr1Deref:
+		case C_AstKind_Expr1Ref:
+		case C_AstKind_Expr1PrefixInc:
+		case C_AstKind_Expr1PrefixDec:
+		case C_AstKind_Expr1PostfixInc:
+		case C_AstKind_Expr1PostfixDec:
+		case C_AstKind_Expr1Sizeof:
+		case C_AstKind_Expr1SizeofType:
+		case C_AstKind_Expr1Cast:
+		{
+			
+		} break;
+		
+		case C_AstKind_Expr2Add:
+		case C_AstKind_Expr2Sub:
+		case C_AstKind_Expr2Mul:
+		case C_AstKind_Expr2Div:
+		case C_AstKind_Expr2Mod:
+		case C_AstKind_Expr2LThan:
+		case C_AstKind_Expr2GThan:
+		case C_AstKind_Expr2LEqual:
+		case C_AstKind_Expr2GEqual:
+		case C_AstKind_Expr2Equals:
+		case C_AstKind_Expr2NotEquals:
+		case C_AstKind_Expr2LeftShift:
+		case C_AstKind_Expr2RightShift:
+		case C_AstKind_Expr2And:
+		case C_AstKind_Expr2Or:
+		case C_AstKind_Expr2Xor:
+		case C_AstKind_Expr2LogicalAnd:
+		case C_AstKind_Expr2LogicalOr:
+		case C_AstKind_Expr2Assign:
+		case C_AstKind_Expr2AssignAdd:
+		case C_AstKind_Expr2AssignSub:
+		case C_AstKind_Expr2AssignMul:
+		case C_AstKind_Expr2AssignDiv:
+		case C_AstKind_Expr2AssignMod:
+		case C_AstKind_Expr2AssignLeftShift:
+		case C_AstKind_Expr2AssignRightShift:
+		case C_AstKind_Expr2AssignAnd:
+		case C_AstKind_Expr2AssignOr:
+		case C_AstKind_Expr2AssignXor:
+		case C_AstKind_Expr2Comma:
+		case C_AstKind_Expr2Call:
+		case C_AstKind_Expr2Index:
+		case C_AstKind_Expr2Access:
+		case C_AstKind_Expr2DerefAccess:
+		{
+			
+		} break;
+		
+		case C_AstKind_Expr3Condition:
+		{
+			
+		} break;
+		
+		default: Unreachable();
+	}
 	
 	return expr;
 }
@@ -666,6 +872,72 @@ C_ResolveTypeWithInitializer(C_Context* ctx, C_AstType** ptype, C_AstExpr** pini
 	// TODO(ljre)
 	
 	return true;
+}
+
+internal void
+C_ResolveStmt(C_Context* ctx, C_AstStmt* stmt)
+{
+	switch (stmt->h.kind)
+	{
+		case C_AstKind_StmtEmpty: break;
+		
+		case C_AstKind_StmtCompound:
+		{
+			ctx->working_scope = stmt->compound.scope;
+			
+			for (C_AstNode* stmt2 = (void*)stmt->compound.stmts; stmt2; stmt2 = stmt2->next)
+			{
+				C_AstKind cat = stmt2->kind & C_AstKind__CategoryMask;
+				
+				if (cat == C_AstKind_Decl)
+					C_ResolveLocalDecl(ctx, (void*)stmt2);
+				else
+					C_ResolveStmt(ctx, (void*)stmt2);
+			}
+			
+			ctx->working_scope = ctx->working_scope->up;
+		} break;
+		
+		// TODO(ljre)
+		case C_AstKind_StmtExpr:
+		case C_AstKind_StmtIf:
+		case C_AstKind_StmtDoWhile:
+		case C_AstKind_StmtWhile:
+		case C_AstKind_StmtFor:
+		case C_AstKind_StmtSwitch:
+		case C_AstKind_StmtReturn:
+		case C_AstKind_StmtGoto:
+		case C_AstKind_StmtLabel:
+		case C_AstKind_StmtCase:
+		case C_AstKind_StmtBreak:
+		case C_AstKind_StmtContinue:
+		case C_AstKind_StmtGccAsm:
+		{
+			
+		} break;
+		
+		default: Unreachable(); break;
+	}
+}
+
+internal void
+C_ResolveLocalDecl(C_Context* ctx, C_AstDecl* decl)
+{
+	// TODO(ljre)
+	
+	switch (decl->h.kind)
+	{
+		case C_AstKind_DeclStatic:
+		case C_AstKind_DeclExtern:
+		case C_AstKind_DeclAuto:
+		case C_AstKind_DeclTypedef:
+		case C_AstKind_DeclRegister:
+		{
+			
+		} break;
+		
+		default: Unreachable(); break;
+	}
 }
 
 internal void

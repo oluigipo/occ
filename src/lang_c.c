@@ -11,9 +11,8 @@
 *    - Code analyzer: Generate useful warnings;
 *    - Flag (-W): Warnings flags;
 *    - Flag (-w): Suppress all warnings;
-*    - Revision 'C_Node';
 *    - Worker Threads for multiple input files;
-*    - Thread-safe file cache;
+*    - Thread-safe file cache (less memory consumption);
 *    - Flag (???): Disable colorful log;
 *
 * IDEAS:

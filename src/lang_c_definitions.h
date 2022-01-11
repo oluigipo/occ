@@ -688,7 +688,7 @@ struct C_AstExpr
 		struct { C_AstExpr* index; String name; C_AstExpr* next; } desig_entry;
 		struct { String name; } ident;
 		struct { C_AstExpr* expr; String field; } access;
-		struct { C_AstType* to; C_AstExpr* expr; } cast;
+		struct { C_AstExpr* expr; C_AstType* to; } cast;
 		struct { C_AstExpr* init; C_AstType* type; } compound;
 		struct { C_AstExpr* expr; } sizeof_expr;
 		struct { C_AstType* type; } sizeof_type;
@@ -796,7 +796,7 @@ struct C_Symbol
 		struct { C_SymbolScope* locals; } function;
 		struct { C_SymbolScope* fields; } structure;
 		struct { C_SymbolScope* entries; } enumerator;
-		struct { int32 value; } enum_const;
+		struct { int64 value; } enum_const;
 		struct { uint64 offset; } field;
 		struct { uint64 index; } parameter;
 	};

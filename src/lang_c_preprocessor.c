@@ -1395,15 +1395,15 @@ C_Preprocess(C_Context* ctx)
 			ctx->pre_source = Arena_End(ctx->persistent_arena);
 			ctx->use_stage_arena_for_warnings = true;
 			
-			ctx->pp.obj_macros = Map_Create(ctx->stage_arena, 1024);
-			ctx->pp.func_macros = Map_Create(ctx->stage_arena, 1024);
+			ctx->pp.obj_macros = Map_Create(ctx->stage_arena, 2048);
+			ctx->pp.func_macros = Map_Create(ctx->stage_arena, 2048);
 		}
 		else
 		{
 			ctx->pp.stream = ctx->tokens;
 			
-			ctx->pp.obj_macros = Map_Create(ctx->persistent_arena, 1024);
-			ctx->pp.func_macros = Map_Create(ctx->persistent_arena, 1024);
+			ctx->pp.obj_macros = Map_Create(ctx->persistent_arena, 2048);
+			ctx->pp.func_macros = Map_Create(ctx->persistent_arena, 2048);
 		}
 		
 		for (StringList* it = ctx->options->predefined_macros; it; it = it->next)

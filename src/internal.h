@@ -72,7 +72,7 @@ typedef String;
 #   define DebugBreak_() __builtin_debugtrap()
 #   define Likely(x) __builtin_expect(!!(x), 1)
 #   define Unlikely(x) __builtin_expect((x), 0)
-#   if !defined NDEBUG && defined TRACY_ENABLE
+#   ifdef TRACY_ENABLE
 #       include "../../../ext/tracy/TracyC.h"
 internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 #       define Trace() TracyCZone(_ctx __attribute((cleanup(___my_tracy_zone_end))),true); ((void)_ctx)
@@ -127,12 +127,9 @@ internal const char* const* global_colors = (const char* const[]) {
 
 #include "internal_arena.h"
 #include "os.h"
+
 #include "internal_utils.h"
-#include "internal_pool.h"
 #include "internal_map.h"
-
 #include "internal_arena.c"
-
-internal String global_my_path;
 
 #endif //INTERNAL_H

@@ -54,7 +54,7 @@ Map_Create(Arena* arena, uint32 cap)
 	return map;
 }
 
-internal bool32
+internal void
 Map_InsertWithHash(Map* map, String key, void* value, uint64 hash)
 {
 	TraceName(key);
@@ -82,14 +82,13 @@ Map_InsertWithHash(Map* map, String key, void* value, uint64 hash)
 			map->entries[index].hash = hash;
 			
 			++map->len;
-			return true;
+			return;
 		}
 		
 		index = (index + 1) & map->cap-1;
 	}
 	
 	Unreachable();
-	return false;
 }
 
 internal void*
@@ -161,9 +160,9 @@ Map_RemoveWithHash(Map* map, String key, uint64 hash)
 	return false;
 }
 
-internal inline bool32
+internal inline void
 Map_Insert(Map* map, String key, void* value)
-{ return Map_InsertWithHash(map, key, value, SimpleHash(key)); }
+{ Map_InsertWithHash(map, key, value, SimpleHash(key)); }
 
 internal inline void*
 Map_Fetch(Map* map, String key)
