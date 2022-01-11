@@ -277,6 +277,9 @@ C_DefineMacro(C_Context* ctx, String definition, const C_SourceTrace* from)
 		.size = (uintsize)(head - ident_begin),
 	};
 	
+	if (!from && (StringListHas(ctx->options->predefined_macros, name) || StringListHas(ctx->options->preundefined_macros, name)))
+		return NULL;
+	
 	bool32 is_func_like = (head[0] == '(');
 	uint32 param_count;
 	
@@ -298,9 +301,7 @@ C_DefineMacro(C_Context* ctx, String definition, const C_SourceTrace* from)
 		}
 	}
 	else
-	{
 		param_count = UINT32_MAX;
-	}
 	
 	C_Macro* result = Arena_Push((ctx->tokens) ? ctx->persistent_arena : ctx->stage_arena, sizeof(*result));
 	
@@ -344,6 +345,9 @@ internal void
 C_UndefineMacro(C_Context* ctx, String name)
 {
 	C_Preprocessor* const pp = &ctx->pp;
+	if (StringListHas(ctx->options->predefined_macros, name) || StringListHas(ctx->options->preundefined_macros, name))
+		return;
+	
 	uint64 hash = SimpleHash(name);
 	
 	if (!Map_RemoveWithHash(pp->func_macros, name, hash))
@@ -1382,10 +1386,6 @@ C_Preprocess(C_Context* ctx)
 {
 	Trace();
 	
-	// NOTE(ljre): Those macros are handled internally, but a definition is still needed.
-	C_DefineMacro(ctx, Str("__LINE__"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__FILE__"), NULL)->persistent = true;
-	
 	String fullpath;
 	ctx->source = C_TryToLoadFile(ctx, ctx->input_file, true, StrNull, &fullpath);
 	if (ctx->source)
@@ -1394,11 +1394,20 @@ C_Preprocess(C_Context* ctx)
 		{
 			ctx->pre_source = Arena_End(ctx->persistent_arena);
 			ctx->use_stage_arena_for_warnings = true;
+			
+			ctx->pp.obj_macros = Map_Create(ctx->stage_arena, 1024);
+			ctx->pp.func_macros = Map_Create(ctx->stage_arena, 1024);
 		}
 		else
 		{
 			ctx->pp.stream = ctx->tokens;
+			
+			ctx->pp.obj_macros = Map_Create(ctx->persistent_arena, 1024);
+			ctx->pp.func_macros = Map_Create(ctx->persistent_arena, 1024);
 		}
+		
+		for (StringList* it = ctx->options->predefined_macros; it; it = it->next)
+			C_DefineMacro(ctx, it->value, NULL);
 		
 		C_PreprocessFile(ctx, fullpath, ctx->source, NULL);
 	}
@@ -1407,25 +1416,6 @@ C_Preprocess(C_Context* ctx)
 		Print("error: could not open input file '%S'.\n", StrFmt(ctx->input_file));
 		++ctx->error_count;
 	}
-	
-#if 0
-	// NOTE(ljre): Generate 'defs.txt' file with macros definitions.
-	{
-		char* buffer = Arena_End(ctx->stage_arena);
-		
-		C_Macro* macros = Map_Objs_(&ctx->pp.obj_macros);
-		for (int32 i = 0; i < ctx->pp.obj_macros.count; ++i)
-			Arena_Printf(ctx->stage_arena, "#define %s\n", macros[i].def);
-		
-		macros = Map_Objs_(&ctx->pp.func_macros);
-		for (int32 i = 0; i < ctx->pp.func_macros.count; ++i)
-			Arena_Printf(ctx->stage_arena, "#define %s\n", macros[i].def);
-		
-		uintsize size = (char*)Arena_End(ctx->stage_arena) - buffer;
-		
-		OS_WriteWholeFile("defs.txt", buffer, size);
-	}
-#endif
 	
 	ctx->use_stage_arena_for_warnings = false;
 	

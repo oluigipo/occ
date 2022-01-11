@@ -58,18 +58,12 @@
 #include "lang_c_definitions.h"
 
 internal void
-C_AddInputFile(StringList** first, StringList** last, String str)
-{
-	Assert(first);
-	Assert(last);
-	
-	if (!*last)
-		*first = *last = PushMemory(sizeof **last);
-	else
-		*last = (*last)->next = PushMemory(sizeof **last);
-	
-	(*last)->value = str;
-}
+C_PredefineMacro(C_CompilerOptions* options, String def)
+{ PushToStringList(global_arena, &options->predefined_macros, &options->last_predefined_macro, def); }
+
+internal void
+C_PreundefineMacro(C_CompilerOptions* options, String def)
+{ PushToStringList(global_arena, &options->preundefined_macros, &options->last_preundefined_macro, def); }
 
 internal inline bool32
 C_IsWarningEnabled(C_Context* ctx, C_Warning warning)

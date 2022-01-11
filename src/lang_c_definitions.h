@@ -416,7 +416,6 @@ struct C_Macro
 	C_SourceFileTrace* file;
 	
 	uint32 param_count;
-	bool8 persistent; // cant #undef it if true
 };
 
 struct C_MacroParameter
@@ -871,6 +870,10 @@ struct C_CompilerOptions
 {
 	uint64 enabled_warnings[(C_Warning__Count + 63) / 64];
 	StringList* include_dirs;
+	StringList* predefined_macros;
+	StringList* last_predefined_macro;
+	StringList* preundefined_macros;
+	StringList* last_preundefined_macro;
 	
 	const char* const* defined_macros;
 	const char* const* undefined_macros;

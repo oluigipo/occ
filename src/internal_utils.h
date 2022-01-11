@@ -184,21 +184,33 @@ CompareString(String a, String b)
 	if (a.size != b.size)
 		return (int32)a.size - (int32)b.size;
 	
-	int32 n = (int32)a.size;
-	const uint8* s1 = (const uint8*)a.data;
-	const uint8* s2 = (const uint8*)b.data;
-	
-	while (n > 0 && *s1 && *s1 == *s2)
+	return memcmp(a.data, b.data, a.size);
+}
+
+internal bool32
+StringListHas(StringList* list, String search)
+{
+	for (; list; list = list->next)
 	{
-		++s1;
-		++s2;
-		--n;
+		if (CompareString(list->value, search) == 0)
+			return true;
 	}
 	
-	if (n == 0)
-		return 0;
+	return false;
+}
+
+internal void
+PushToStringList(Arena* arena, StringList** first, StringList** last, String str)
+{
+	Assert(first);
+	Assert(last);
 	
-	return (int32)*s1 - (int32)*s2;
+	if (!*last)
+		*first = *last = Arena_Push(arena, sizeof **last);
+	else
+		*last = (*last)->next = Arena_Push(arena, sizeof **last);
+	
+	(*last)->value = str;
 }
 
 internal bool32

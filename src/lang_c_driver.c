@@ -58,8 +58,9 @@ C_DefaultDriver(int32 argc, const char** argv)
 		.abi = &abi,
 	};
 	
-	ctx->pp.obj_macros = Map_Create(ctx->persistent_arena, 512);
-	ctx->pp.func_macros = Map_Create(ctx->persistent_arena, 512);
+	// NOTE(ljre): Those macros are handled internally, but a definition is still needed.
+	C_PredefineMacro(&options, Str("__LINE__"));
+	C_PredefineMacro(&options, Str("__FILE__"));
 	
 	//~ NOTE(ljre): Setup system include directory
 	{
@@ -100,7 +101,7 @@ C_DefaultDriver(int32 argc, const char** argv)
 	{
 		if (arg[0][0] != '-')
 		{
-			C_AddInputFile(&input_files, &last_input_file, StrFrom(arg[0]));
+			PushToStringList(global_arena, &input_files, &last_input_file, StrFrom(arg[0]));
 			continue;
 		}
 		
@@ -181,13 +182,12 @@ C_DefaultDriver(int32 argc, const char** argv)
 			if (*flag == '=')
 			{
 				const char* value_begin = ++flag;
-				char* mem = Arena_End(global_arena);
-				uintsize len = Arena_Printf(global_arena, "%S %s", name_end - name_begin, name_begin, value_begin);
-				C_DefineMacro(ctx, StrMake(mem, len), NULL);
+				String def = Arena_SPrintf(global_arena, "%S %s", name_end - name_begin, name_begin, value_begin);
+				C_PredefineMacro(&options, def);
 			}
 			else
 			{
-				C_DefineMacro(ctx, StrMake(name_begin, name_end - name_begin), NULL)->persistent = true;
+				C_PredefineMacro(&options, StrMake(name_begin, name_end - name_begin));
 			}
 		}
 		else if (StringStartsWith(strflag, "help") || StringStartsWith(strflag, "-help"))
@@ -206,45 +206,45 @@ C_DefaultDriver(int32 argc, const char** argv)
 	Assert(input_files);
 	
 	//~ NOTE(ljre): Default predefined macros.
-	C_DefineMacro(ctx, Str("__STDC__ 1"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__STDC_HOSTED__ 1"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__STDC_VERSION__ 199901L"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__x86_64 1"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__x86_64__ 1"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("_M_AMD64 1"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("_M_X64 1"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("_WIN32 1"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("_WIN64 1"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__OCC__ 1"), NULL)->persistent = true;
+	C_PredefineMacro(&options, Str("__STDC__ 1"));
+	C_PredefineMacro(&options, Str("__STDC_HOSTED__ 1"));
+	C_PredefineMacro(&options, Str("__STDC_VERSION__ 199901L"));
+	C_PredefineMacro(&options, Str("__x86_64 1"));
+	C_PredefineMacro(&options, Str("__x86_64__ 1"));
+	C_PredefineMacro(&options, Str("_M_AMD64 1"));
+	C_PredefineMacro(&options, Str("_M_X64 1"));
+	C_PredefineMacro(&options, Str("_WIN32 1"));
+	C_PredefineMacro(&options, Str("_WIN64 1"));
+	C_PredefineMacro(&options, Str("__OCC__ 1"));
 	
 	// NOTE(ljre): Polyfills
-	C_DefineMacro(ctx, Str("__int64 long long"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__int32 int"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__int16 short"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__int8 char"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__inline inline"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__inline__ inline"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__restrict restrict"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__restrict__ restrict"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__const const"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__const__ const"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__volatile volatile"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__volatile__ volatile"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__attribute __attribute__"), NULL)->persistent = true;
-	//C_DefineMacro(ctx, Str("__forceinline inline"), NULL)->persistent = true;
-	//C_DefineMacro(ctx, Str("__attribute__(...)"), NULL)->persistent = true;
-	//C_DefineMacro(ctx, Str("__declspec(...)"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("__builtin_va_list void*"), NULL)->persistent = true;
+	C_PredefineMacro(&options, Str("__int64 long long"));
+	C_PredefineMacro(&options, Str("__int32 int"));
+	C_PredefineMacro(&options, Str("__int16 short"));
+	C_PredefineMacro(&options, Str("__int8 char"));
+	C_PredefineMacro(&options, Str("__inline inline"));
+	C_PredefineMacro(&options, Str("__inline__ inline"));
+	C_PredefineMacro(&options, Str("__restrict restrict"));
+	C_PredefineMacro(&options, Str("__restrict__ restrict"));
+	C_PredefineMacro(&options, Str("__const const"));
+	C_PredefineMacro(&options, Str("__const__ const"));
+	C_PredefineMacro(&options, Str("__volatile volatile"));
+	C_PredefineMacro(&options, Str("__volatile__ volatile"));
+	C_PredefineMacro(&options, Str("__attribute __attribute__"));
+	//C_PredefineMacro(&options, Str("__forceinline inline"));
+	//C_PredefineMacro(&options, Str("__attribute__(...)"));
+	//C_PredefineMacro(&options, Str("__declspec(...)"));
+	C_PredefineMacro(&options, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"));
+	C_PredefineMacro(&options, Str("__builtin_va_list void*"));
 	
 #if 1
 	// NOTE(ljre): MINGW macros
-	C_DefineMacro(ctx, Str("_MSC_VER 1910"), NULL)->persistent = true;
-	C_DefineMacro(ctx, Str("_MSC_FULL_VER 191025017"), NULL)->persistent = true;
-	//C_DefineMacro(ctx, Str("__MINGW_ATTRIB_DEPRECATED_STR(x)"), NULL)->persistent = true;
-	//C_DefineMacro(ctx, Str("__MINGW_ATTRIB_NONNULL(x)"), NULL)->persistent = true;
-	//C_DefineMacro(ctx, Str("__MINGW_NOTHROW"), NULL)->persistent = true;
-	//C_DefineMacro(ctx, Str("__mingw_ovr"), NULL)->persistent = true;
+	C_PredefineMacro(&options, Str("_MSC_VER 1910"));
+	C_PredefineMacro(&options, Str("_MSC_FULL_VER 191025017"));
+	//C_PredefineMacro(&options, Str("__MINGW_ATTRIB_DEPRECATED_STR(x)"));
+	//C_PredefineMacro(&options, Str("__MINGW_ATTRIB_NONNULL(x)"));
+	//C_PredefineMacro(&options, Str("__MINGW_NOTHROW"));
+	//C_PredefineMacro(&options, Str("__mingw_ovr"));
 #endif
 	
 	//~ NOTE(ljre): Build.

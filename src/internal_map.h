@@ -26,9 +26,11 @@ struct Map
 internal inline bool32
 Map_IsEntryDead_(const Map_Entry* entry)
 { return entry->hash == UINT64_MAX && entry->value == NULL; }
+
 internal inline bool32
 Map_IsEntryEmpty_(const Map_Entry* entry)
 { return entry->hash == 0 && entry->value == NULL; }
+
 internal inline uint64
 Map_MaxLenForBlock_(uint64 cap)
 { return cap>>1 | cap>>2; }
