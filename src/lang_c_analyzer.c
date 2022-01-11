@@ -41,10 +41,10 @@ C_CreatePointerType(C_Context* ctx, C_AstType* of)
 	return result;
 }
 
-internal LittleMap*
+internal Map*
 C_GetMapFromSymbolKind(C_Context* ctx, C_SymbolScope* scope, C_SymbolKind kind, bool32 create_new)
 {
-	LittleMap** map = NULL;
+	Map** map = NULL;
 	
 	switch (kind)
 	{
@@ -65,7 +65,7 @@ C_GetMapFromSymbolKind(C_Context* ctx, C_SymbolScope* scope, C_SymbolKind kind, 
 	}
 	
 	if (create_new && !*map)
-		*map = LittleMap_Create(ctx->persistent_arena, 32);
+		*map = Map_Create(ctx->persistent_arena, 32);
 	
 	return *map;
 }
@@ -79,7 +79,7 @@ C_CreateSymbolInScope(C_Context* ctx, String name, C_SymbolKind kind, C_AstDecl*
 	sym->decl = decl;
 	sym->name = name;
 	
-	LittleMap* map = C_GetMapFromSymbolKind(ctx, scope, kind, true);
+	Map* map = C_GetMapFromSymbolKind(ctx, scope, kind, true);
 	uint64 hash;
 	
 	if (name.size > 0)
@@ -87,7 +87,7 @@ C_CreateSymbolInScope(C_Context* ctx, String name, C_SymbolKind kind, C_AstDecl*
 	else
 		hash = ++ctx->unnamed_count;
 	
-	LittleMap_InsertWithHash(map, name, sym, hash);
+	Map_InsertWithHash(map, name, sym, hash);
 	
 	return sym;
 }
@@ -113,10 +113,10 @@ C_FindSimilarSymbolByName(C_Context* ctx, String name, C_SymbolKind specific)
 internal C_Symbol*
 C_SymbolDefinedInScope(C_Context* ctx, String name, C_SymbolKind specific, C_SymbolScope* scope)
 {
-	LittleMap* map = C_GetMapFromSymbolKind(ctx, scope, specific, false);
+	Map* map = C_GetMapFromSymbolKind(ctx, scope, specific, false);
 	
 	if (map)
-		return LittleMap_Fetch(map, name);
+		return Map_Fetch(map, name);
 	else
 		return NULL;
 }
@@ -128,11 +128,11 @@ C_FindSymbolInScope(C_Context* ctx, String name, C_SymbolKind kind, C_SymbolScop
 	
 	for (; scope; scope = scope->up)
 	{
-		LittleMap* map = C_GetMapFromSymbolKind(ctx, scope, kind, false);
+		Map* map = C_GetMapFromSymbolKind(ctx, scope, kind, false);
 		if (!map)
 			continue;
 		
-		C_Symbol* sym = LittleMap_FetchWithCachedHash(map, name, hash);
+		C_Symbol* sym = Map_FetchWithHash(map, name, hash);
 		if (sym)
 			return sym;
 	}

@@ -184,9 +184,9 @@ C_TypedefDecl(C_Context* ctx, C_AstDecl* decl)
 	sym->name = name;
 	
 	if (!ctx->scope->types)
-		ctx->scope->types = LittleMap_Create(ctx->persistent_arena, 128);
+		ctx->scope->types = Map_Create(ctx->persistent_arena, 128);
 	
-	LittleMap_Insert(ctx->scope->types, name, sym);
+	Map_Insert(ctx->scope->types, name, sym);
 }
 
 internal bool32
@@ -204,7 +204,7 @@ C_IsBeginningOfDeclOrType(C_Context* ctx)
 			
 			while (scope)
 			{
-				if (scope->types && LittleMap_FetchWithCachedHash(scope->types, ident, hash))
+				if (scope->types && Map_FetchWithHash(scope->types, ident, hash))
 					return true;
 				
 				scope = scope->up;
@@ -2019,11 +2019,11 @@ C_ParseFile(C_Context* ctx)
 	
 	C_PushSymbolScope(ctx);
 	
-	ctx->scope->names = LittleMap_Create(ctx->persistent_arena, 1 << 14);
-	ctx->scope->types = LittleMap_Create(ctx->persistent_arena, 1 << 14);
-	ctx->scope->structs = LittleMap_Create(ctx->persistent_arena, 1 << 13);
-	ctx->scope->unions = LittleMap_Create(ctx->persistent_arena, 1 << 13);
-	ctx->scope->enums = LittleMap_Create(ctx->persistent_arena, 1 << 13);
+	ctx->scope->names = Map_Create(ctx->persistent_arena, 1 << 14);
+	ctx->scope->types = Map_Create(ctx->persistent_arena, 1 << 14);
+	ctx->scope->structs = Map_Create(ctx->persistent_arena, 1 << 13);
+	ctx->scope->unions = Map_Create(ctx->persistent_arena, 1 << 13);
+	ctx->scope->enums = Map_Create(ctx->persistent_arena, 1 << 13);
 	
 	while (ctx->token->kind == C_TokenKind_Semicolon)
 		C_StreamNextToken(ctx);

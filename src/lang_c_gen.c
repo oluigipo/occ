@@ -6,9 +6,9 @@ C_GenIr(C_Context* ctx)
 	Trace();
 	
 	C_SymbolScope* global = ctx->scope;
-	LittleMap_Iterator iter = { global->names };
+	Map_Iterator iter = { global->names };
 	
-	for (C_Symbol* sym; LittleMap_Next(&iter, NULL, (void**)&sym); )
+	for (C_Symbol* sym; Map_Next(&iter, NULL, (void**)&sym); )
 	{
 		
 	}

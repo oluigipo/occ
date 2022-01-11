@@ -439,8 +439,8 @@ struct C_PPLoadedFile
 
 struct C_Preprocessor
 {
-	Map obj_macros;
-	Map func_macros;
+	Map* obj_macros;
+	Map* func_macros;
 	C_PPLoadedFile* loaded_files;
 	
 	C_TokenStream* stream;
@@ -687,7 +687,7 @@ struct C_AstExpr
 		struct { C_AstExpr* exprs; } init;
 		struct { C_AstExpr* desig; C_AstExpr* expr; } desig_init;
 		struct { C_AstExpr* index; String name; C_AstExpr* next; } desig_entry;
-		struct { String name; void* here_for_compat; } ident;
+		struct { String name; } ident;
 		struct { C_AstExpr* expr; String field; } access;
 		struct { C_AstType* to; C_AstExpr* expr; } cast;
 		struct { C_AstExpr* init; C_AstType* type; } compound;
@@ -755,13 +755,13 @@ struct C_SymbolScope
 	C_SymbolScope* down;
 	C_SymbolScope* next;
 	
-	LittleMap* names;
+	Map* names;
 	
 	// NOTE(ljre): null by default
-	LittleMap* types;
-	LittleMap* structs;
-	LittleMap* unions;
-	LittleMap* enums;
+	Map* types;
+	Map* structs;
+	Map* unions;
+	Map* enums;
 };
 
 enum C_SymbolKind

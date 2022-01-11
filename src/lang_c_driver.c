@@ -58,8 +58,8 @@ C_DefaultDriver(int32 argc, const char** argv)
 		.abi = &abi,
 	};
 	
-	Map_Init(&ctx->pp.obj_macros, sizeof(C_Macro*), sizeof(C_Macro*) * 100000);
-	Map_Init(&ctx->pp.func_macros, sizeof(C_Macro*), sizeof(C_Macro*) * 10000);
+	ctx->pp.obj_macros = Map_Create(ctx->persistent_arena, 512);
+	ctx->pp.func_macros = Map_Create(ctx->persistent_arena, 512);
 	
 	//~ NOTE(ljre): Setup system include directory
 	{

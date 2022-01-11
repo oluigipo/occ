@@ -544,7 +544,7 @@ OS_ReadWholeFile(const char* path, Arena* arena)
 }
 
 internal bool32
-OS_WriteWholeFile(const char* path, const void* data, uintsize size)
+OS_WriteWholeFile(const char* path, const void* data, uintsize size, Arena* scratch_arena)
 {
 	TraceName(StrFrom(path));
 	

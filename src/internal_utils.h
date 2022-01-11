@@ -75,6 +75,27 @@ OurStrLen(const char* restrict str)
 	return result;
 }
 
+internal inline uint64
+LogOfPow2(uint64 pow2)
+{
+	uint64 result = 0;
+	
+#if defined(__clang__) || defined(__GNUC__)
+	result = __builtin_ctzll(pow2);
+#elif defined(_MSC_VER)
+	result = 64 - __lzcnt64(pow2);
+#else
+	if (pow2 >= 1u<<31) result += 32, pow2 -= 1u<<31;
+    if (pow2 >= 1u<<15) result += 16, pow2 -= 1u<<15;
+    if (pow2 >= 1u<<7 ) result += 8, pow2 -= 1u<<7;
+    if (pow2 >= 1u<<3 ) result += 4, pow2 -= 1u<<3;
+    if (pow2 >= 1u<<1 ) result += 2, pow2 -= 1u<<1;
+    if (pow2 >= 1u    ) result += 1, pow2 -= 1u;
+#endif
+	
+	return result;
+}
+
 struct StringList typedef StringList;
 struct StringList
 {

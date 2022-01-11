@@ -327,15 +327,15 @@ C_DefineMacro(C_Context* ctx, String definition, const C_SourceTrace* from)
 	
 	uint64 hash = SimpleHash(name);
 	
-	if (Map_DeleteEntry(&pp->func_macros, hash) || Map_DeleteEntry(&pp->obj_macros, hash))
+	if (Map_RemoveWithHash(pp->func_macros, name, hash) || Map_RemoveWithHash(pp->obj_macros, name, hash))
 	{
 		// TODO(ljre): Warn macro redefinition
 	}
 	
 	if (is_func_like)
-		Map_CreateEntry(&pp->func_macros, hash, &result);
+		Map_InsertWithHash(pp->func_macros, name, result, hash);
 	else
-		Map_CreateEntry(&pp->obj_macros, hash, &result);
+		Map_InsertWithHash(pp->obj_macros, name, result, hash);
 	
 	return result;
 }
@@ -346,8 +346,8 @@ C_UndefineMacro(C_Context* ctx, String name)
 	C_Preprocessor* const pp = &ctx->pp;
 	uint64 hash = SimpleHash(name);
 	
-	if (!Map_DeleteEntry(&pp->func_macros, hash))
-		Map_DeleteEntry(&pp->obj_macros, hash);
+	if (!Map_RemoveWithHash(pp->func_macros, name, hash))
+		Map_RemoveWithHash(pp->obj_macros, name, hash);
 }
 
 // NOTE(ljre): returns NULL if it couldn't find it.
@@ -365,25 +365,22 @@ C_FindMacro(C_Context* ctx, String name, int32 type)
 	C_Preprocessor* pp = &ctx->pp;
 	uint64 hash = SimpleHash(name);
 	
-	C_Macro** result = NULL;
+	C_Macro* result = NULL;
 	
 	switch (type)
 	{
-		case 0: result = Map_FetchEntry(&pp->obj_macros, hash); break;
-		case 1: result = Map_FetchEntry(&pp->func_macros, hash); break;
+		case 0: result = Map_FetchWithHash(pp->obj_macros, name, hash); break;
+		case 1: result = Map_FetchWithHash(pp->func_macros, name, hash); break;
 		
 		case 2: case 3:
 		{
-			result = Map_FetchEntry(&pp->func_macros, hash);
+			result = Map_FetchWithHash(pp->func_macros, name, hash);
 			if (!result)
-				result = Map_FetchEntry(&pp->obj_macros, hash);
+				result = Map_FetchWithHash(pp->obj_macros, name, hash);
 		} break;
 	}
 	
-	if (result)
-		return *result;
-	else
-		return NULL;
+	return result;
 }
 
 internal bool32

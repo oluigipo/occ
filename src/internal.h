@@ -130,7 +130,6 @@ internal const char* const* global_colors = (const char* const[]) {
 #include "internal_utils.h"
 #include "internal_pool.h"
 #include "internal_map.h"
-#include "internal_littlemap.h"
 
 #include "internal_arena.c"
 
