@@ -26,8 +26,8 @@ C_DefaultDriver(int32 argc, const char** argv)
 	C_CompilerOptions options = { 0 };
 	StringList* input_files = NULL;
 	StringList* last_input_file = NULL;
-	String output_file = StrInit("a.out");
-	int32 mode = 0;
+	uintsize input_file_count = 0;
+	String output_file = StrNull;
 	C_ABI abi = {
 		.t_char = { 1, 0, true },
 		.t_schar = { 1, 0, false },
@@ -48,14 +48,6 @@ C_DefaultDriver(int32 argc, const char** argv)
 		.char_bit = 8,
 		.index_sizet = 10,
 		.index_ptrdifft = 9,
-	};
-	
-	C_Context* ctx = &(C_Context) {
-		.options = &options,
-		.persistent_arena = Arena_Create(Gigabytes(32)),
-		.stage_arena = Arena_Create(Gigabytes(8)),
-		
-		.abi = &abi,
 	};
 	
 	// NOTE(ljre): Those macros are handled internally, but a definition is still needed.
@@ -102,6 +94,7 @@ C_DefaultDriver(int32 argc, const char** argv)
 		if (arg[0][0] != '-')
 		{
 			PushToStringList(global_arena, &input_files, &last_input_file, StrFrom(arg[0]));
+			++input_file_count;
 			continue;
 		}
 		
@@ -126,7 +119,7 @@ C_DefaultDriver(int32 argc, const char** argv)
 		}
 		else if (StringStartsWith(strflag, "E"))
 		{
-			mode = 1;
+			options.mode = C_CompilerMode_InputsToPreprocessed;
 		}
 		else if (StringStartsWith(strflag, "I"))
 		{
@@ -248,63 +241,91 @@ C_DefaultDriver(int32 argc, const char** argv)
 #endif
 	
 	//~ NOTE(ljre): Build.
-	switch (mode)
+	if (input_file_count == 1)
 	{
-		// NOTE(ljre): Build to executable
-		case 0:
-		{
-			for (StringList* it = input_files; it; it = it->next)
-			{
-				bool32 ok = true;
-				ctx->tokens = Arena_Push(ctx->persistent_arena, sizeof(*ctx->tokens));
-				ctx->input_file = it->value;
+		C_ThreadWork work = {
+			.ctx = {
+				.options = &options,
+				.persistent_arena = Arena_Create(Gigabytes(32)),
+				.stage_arena = Arena_Create(Gigabytes(8)),
+				.input_file = input_files->value,
+				.output_file = output_file,
 				
-				// NOTE(ljre): 'C_Preprocess' pushes warnings to the stage arena, so we need to flush
-				//             before clearing it.
-				ok = ok && C_Preprocess(ctx);
-				C_FlushWarnings(ctx);
-				Arena_Clear(ctx->stage_arena);
-				
-				ok = ok && C_ParseFile(ctx); Arena_Clear(ctx->stage_arena);
-				//ok = ok && C_ResolveAst(ctx); Arena_Clear(ctx->stage_arena);
-				
-				C_FlushWarnings(ctx);
-				
-				//ok = ok && C_GenIr(ctx); Arena_Clear(ctx->stage_arena);
-				// TODO
-			}
-		} break;
+				.abi = &abi,
+			},
+		};
 		
-		// NOTE(ljre): Run Preprocessor
-		case 1:
-		{
-			ctx->input_file = input_files->value;
-			
-			C_Preprocess(ctx);
-			C_FlushWarnings(ctx);
-			Arena_Clear(ctx->stage_arena);
-			
-			if (!ctx->pre_source)
-				break;
-			
-			if (output_file.size == 0)
-			{
-				Print("%s", ctx->pre_source);
-			}
-			else if (!OS_WriteWholeFile(Arena_NullTerminateString(ctx->stage_arena, output_file), ctx->pre_source, OurStrLen(ctx->pre_source), ctx->stage_arena))
-			{
-				Print("error: could not open output file.\n");
-				result = 1;
-			}
-		} break;
+		C_ThreadDoWork(&work);
+		
+		Arena_Destroy(work.ctx.stage_arena);
+		Arena_Destroy(work.ctx.persistent_arena);
+		
+		result = (work.ctx.error_count != 0);
 	}
-	
-	Print("\n====== Memory Usage:\nStage Commited: \t%z bytes\nPersistent Offset:\t%z bytes\n",
-		  ctx->stage_arena->commited, ctx->persistent_arena->offset);
-	
-	//~ NOTE(ljre): Clean-up.
-	Arena_Destroy(ctx->stage_arena);
-	Arena_Destroy(ctx->persistent_arena);
+	else
+	{
+		C_ThreadWorkList* worklist = PushMemory(sizeof(*worklist));
+		
+		worklist->works = PushMemory(sizeof(C_ThreadWork) * input_file_count);
+		worklist->work_count = input_file_count;
+		worklist->work_done = 0;
+		worklist->lock = OS_CreateRWLock();
+		worklist->accumulated_error_count = 0;
+		
+		StringList* it = input_files;
+		for (uintsize i = 0; i < input_file_count; ++i)
+		{
+			String output_file = StrNull;
+			String input_file = it->value;
+			it = it->next;
+			
+			switch (options.mode)
+			{
+				case C_CompilerMode_InputsToPreprocessed:
+				{
+					break;
+					String dir;
+					String filename;
+					
+					StringParsePath(input_file, &dir, &filename, NULL);
+					
+					Arena_SPrintf(global_arena, "%S%S.i%0", StrFmt(dir), StrFmt(filename));
+				} break;
+			}
+			
+			worklist->works[i].ctx = (C_Context) {
+				.options = &options,
+				.persistent_arena = Arena_Create(Gigabytes(32)),
+				.stage_arena = Arena_Create(Gigabytes(8)),
+				.input_file = input_file,
+				.output_file = output_file,
+				
+				.abi = &abi,
+			};
+		}
+		
+		int32 thread_count = Min(2, input_file_count); // TODO(ljre): Request system info or take -j flag.
+		OS_Thread* threads = PushMemory(sizeof(OS_Thread) * thread_count);
+		
+		for (int32 i = 0; i < thread_count; ++i)
+			threads[i] = OS_CreateThread(C_WorkerThreadProc, worklist);
+		for (int32 i = 0; i < thread_count; ++i)
+		{
+			int32 thread_result = OS_JoinThread(threads[i]);
+			
+			(void)thread_result;
+		}
+		
+		// TODO(ljre): Stuff if we need to reduce all the input files results.
+		
+		for (uintsize i = 0; i < input_file_count; ++i)
+		{
+			Arena_Destroy(worklist->works[i].ctx.stage_arena);
+			Arena_Destroy(worklist->works[i].ctx.persistent_arena);
+		}
+		
+		result = (worklist->accumulated_error_count != 0);
+	}
 	
 	// TODO(ljre): Remove this.
 	if (result == 0)

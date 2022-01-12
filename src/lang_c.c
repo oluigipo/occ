@@ -122,46 +122,106 @@ typedef C_ThreadWork;
 
 struct C_ThreadWorkList
 {
+	OS_RWLock lock;
 	C_ThreadWork* works;
 	uint32 work_count;
 	volatile uint32 work_done;
-	OS_RWLock lock;
+	volatile uint32 accumulated_error_count;
 }
 typedef C_ThreadWorkList;
 
 internal void
 C_ThreadDoWork(C_ThreadWork* work)
 {
+#ifdef TRACY_ENABLE
+	static _Thread_local bool32 aa = false;
+	TraceColor((aa=!aa) ? 0xFF0000 : 0x0000FF);
+	TraceSetName(work->ctx.input_file);
+#endif
+	
 	C_Context* ctx = &work->ctx;
 	
-	bool32 ok = true;
+	switch (ctx->options->mode)
+	{
+		case C_CompilerMode_InputsToExecutable:
+		{
+			ctx->tokens = Arena_Push(ctx->persistent_arena, sizeof(*ctx->tokens));
+			
+			// NOTE(ljre): 'C_Preprocess' pushes warnings to the stage arena, so we need to flush
+			//             before clearing it.
+			bool32 ok = C_Preprocess(ctx);
+			C_FlushWarnings(ctx);
+			Arena_Clear(ctx->stage_arena);
+			
+			ok = ok && C_ParseFile(ctx); Arena_Clear(ctx->stage_arena);
+			//ok = ok && C_ResolveAst(ctx); Arena_Clear(ctx->stage_arena);
+			
+			C_FlushWarnings(ctx);
+			
+			//ok = ok && C_GenIr(ctx); Arena_Clear(ctx->stage_arena);
+			// TODO
+			
+			if (ctx->output_file.size > 0)
+			{
+				
+			}
+		} break;
+		
+		case C_CompilerMode_InputsToPreprocessed:
+		{
+			bool32 ok = C_Preprocess(ctx);
+			C_FlushWarnings(ctx);
+			Arena_Clear(ctx->stage_arena);
+			
+			if (!ok)
+				break;
+			
+			if (ctx->output_file.size > 0)
+			{
+				if (!OS_WriteWholeFile(Arena_NullTerminateString(ctx->stage_arena, ctx->output_file), ctx->pre_source, OurStrLen(ctx->pre_source), ctx->stage_arena))
+				{
+					Print("error: could not open output file.\n");
+					++ctx->error_count;
+				}
+			}
+		} break;
+		
+		default: Unreachable();
+	}
 	
-	ok = ok && C_Preprocess(ctx); C_FlushWarnings(ctx); Arena_Clear(ctx->stage_arena);
-	ok = ok && C_ParseFile(ctx); Arena_Clear(ctx->stage_arena);
-	ok = ok && C_ResolveAst(ctx); Arena_Clear(ctx->stage_arena);
-	ok = ok && C_GenIr(ctx); Arena_Clear(ctx->stage_arena);
-	
-	// TODO(ljre);
+	Print("\n====== Memory Usage (%S):\nStage Commited: \t%z bytes\nPersistent Offset:\t%z bytes\n",
+		  StrFmt(ctx->input_file), ctx->stage_arena->commited, ctx->persistent_arena->offset);
 }
 
 internal void
 C_WorkerThreadProc(void* user_data)
 {
-	C_ThreadWorkList* worklist = user_data;
-	
-	for (;;)
 	{
+		Trace();
+		
+		C_ThreadWorkList* worklist = user_data;
 		C_ThreadWork* work = NULL;
 		
-		OS_LockRWLockWrite(worklist->lock);
-		if (worklist->work_done < worklist->work_count)
-			work = &worklist->works[worklist->work_done++];
-		OS_UnlockRWLockWrite(worklist->lock);
-		
-		if (!work)
-			break;
-		
-		C_ThreadDoWork(work);
+		for (;;)
+		{
+			OS_LockRWLockWrite(worklist->lock);
+			
+			if (work)
+			{
+				worklist->accumulated_error_count += work->ctx.error_count;
+				work = NULL;
+			}
+			
+			if (worklist->work_done < worklist->work_count)
+				work = &worklist->works[worklist->work_done++];
+			
+			OS_UnlockRWLockWrite(worklist->lock);
+			
+			if (!work)
+				break;
+			
+			C_ThreadDoWork(work);
+		}
 	}
 	
 	OS_ExitThisThread(0);

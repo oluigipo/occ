@@ -243,6 +243,12 @@ StringLastChar(String str, char ch)
 	return last_match != SIZE_MAX ? last_match : i;
 }
 
+internal void
+StringParsePath(String path, String* out_dir, String* out_filename, String* out_fileext)
+{
+	
+}
+
 internal uintsize
 OurStrCopy_(char* restrict buf, const char* restrict from, uintsize max)
 {

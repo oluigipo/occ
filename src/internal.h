@@ -77,9 +77,13 @@ typedef String;
 internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 #       define Trace() TracyCZone(_ctx __attribute((cleanup(___my_tracy_zone_end))),true); ((void)_ctx)
 #       define TraceName(x) Trace(); { String a = (x); TracyCZoneText(_ctx, a.data, a.size); }
+#       define TraceColor(x) Trace(); { uint32 a = (x); TracyCZoneColor(_ctx, a); }
+#       define TraceSetName(x) do { String a = (x); TracyCZoneText(_ctx, a.data, a.size); } while (0)
 #   else
 #       define Trace() ((void)0)
 #       define TraceName(x) ((void)0)
+#       define TraceColor(x) ((void)0)
+#       define TraceSetName(x) ((void)0)
 #   endif
 #elif defined _MSC_VER
 #   define Assume(x) __assume(x)
@@ -88,6 +92,8 @@ internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 #   define Unlikely(x) (x)
 #   define Trace(x) ((void)0)
 #   define TraceName(x) ((void)0)
+#   define TraceColor(x) ((void)0)
+#   define TraceSetName(x) ((void)0)
 #elif defined __GNUC__
 #   define Assume(x) do { if (!(x)) __builtin_unreachable(); } while (0)
 #   define DebugBreak_() __asm__ __volatile__ ("int $3")
@@ -95,6 +101,8 @@ internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 #   define Unlikely(x) __builtin_expect((x), 0)
 #   define Trace(x) ((void)0)
 #   define TraceName(x) ((void)0)
+#   define TraceColor(x) ((void)0)
+#   define TraceSetName(x) ((void)0)
 #else
 #   define Assume(x) ((void)0)
 #   define DebugBreak_() ((void)0)
@@ -102,6 +110,8 @@ internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 #   define Unlikely(x) (x)
 #   define Trace(x) ((void)0)
 #   define TraceName(x) ((void)0)
+#   define TraceColor(x) ((void)0)
+#   define TraceSetName(x) ((void)0)
 #endif
 
 // NOTE(ljre): Assert

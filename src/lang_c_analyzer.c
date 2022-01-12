@@ -78,6 +78,8 @@ C_CreateSymbolInScope(C_Context* ctx, String name, C_SymbolKind kind, C_AstDecl*
 	sym->decl = decl;
 	sym->name = name;
 	
+	decl->h.symbol = sym;
+	
 	Map* map = C_GetMapFromSymbolKind(ctx, scope, kind, true);
 	uint64 hash;
 	
@@ -98,7 +100,7 @@ C_CreateSymbol(C_Context* ctx, String name, C_SymbolKind kind, C_AstDecl* decl)
 }
 
 internal C_Symbol*
-C_FindSimilarSymbolByName(C_Context* ctx, String name, C_SymbolKind specific)
+C_FindSymbolWithSimilarName(C_Context* ctx, String name, C_SymbolKind specific)
 {
 	// TODO(ljre): Try to find similar names to 'name' for suggestion in warnings.
 	//
@@ -540,7 +542,9 @@ C_ResolveType(C_Context* ctx, C_AstType* type, bool32* out_is_complete, uint32 f
 				if (type->structure.body)
 				{
 					if (same_scope)
-						C_NodeError(ctx, type, "struct redefinition in the same scope is not allowed.");
+					{
+						// TODO(ljre): Check layout of structs and, if they are not exactly the same, error.
+					}
 					else
 						sym = C_CreateSymbol(ctx, type->structure.name, kind, (void*)type);
 					
@@ -923,18 +927,38 @@ C_ResolveStmt(C_Context* ctx, C_AstStmt* stmt)
 internal void
 C_ResolveLocalDecl(C_Context* ctx, C_AstDecl* decl)
 {
-	// TODO(ljre)
+	bool32 complete = false;
+	C_ResolveType(ctx, decl->type, &complete, 0, NULL);
+	
+	C_Symbol* sym;
 	
 	switch (decl->h.kind)
 	{
-		case C_AstKind_DeclStatic:
-		case C_AstKind_DeclExtern:
-		case C_AstKind_DeclAuto:
-		case C_AstKind_DeclTypedef:
-		case C_AstKind_DeclRegister:
+		if(0) case C_AstKind_DeclStatic: sym = C_CreateSymbol(ctx, decl->name, C_SymbolKind_StaticVar, decl);
+		if(0) case C_AstKind_DeclRegister:
+		/* */ case C_AstKind_DeclAuto: sym = C_CreateSymbol(ctx, decl->name, C_SymbolKind_Var, decl);
 		{
+			if (!complete)
+			{
+				C_NodeError(ctx, decl, "variable cannot have incomplete type '%s'.", C_CStringFromType(ctx, decl->type));
+				sym->flags |= C_AstFlags_Poisoned;
+			}
 			
+			if (decl->init)
+				C_ResolveExpr(ctx, decl->init);
 		} break;
+		
+		case C_AstKind_DeclExtern:
+		{
+			sym = C_CreateSymbol(ctx, decl->name, C_SymbolKind_VarDecl, decl);
+			
+			if (decl->init)
+				C_NodeError(ctx, decl->init, "cannot initialize extern declaration.");
+		} break;
+		
+		// NOTE(ljre): Already handled at parsing stage.
+		case C_AstKind_DeclTypedef:
+		{} break;
 		
 		default: Unreachable(); break;
 	}
@@ -945,6 +969,9 @@ C_ResolveGlobalDecl(C_Context* ctx, C_AstDecl* decl)
 {
 	bool32 complete = false;
 	C_ResolveType(ctx, decl->type, &complete, 1, NULL);
+	
+	C_Symbol* sym;
+	(void)sym;
 	
 	// TODO(ljre)
 	switch (decl->h.kind)

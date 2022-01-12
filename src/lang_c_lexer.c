@@ -67,12 +67,12 @@ C_IsIdentChar(char ch)
 }
 
 internal void
-C_PrintIncludeStack(C_SourceFileTrace* file, uint32 line)
+C_PrintIncludeStackToArena(C_SourceFileTrace* file, uint32 line, Arena* arena)
 {
 	if (file->included_from)
-		C_PrintIncludeStack(file->included_from, file->included_line);
+		C_PrintIncludeStackToArena(file->included_from, file->included_line, arena);
 	
-	Print("%C1%S%C0(%u): in included file\n", StrFmt(file->path), line);
+	Arena_Printf(arena, "%C1%S%C0(%u): in included file\n", StrFmt(file->path), line);
 }
 
 internal void
@@ -81,13 +81,17 @@ C_TraceErrorVarargs(C_Context* ctx, C_SourceTrace* trace, const char* fmt, va_li
 	ctx->error_count++;
 	C_SourceFileTrace* file = trace->file;
 	
-	Print("\n");
+	char* buf = Arena_End(ctx->stage_arena);
+	Arena_PushMemory(ctx->stage_arena, 1, "\n");
 	if (file->included_from)
-		C_PrintIncludeStack(file->included_from, file->included_line);
+		C_PrintIncludeStackToArena(file->included_from, file->included_line, ctx->stage_arena);
 	
-	Print("%C1%S%C0(%i:%i): %C2error%C0: ", StrFmt(file->path), trace->line, trace->col);
-	PrintVarargs(fmt, args);
-	Print("\n");
+	Arena_Printf(ctx->stage_arena, "%C1%S%C0(%i:%i): %C2error%C0: ", StrFmt(file->path), trace->line, trace->col);
+	Arena_VPrintf(ctx->stage_arena, fmt, args);
+	Arena_PushMemory(ctx->stage_arena, 2, "\n");
+	
+	PrintFast(buf);
+	Arena_Pop(ctx->stage_arena, buf);
 }
 
 internal void
@@ -100,30 +104,21 @@ C_TraceError(C_Context* ctx, C_SourceTrace* trace, const char* fmt, ...)
 }
 
 internal void
-C_PrintIncludeStackToArena(C_SourceFileTrace* file, uint32 line, Arena* arena)
-{
-	if (file->included_from)
-		C_PrintIncludeStackToArena(file->included_from, file->included_line, arena);
-	
-	Arena_Printf(arena, "%C1%S%C0(%u): in included file\n", StrFmt(file->path), line);
-}
-
-internal void
 C_TraceWarningVarargs(C_Context* ctx, C_SourceTrace* trace, C_Warning warning, const char* fmt, va_list args)
 {
 	if (!C_IsWarningEnabled(ctx, warning))
 		return;
 	
 	C_SourceFileTrace* file = trace->file;
-	char* buf = Arena_End(global_arena);
+	char* buf = Arena_End(ctx->stage_arena);
 	
-	Arena_PushMemory(global_arena, 1, "\n");
+	Arena_PushMemory(ctx->stage_arena, 1, "\n");
 	if (file->included_from)
-		C_PrintIncludeStackToArena(file->included_from, file->included_line, global_arena);
+		C_PrintIncludeStackToArena(file->included_from, file->included_line, ctx->stage_arena);
 	
-	Arena_Printf(global_arena, "%C1%S%C0(%i:%i): %C3warning%C0: ", StrFmt(file->path), trace->line, trace->col);
-	Arena_VPrintf(global_arena, fmt, args);
-	Arena_PushMemory(global_arena, 1, "");
+	Arena_Printf(ctx->stage_arena, "%C1%S%C0(%i:%i): %C3warning%C0: ", StrFmt(file->path), trace->line, trace->col);
+	Arena_VPrintf(ctx->stage_arena, fmt, args);
+	Arena_PushMemory(ctx->stage_arena, 1, "");
 	
 	C_PushWarning(ctx, warning, buf);
 }
@@ -217,6 +212,8 @@ C_PeekIncomingToken(C_Lexer* lex)
 internal void
 C_UpdateLexerPreviousHead(C_Lexer* lex)
 {
+	Trace();
+	
 	for (; lex->previous_head < lex->head; ++lex->previous_head)
 	{
 		switch (lex->previous_head[0])
@@ -637,16 +634,12 @@ C_NextToken(C_Lexer* lex)
 			while (C_IsIdentChar(lex->head[0]))
 				++lex->head;
 			
-			String ident = {
-				.data = begin,
-				.size = (uintsize)(lex->head - begin),
-			};
-			
 			lex->token.kind = C_TokenKind_Identifier;
-			lex->token.value_ident = ident;
+			lex->token.value_ident.data = begin;
+			lex->token.value_ident.size = (uintsize)(lex->head - begin);
 			
 			if (!lex->preprocessor)
-				lex->token.kind = C_FindKeywordByString(ident);
+				lex->token.kind = C_FindKeywordByString(lex->token.value_ident);
 		} break;
 		
 		case '"':

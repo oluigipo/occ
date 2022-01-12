@@ -155,7 +155,8 @@ enum C_TokenKind
 	C_TokenKind_DoubleHashtag, // ##
 	
 	C_TokenKind__Count,
-} typedef C_TokenKind;
+}
+typedef C_TokenKind;
 
 internal const char* C_token_str_table[C_TokenKind__Count] = {
 	[C_TokenKind_Eof] = "(EOF)",
@@ -870,15 +871,11 @@ struct C_CompilerOptions
 {
 	uint64 enabled_warnings[(C_Warning__Count + 63) / 64];
 	StringList* include_dirs;
+	
 	StringList* predefined_macros;
 	StringList* last_predefined_macro;
 	StringList* preundefined_macros;
 	StringList* last_preundefined_macro;
-	
-	const char* const* defined_macros;
-	const char* const* undefined_macros;
-	uint32 defined_macros_count;
-	uint32 undefined_macros_count;
 	
 	C_CompilerMode mode;
 }
@@ -900,6 +897,7 @@ struct C_Context
 	Arena* persistent_arena; // NOTE(ljre): Permanent arena that will live through various stages.
 	Arena* stage_arena; // NOTE(ljre): This arena is used for a single stage.
 	String input_file;
+	String output_file;
 	
 	// NOTE(ljre): Warning list
 	C_QueuedWarning* queued_warning;

@@ -13,28 +13,45 @@
 
 internal String global_my_path;
 internal Arena* global_arena;
+internal OS_RWLock global_lock;
 
 internal void
 Print(const char* fmt, ...)
 {
-	va_list args;
-	va_start(args, fmt);
-	char* mem = Arena_End(global_arena);
-	uintsize len = Arena_VPrintf(global_arena, fmt, args);
-	va_end(args);
-	
-	fwrite(mem, 1, len, stdout);
-	Arena_Pop(global_arena, mem);
+	OS_LockRWLockWrite(global_lock);
+	{
+		va_list args;
+		va_start(args, fmt);
+		char* mem = Arena_End(global_arena);
+		uintsize len = Arena_VPrintf(global_arena, fmt, args);
+		va_end(args);
+		
+		fwrite(mem, 1, len, stdout);
+		Arena_Pop(global_arena, mem);
+	}
+	OS_UnlockRWLockWrite(global_lock);
+}
+
+internal void
+PrintFast(const char* message)
+{
+	OS_LockRWLockWrite(global_lock);
+	fputs(message, stdout);
+	OS_UnlockRWLockWrite(global_lock);
 }
 
 internal void
 PrintVarargs(const char* fmt, va_list args)
 {
-	char* mem = Arena_End(global_arena);
-	uintsize len = Arena_VPrintf(global_arena, fmt, args);
-	
-	fwrite(mem, 1, len, stdout);
-	Arena_Pop(global_arena, mem);
+	OS_LockRWLockWrite(global_lock);
+	{
+		char* mem = Arena_End(global_arena);
+		uintsize len = Arena_VPrintf(global_arena, fmt, args);
+		
+		fwrite(mem, 1, len, stdout);
+		Arena_Pop(global_arena, mem);
+	}
+	OS_UnlockRWLockWrite(global_lock);
 }
 
 internal void
@@ -64,11 +81,13 @@ int main(int argc, char* argv[])
 	global_arena = Arena_Create(Gigabytes(4));
 	global_my_path.data = Arena_End(global_arena);
 	global_my_path.size = OS_GetMyPath(global_arena);
+	global_lock = OS_CreateRWLock();
 	
 	// Testing
 	int32 result = C_Main(argc, (const char**)argv);
 	
-	return result;
+	OS_Exit(result);
+	return 0;
 }
 
 // NOTE(ljre): Let it stay here so we can avoid weird OS's headers macros and declarations

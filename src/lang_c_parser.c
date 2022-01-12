@@ -17,6 +17,8 @@ C_StreamDealWithPragmaToken(C_Context* ctx)
 internal void
 C_StreamNextToken(C_Context* ctx)
 {
+	Trace();
+	
 	if (ctx->token->kind == C_TokenKind_Eof)
 		return;
 	
@@ -184,6 +186,8 @@ C_TypedefDecl(C_Context* ctx, C_AstDecl* decl)
 	sym->kind = C_SymbolKind_Typename;
 	sym->decl = decl;
 	sym->name = name;
+	
+	decl->h.symbol = sym;
 	
 	if (!ctx->scope->types)
 		ctx->scope->types = Map_Create(ctx->persistent_arena, 128);

@@ -82,14 +82,17 @@ C_PreprocessSPrintf(C_Context* ctx, const char* fmt, ...)
 }
 
 internal C_PPLoadedFile*
-C_LoadFileFromDisk(C_Context* ctx, const char path[MAX_PATH_SIZE], uint64 calculated_hash, bool32 relative)
+C_LoadFileFromDisk(C_Context* ctx, char* path, uint64 calculated_hash, bool32 relative)
 {
-	const char* contents = Arena_End(global_arena);
-	uintsize len = OS_ReadWholeFile(path, global_arena);
+	const char* contents = Arena_End(ctx->persistent_arena);
+	uintsize len = OS_ReadWholeFile(path, ctx->persistent_arena);
 	C_Preprocessor* const pp = &ctx->pp;
 	
 	if (len)
 	{
+		uintsize path_len = strlen(path);
+		Arena_Pop(ctx->stage_arena, path + path_len + 1);
+		
 		C_PPLoadedFile* file;
 		
 		if (pp->loaded_files)
@@ -108,11 +111,8 @@ C_LoadFileFromDisk(C_Context* ctx, const char path[MAX_PATH_SIZE], uint64 calcul
 		file->hash = calculated_hash;
 		file->contents = contents;
 		file->relative = relative;
+		file->path = StrMake(path, path_len);
 		
-		uintsize len = strlen(path) + 1;
-		char* mem = Arena_PushMemory(ctx->stage_arena, len, path);
-		
-		file->path = StrMake(mem, len);
 		return file;
 	}
 	
@@ -125,7 +125,7 @@ C_TryToLoadFile(C_Context* ctx, String path, bool32 relative, String including_f
 	TraceName(path);
 	
 	// TODO(ljre): Trim the working directory from 'out_fullpath' when needed.
-	char fullpath[MAX_PATH_SIZE];
+	char* fullpath = Arena_PushDirtyAligned(ctx->stage_arena, MAX_PATH_SIZE, 1);
 	C_Preprocessor* const pp = &ctx->pp;
 	
 	if (relative)
@@ -167,6 +167,7 @@ C_TryToLoadFile(C_Context* ctx, String path, bool32 relative, String including_f
 					return NULL;
 				
 				*out_fullpath = file->path;
+				Arena_Pop(ctx->stage_arena, fullpath);
 				return file->contents;
 			}
 			
@@ -207,6 +208,7 @@ C_TryToLoadFile(C_Context* ctx, String path, bool32 relative, String including_f
 					return NULL;
 				
 				*out_fullpath = file->path;
+				Arena_Pop(ctx->stage_arena, fullpath);
 				return file->contents;
 			}
 			
@@ -221,6 +223,7 @@ C_TryToLoadFile(C_Context* ctx, String path, bool32 relative, String including_f
 		}
 	}
 	
+	Arena_Pop(ctx->stage_arena, fullpath);
 	return NULL;
 }
 
@@ -262,6 +265,8 @@ internal C_Macro*
 C_DefineMacro(C_Context* ctx, String definition, const C_SourceTrace* from)
 {
 	// TODO(ljre): Macros redefinitions are OK if the previous definition has the exact same tokens and spaces.
+	// NOTE(ljre): Possible optimization: tokenize macro definition ahead of time.
+	//             More than half of time spent in C_ExpandMacro is calling C_NextToken!
 	
 	C_Preprocessor* const pp = &ctx->pp;
 	const char* def = Arena_NullTerminateString(ctx->stage_arena, definition);
@@ -402,18 +407,6 @@ C_TokenWasGeneratedByMacro(const C_Token* token, const C_Macro* macro)
 	return false;
 }
 
-internal C_MacroParameter*
-C_FindMacroParameter(C_MacroParameter* param_array, int32 param_count, String name)
-{
-	for (int32 i = 0; i < param_count; ++i)
-	{
-		if (CompareString(param_array[i].name, name) == 0)
-			return &param_array[i];
-	}
-	
-	return NULL;
-}
-
 internal void
 C_TracePreprocessor(C_Context* ctx, C_Lexer* lex, uint32 flags)
 {
@@ -490,7 +483,7 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 	// NOTE(ljre): Normal macro expansion.
 	const char* def_head = macro->def;
 	
-	C_MacroParameter* params = NULL;
+	Map* params = NULL;
 	uint32 param_count = 0;
 	
 	bool8 is_func_like = (macro->param_count != UINT32_MAX);
@@ -503,7 +496,7 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 	// NOTE(ljre): Define parameters as macros
 	if (is_func_like)
 	{
-		params = Arena_Push(ctx->stage_arena, macro->param_count * sizeof(*params));
+		params = Map_Create(ctx->stage_arena, 256);
 		
 		C_NextToken(parent_lex); // eat macro name
 		C_EatToken(parent_lex, C_TokenKind_LeftParen);
@@ -515,7 +508,7 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 			do
 			{
 				C_IgnoreWhitespaces(&def_head, false);
-				C_MacroParameter* param = &params[param_count++];
+				++param_count;
 				Assert(param_count <= macro->param_count);
 				
 				String name;
@@ -573,8 +566,7 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 				
 				Arena_PushMemory(ctx->stage_arena, 1, "");
 				
-				param->name = name;
-				param->expands_to = buf;
+				Map_Insert(params, name, buf);
 				
 				C_IgnoreWhitespaces(&def_head, false);
 			}
@@ -586,7 +578,7 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 			++def_head;
 			
 			C_IgnoreWhitespaces(&def_head, false);
-			C_MacroParameter* param = &params[param_count++];
+			++param_count;
 			String name;
 			
 			if (def_head[0] == '.' && def_head[1] == '.' && def_head[2] == '.')
@@ -604,8 +596,7 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 				name = StrMake(name_begin, (uintsize)(def_head - name_begin));
 			}
 			
-			param->name = name;
-			param->expands_to = "";
+			Map_Insert(params, name, "");
 		}
 		
 		while (parent_lex->token.kind && parent_lex->token.kind != C_TokenKind_RightParen)
@@ -659,17 +650,17 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 			{
 				C_NextToken(lex);
 				
-				C_MacroParameter* param;
+				const char* param;
 				if (!is_func_like ||
 					!C_AssertToken(lex, C_TokenKind_Identifier) ||
-					!(param = C_FindMacroParameter(params, macro->param_count, lex->token.value_ident)))
+					!(param = Map_Fetch(params, lex->token.value_ident)))
 				{
 					C_TraceError(ctx, &lex->trace, "expected a macro parameter for stringification.");
 				}
 				else
 				{
 					// TODO(ljre): Fix this.
-					String str = C_PreprocessSPrintf(ctx, "\"%s\"", param->expands_to);
+					String str = C_PreprocessSPrintf(ctx, "\"%s\"", param);
 					
 					C_Token tok = {
 						.kind = C_TokenKind_StringLiteral,
@@ -689,12 +680,12 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 			
 			case C_TokenKind_Identifier:
 			{
-				C_MacroParameter* param;
+				const char* param;
 				if (lex->token.kind == C_TokenKind_Identifier &&
 					!lex->token_was_pushed &&
-					(param = C_FindMacroParameter(params, param_count, lex->token.value_ident)))
+					(param = Map_Fetch(params, lex->token.value_ident)))
 				{
-					C_PushStringOfTokens(lex, param->expands_to);
+					C_PushStringOfTokens(lex, param);
 					C_NextToken(lex);
 					break;
 				}
@@ -711,12 +702,12 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 				{
 					C_NextToken(lex); // NOTE(ljre): Eat left side
 					C_NextToken(lex); // NOTE(ljre): Eat ##
-					C_MacroParameter* param;
+					const char* param;
 					
 					if (lex->token.kind == C_TokenKind_Identifier &&
-						(param = C_FindMacroParameter(params, param_count, lex->token.value_ident)))
+						(param = Map_Fetch(params, lex->token.value_ident)))
 					{
-						C_PushStringOfTokens(lex, param->expands_to);
+						C_PushStringOfTokens(lex, param);
 						C_NextToken(lex);
 					}
 					
