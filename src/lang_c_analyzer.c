@@ -49,9 +49,10 @@ C_GetMapFromSymbolKind(C_Context* ctx, C_SymbolScope* scope, C_SymbolKind kind, 
 	switch (kind)
 	{
 		default:
-		case C_SymbolKind_Var:
-		case C_SymbolKind_VarDecl:
+		case C_SymbolKind_GlobalVarDecl:
+		case C_SymbolKind_GlobalVar:
 		case C_SymbolKind_StaticVar:
+		case C_SymbolKind_LocalVar:
 		case C_SymbolKind_Function:
 		case C_SymbolKind_FunctionDecl:
 		case C_SymbolKind_Parameter:
@@ -255,13 +256,19 @@ internal void
 C_WriteTypeToPersistentArena(C_Context* ctx, C_AstType* type)
 {
 	int32 count = 0;
-	for (C_AstType* it = type; it; it = it->not_base.base, ++count);
+	for (C_AstType* it = type; it; it = it->not_base.base)
+	{
+		++count;
+		if (C_IsBaseType(it->h.kind))
+			break;
+	}
+	
 	if (count == 0)
 		return;
 	
 	C_AstType** stack = Arena_Push(ctx->stage_arena, count * sizeof(*stack));
 	C_AstType* it = type;
-	for (int32 i = 0; it; it = it->not_base.base, ++i)
+	for (int32 i = 0; i < count; it = it->not_base.base, ++i)
 		stack[i] = it;
 	
 	// NOTE(ljre): Print base type
@@ -936,7 +943,8 @@ C_ResolveLocalDecl(C_Context* ctx, C_AstDecl* decl)
 	{
 		if(0) case C_AstKind_DeclStatic: sym = C_CreateSymbol(ctx, decl->name, C_SymbolKind_StaticVar, decl);
 		if(0) case C_AstKind_DeclRegister:
-		/* */ case C_AstKind_DeclAuto: sym = C_CreateSymbol(ctx, decl->name, C_SymbolKind_Var, decl);
+		/* */ case C_AstKind_Decl:
+		/* */ case C_AstKind_DeclAuto: sym = C_CreateSymbol(ctx, decl->name, C_SymbolKind_LocalVar, decl);
 		{
 			if (!complete)
 			{
@@ -950,7 +958,7 @@ C_ResolveLocalDecl(C_Context* ctx, C_AstDecl* decl)
 		
 		case C_AstKind_DeclExtern:
 		{
-			sym = C_CreateSymbol(ctx, decl->name, C_SymbolKind_VarDecl, decl);
+			sym = C_CreateSymbol(ctx, decl->name, C_SymbolKind_GlobalVarDecl, decl);
 			
 			if (decl->init)
 				C_NodeError(ctx, decl->init, "cannot initialize extern declaration.");
@@ -965,35 +973,114 @@ C_ResolveLocalDecl(C_Context* ctx, C_AstDecl* decl)
 }
 
 internal void
+C_FunctionRedeclaration(C_Context* ctx, C_Symbol* sym, C_AstDecl* new_decl)
+{
+	
+}
+
+internal void
+C_GlobalVarRedeclaration(C_Context* ctx, C_Symbol* sym, C_AstDecl* new_decl)
+{
+	
+}
+
+internal void
 C_ResolveGlobalDecl(C_Context* ctx, C_AstDecl* decl)
 {
 	bool32 complete = false;
 	C_ResolveType(ctx, decl->type, &complete, 1, NULL);
 	
-	C_Symbol* sym;
-	(void)sym;
+	C_Symbol* sym = NULL;
 	
-	// TODO(ljre)
+	if (decl->name.size == 0)
+		return;
+	
 	switch (decl->h.kind)
 	{
 		case C_AstKind_Decl:
 		{
-			
+			if (decl->type->h.kind == C_AstKind_TypeFunction)
+			{
+				func_decl:;
+				sym = C_FindSymbolInScope(ctx, decl->name, 0, ctx->scope);
+				
+				if (sym)
+					C_FunctionRedeclaration(ctx, sym, decl);
+				else if (decl->body)
+				{
+					sym = C_CreateSymbol(ctx, decl->name, C_SymbolKind_Function, decl);
+					C_ResolveStmt(ctx, decl->body);
+				}
+				else
+					sym = C_CreateSymbol(ctx, decl->name, C_SymbolKind_FunctionDecl, decl);
+			}
+			else
+			{
+				sym = C_FindSymbolInScope(ctx, decl->name, C_SymbolKind_GlobalVarDecl, ctx->scope);
+				
+				if (sym)
+					C_GlobalVarRedeclaration(ctx, sym, decl);
+				else
+				{
+					sym = C_CreateSymbol(ctx, decl->name, C_SymbolKind_GlobalVar, decl);
+					
+					if (decl->init)
+						C_ResolveTypeWithInitializer(ctx, &decl->type, &decl->init, 1);
+				}
+			}
 		} break;
 		
 		case C_AstKind_DeclStatic:
 		{
-			
+			if (decl->type->h.kind == C_AstKind_TypeFunction)
+			{
+				sym = C_FindSymbolInScope(ctx, decl->name, 0, ctx->scope);
+				
+				if (sym)
+					C_FunctionRedeclaration(ctx, sym, decl);
+				else
+				{
+					sym = C_CreateSymbol(ctx, decl->name, C_SymbolKind_StaticFunction, decl);
+					
+					if (decl->body)
+						C_ResolveStmt(ctx, decl->body);
+				}
+			}
+			else
+			{
+				sym = C_FindSymbolInScope(ctx, decl->name, 0, ctx->scope);
+				
+				if (sym)
+					C_GlobalVarRedeclaration(ctx, sym, decl);
+				else
+				{
+					sym = C_CreateSymbol(ctx, decl->name, C_SymbolKind_StaticVar, decl);
+					
+					if (decl->init)
+						C_ResolveTypeWithInitializer(ctx, &decl->type, &decl->init, 1);
+				}
+			}
 		} break;
 		
 		case C_AstKind_DeclExtern:
 		{
+			if (decl->type->h.kind == C_AstKind_TypeFunction)
+				goto func_decl;
 			
+			sym = C_FindSymbolInScope(ctx, decl->name, 0, ctx->scope);
+			
+			if (sym)
+				C_GlobalVarRedeclaration(ctx, sym, decl);
+			else
+				sym = C_CreateSymbol(ctx, decl->name, C_SymbolKind_GlobalVarDecl, decl);
+			
+			if (decl->init)
+				C_NodeError(ctx, decl, "cannot initialize extern declaration.");
 		} break;
 		
 		case C_AstKind_DeclTypedef:
 		{
-			
+			// NOTE(ljre): Symbol should already be defined by parser.
 		} break;
 		
 		case C_AstKind_DeclRegister:

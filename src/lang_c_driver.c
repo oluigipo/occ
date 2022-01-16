@@ -283,13 +283,13 @@ C_DefaultDriver(int32 argc, const char** argv)
 			{
 				case C_CompilerMode_InputsToPreprocessed:
 				{
-					break;
+					break; // TODO(ljre): Implement StringParsePath
 					String dir;
 					String filename;
 					
 					StringParsePath(input_file, &dir, &filename, NULL);
 					
-					Arena_SPrintf(global_arena, "%S%S.i%0", StrFmt(dir), StrFmt(filename));
+					output_file = Arena_SPrintf(global_arena, "%S%S.i%0", StrFmt(dir), StrFmt(filename));
 				} break;
 			}
 			

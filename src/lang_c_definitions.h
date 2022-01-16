@@ -448,6 +448,8 @@ struct C_Preprocessor
 typedef C_Preprocessor;
 
 //~ NOTE(ljre): AST
+#define C_IsBaseType(kind) ((kind) >= C_AstKind_TypeChar && (kind) <= C_AstKind_TypeEnum)
+
 enum C_AstKind
 {
 	C_AstKind_Null = 0,
@@ -768,16 +770,18 @@ enum C_SymbolKind
 {
 	C_SymbolKind_Null = 0,
 	
-	C_SymbolKind_Var,
-	C_SymbolKind_VarDecl,
+	C_SymbolKind_GlobalVarDecl,
+	C_SymbolKind_GlobalVar,
 	C_SymbolKind_StaticVar,
+	C_SymbolKind_LocalVar,
 	C_SymbolKind_Function,
 	C_SymbolKind_FunctionDecl,
+	C_SymbolKind_StaticFunction,
 	C_SymbolKind_Parameter,
 	C_SymbolKind_Field,
 	C_SymbolKind_EnumConstant,
-	C_SymbolKind_Typename,
 	
+	C_SymbolKind_Typename,
 	C_SymbolKind_Struct,
 	C_SymbolKind_Union,
 	C_SymbolKind_Enum,

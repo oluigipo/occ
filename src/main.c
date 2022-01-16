@@ -33,14 +33,6 @@ Print(const char* fmt, ...)
 }
 
 internal void
-PrintFast(const char* message)
-{
-	OS_LockRWLockWrite(global_lock);
-	fputs(message, stdout);
-	OS_UnlockRWLockWrite(global_lock);
-}
-
-internal void
 PrintVarargs(const char* fmt, va_list args)
 {
 	OS_LockRWLockWrite(global_lock);
@@ -51,6 +43,14 @@ PrintVarargs(const char* fmt, va_list args)
 		fwrite(mem, 1, len, stdout);
 		Arena_Pop(global_arena, mem);
 	}
+	OS_UnlockRWLockWrite(global_lock);
+}
+
+internal void
+PrintFast(const char* message)
+{
+	OS_LockRWLockWrite(global_lock);
+	fputs(message, stdout);
 	OS_UnlockRWLockWrite(global_lock);
 }
 

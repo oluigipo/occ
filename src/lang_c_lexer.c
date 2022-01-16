@@ -23,9 +23,9 @@ C_SetupLexer(C_Lexer* lex, const char* source, C_Context* ctx, Arena* arena)
 }
 
 internal void
-C_PushFileTrace(C_Lexer* lex, String path, C_Lexer* trace_from)
+C_PushFileTrace(C_Lexer* lex, String path, C_Lexer* trace_from, Arena* arena)
 {
-	C_SourceFileTrace* file = Arena_Push(lex->arena, sizeof(*file));
+	C_SourceFileTrace* file = Arena_Push(arena, sizeof(*file));
 	
 	if (!trace_from)
 		trace_from = lex;
@@ -466,7 +466,7 @@ C_NextToken(C_Lexer* lex)
 					// NOTE(ljre): "This indicates the start of a new file."
 					if (flags & 1 || !lex->trace.file)
 					{
-						C_PushFileTrace(lex, file, NULL);
+						C_PushFileTrace(lex, file, NULL, lex->arena);
 					}
 					
 					// NOTE(ljre): "This indicates returning to a file (after having included another file)."

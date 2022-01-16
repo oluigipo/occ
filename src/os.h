@@ -35,7 +35,6 @@ internal OS_Thread OS_CreateThread(void func(void* user_data), void* user_data);
 internal void OS_ExitThisThread(int32 result);
 internal int32 OS_JoinThread(OS_Thread thrd);
 internal bool32 OS_JoinableThread(OS_Thread thrd);
-internal void OS_SleepThisThread(uint32 ms);
 
 internal OS_RWLock OS_CreateRWLock(void);
 internal void OS_LockRWLockRead(OS_RWLock lock);
@@ -424,15 +423,9 @@ internal void
 OS_ExitThisThread(int32 result)
 { ExitThread((DWORD)result); }
 
-internal void
-OS_SleepThisThread(uint32 ms)
-{ Sleep(ms); }
-
 internal int32
 OS_JoinThread(OS_Thread thrd)
 {
-	Trace();
-	
 	WaitForSingleObject(thrd, INFINITE);
 	
 	DWORD code;

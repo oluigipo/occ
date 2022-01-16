@@ -124,6 +124,7 @@ internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 internal void* PushMemory(uintsize size);
 internal void Print(const char* fmt, ...);
 internal void PrintVarargs(const char* fmt, va_list args);
+internal void PrintFast(const char* str);
 internal void Panic(const char* str);
 
 internal const char* const* global_colors = (const char* const[]) {

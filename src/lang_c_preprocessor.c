@@ -637,6 +637,9 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 		
 		lex->trace.invocation = trace;
 		lex->trace.macro_def = macro;
+		lex->trace.file = macro->file;
+		lex->trace.line = macro->line;
+		lex->trace.col = macro->col;
 	}
 	
 	C_NextToken(lex);
@@ -1166,7 +1169,7 @@ C_PreprocessFile(C_Context* ctx, String path, const char* source, C_Lexer* from)
 	};
 	
 	C_SetupLexer(lex, source, ctx, ctx->stage_arena);
-	C_PushFileTrace(lex, path, from);
+	C_PushFileTrace(lex, path, from, (ctx->tokens) ? ctx->persistent_arena : ctx->stage_arena);
 	
 	C_TracePreprocessor(ctx, lex, 1);
 	
