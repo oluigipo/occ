@@ -111,7 +111,18 @@ C_LoadFileFromDisk(C_Context* ctx, char* path, uint64 calculated_hash, bool32 re
 		file->hash = calculated_hash;
 		file->contents = contents;
 		file->relative = relative;
-		file->path = StrMake(path, path_len);
+		
+		if (ctx->tokens)
+		{
+			char* buf = Arena_PushDirtyAligned(ctx->persistent_arena, path_len, 1);
+			OurMemCopy(buf, path, path_len);
+			
+			file->path = StrMake(buf, path_len);
+		}
+		else
+		{
+			file->path = StrMake(path, path_len);
+		}
 		
 		return file;
 	}
@@ -1340,7 +1351,9 @@ C_PreprocessFile(C_Context* ctx, String path, const char* source, C_Lexer* from)
 				
 				C_IgnoreUntilNewline(lex);
 				C_NextToken(lex);
-				Arena_PushMemory(ctx->persistent_arena, 1, "\n");
+				
+				if (!ctx->tokens)
+					Arena_PushMemory(ctx->persistent_arena, 1, "\n");
 			} break;
 			
 			case C_TokenKind_Identifier:

@@ -75,9 +75,9 @@ Arena_VPrintf(Arena* arena, const char* fmt, va_list args)
 	uintsize len = OurVPrintfSize(fmt, args_copy);
 	uintsize offset = arena->offset;
 	
-	char* buf = Arena_PushDirtyAligned(arena, len, 1);
+	char* buf = Arena_PushDirtyAligned(arena, len + 1, 1);
 	
-	len = OurVPrintf(buf, len, fmt, args);
+	len = OurVPrintf(buf, len + 1, fmt, args);
 	arena->offset = offset + len;
 	
 	va_end(args_copy);
@@ -120,9 +120,9 @@ Arena_VSPrintf(Arena* arena, const char* fmt, va_list args)
 	uintsize len = OurVPrintfSize(fmt, args_copy);
 	uintsize offset = arena->offset;
 	
-	char* buf = Arena_PushDirtyAligned(arena, len, 1);
+	char* buf = Arena_PushDirtyAligned(arena, len + 1, 1);
 	
-	len = OurVPrintf(buf, len, fmt, args);
+	len = OurVPrintf(buf, len + 1, fmt, args);
 	arena->offset = offset + len;
 	
 	va_end(args_copy);

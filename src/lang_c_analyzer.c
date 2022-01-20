@@ -397,10 +397,8 @@ C_WriteTypeToPersistentArena(C_Context* ctx, C_AstType* type)
 				
 				Arena_PushMemory(ctx->persistent_arena, 1, "[");
 				
-				if (curr->h.kind == C_AstKind_TypeVlaArray)
-					Arena_PushMemory(ctx->persistent_arena, 3, "VLA");
-				else
-					Arena_Printf(ctx->persistent_arena, "%llu", curr->array.length);
+				if (curr->h.kind == C_AstKind_TypeArray)
+					Arena_Printf(ctx->persistent_arena, "%U", curr->array.length);
 				
 				Arena_PushMemory(ctx->persistent_arena, 1, "]");
 			} break;

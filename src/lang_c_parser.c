@@ -1265,10 +1265,11 @@ C_ParseBlock(C_Context* ctx, C_Node** out_last)
 	return result;
 }
 
-internal C_AstType*
+internal C_AstType**
 C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstAttribute** attrib_head, C_AstDecl* decl, bool32 type_only, bool32 is_global)
 {
 	Trace();
+	// TODO(ljre): Fix
 	
 	C_AstType** result = head;
 	uint32 saved_flags = 0;
@@ -1324,7 +1325,16 @@ C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstA
 			case C_TokenKind_LeftParen:
 			{
 				C_StreamNextToken(ctx);
-				*head = C_ParseRestOfDeclIt(ctx, head, &saved_flags, &saved_attrib, decl, type_only, is_global);
+				C_AstType* hh = *head;
+				result = C_ParseRestOfDeclIt(ctx, head, &saved_flags, &saved_attrib, decl, type_only, is_global);
+				
+				if (hh != *head)
+				{
+					while ((*head)->not_base.base != hh)
+						head = &(*head)->not_base.base;
+					head = &(*head)->not_base.base;
+				}
+				
 				C_StreamEatToken(ctx, C_TokenKind_RightParen);
 				
 				goto after_identifier;
@@ -1368,7 +1378,7 @@ C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstA
 				
 				newtype->function.ret = *head;
 				*head = newtype;
-				result = head;
+				head = &newtype->function.ret;
 				
 				if (ctx->token->kind == C_TokenKind_RightParen)
 					newtype->h.flags |= C_AstFlags_VarArgs;
@@ -1416,7 +1426,7 @@ C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstA
 				
 				newtype->array.of = *head;
 				*head = newtype;
-				result = head;
+				head = &newtype->array.of;
 				
 				if (ctx->token->kind != C_TokenKind_RightBrkt)
 					newtype->array.length = C_ParseExpr(ctx, 0, false);
@@ -1428,7 +1438,16 @@ C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstA
 		break;
 	}
 	
-	return *result;
+	if (saved_attrib)
+	{
+		saved_attrib->h.next = (void*)*attrib_head;
+		*attrib_head = saved_attrib;
+	}
+	
+	if (saved_flags)
+		*flags_head |= saved_flags;
+	
+	return result;
 }
 
 internal C_AstType*
@@ -1438,7 +1457,7 @@ C_ParseRestOfDecl(C_Context* ctx, C_AstType* base, C_AstDecl* decl, bool32 type_
 	C_AstAttribute* attrib = NULL;
 	C_AstType* head = base;
 	
-	C_AstType* result = C_ParseRestOfDeclIt(ctx, &head, &flags, &attrib, decl, type_only, is_global);
+	C_AstType* result = *C_ParseRestOfDeclIt(ctx, &head, &flags, &attrib, decl, type_only, is_global);
 	
 	if (flags || attrib)
 	{

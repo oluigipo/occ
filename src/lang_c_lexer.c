@@ -1,6 +1,8 @@
 // NOTE(ljre): This lexer won't check if UTF-8 codepoints are valid, though it will check for BOM
 //             at the beginning of the file.
 
+internal void C_UpdateLexerPreviousHead(C_Lexer* lex);
+internal void C_IgnoreWhitespaces(const char** p, bool32 newline);
 internal void C_NextToken(C_Lexer* lex);
 
 internal void
@@ -20,6 +22,9 @@ C_SetupLexer(C_Lexer* lex, const char* source, C_Context* ctx, Arena* arena)
 	lex->previous_head = lex->head;
 	lex->arena = arena;
 	lex->ctx = ctx;
+	
+	C_IgnoreWhitespaces(&lex->head, !lex->preprocessor);
+	C_UpdateLexerPreviousHead(lex);
 }
 
 internal void
@@ -385,6 +390,8 @@ C_NextToken(C_Lexer* lex)
 {
 	Trace();
 	
+	// NOTE(ljre): This function assumes that C_IgnoreWhitespaces was called with &lex->head before being called.
+	
 	if (lex->waiting_token)
 	{
 		lex->token = lex->waiting_token->token;
@@ -396,8 +403,6 @@ C_NextToken(C_Lexer* lex)
 	lex->token_was_pushed = false;
 	
 	beginning:;
-	C_IgnoreWhitespaces(&lex->head, !lex->preprocessor);
-	
 	lex->token.as_string.data = lex->head;
 	lex->token.trace = lex->trace;
 	
@@ -496,6 +501,7 @@ C_NextToken(C_Lexer* lex)
 					while (lex->head[0] && lex->head++[0] != '\n');
 				}
 				
+				C_IgnoreWhitespaces(&lex->head, !lex->preprocessor);
 				goto beginning;
 			}
 		} break;
