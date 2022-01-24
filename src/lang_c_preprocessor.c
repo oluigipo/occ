@@ -84,15 +84,15 @@ C_PreprocessSPrintf(C_Context* ctx, const char* fmt, ...)
 internal C_PPLoadedFile*
 C_LoadFileFromDisk(C_Context* ctx, char* path, uint64 calculated_hash, bool32 relative)
 {
-	const char* contents = Arena_End(ctx->persistent_arena);
-	uintsize len = OS_ReadWholeFile(path, ctx->persistent_arena);
+	Arena* arena = (ctx->tokens) ? ctx->persistent_arena : ctx->stage_arena;
+	
+	const char* contents = Arena_End(arena);
+	uintsize len = OS_ReadWholeFile(path, arena);
 	C_Preprocessor* const pp = &ctx->pp;
 	
 	if (len)
 	{
 		uintsize path_len = strlen(path);
-		Arena_Pop(ctx->stage_arena, path + path_len + 1);
-		
 		C_PPLoadedFile* file;
 		
 		if (pp->loaded_files)
@@ -293,7 +293,9 @@ C_DefineMacro(C_Context* ctx, String definition, const C_SourceTrace* from)
 		.size = (uintsize)(head - ident_begin),
 	};
 	
-	if (!from && (StringListHas(ctx->options->predefined_macros, name) || StringListHas(ctx->options->preundefined_macros, name)))
+	uint64 hash = SimpleHash(name);
+	
+	if (!from && Map_FetchWithHash(ctx->options->predefined_macros, name, hash))
 		return NULL;
 	
 	bool32 is_func_like = (head[0] == '(');
@@ -342,8 +344,6 @@ C_DefineMacro(C_Context* ctx, String definition, const C_SourceTrace* from)
 		result->line = result->col = 1;
 	}
 	
-	uint64 hash = SimpleHash(name);
-	
 	if (Map_RemoveWithHash(pp->func_macros, name, hash) || Map_RemoveWithHash(pp->obj_macros, name, hash))
 	{
 		// TODO(ljre): Warn macro redefinition
@@ -361,10 +361,10 @@ internal void
 C_UndefineMacro(C_Context* ctx, String name)
 {
 	C_Preprocessor* const pp = &ctx->pp;
-	if (StringListHas(ctx->options->predefined_macros, name) || StringListHas(ctx->options->preundefined_macros, name))
-		return;
-	
 	uint64 hash = SimpleHash(name);
+	
+	if (Map_FetchWithHash(ctx->options->predefined_macros, name, hash))
+		return;
 	
 	if (!Map_RemoveWithHash(pp->func_macros, name, hash))
 		Map_RemoveWithHash(pp->obj_macros, name, hash);
@@ -385,19 +385,26 @@ C_FindMacro(C_Context* ctx, String name, int32 type)
 	C_Preprocessor* pp = &ctx->pp;
 	uint64 hash = SimpleHash(name);
 	
-	C_Macro* result = NULL;
+	C_Macro* result = Map_FetchWithHash(ctx->options->predefined_macros, name, hash);
 	
-	switch (type)
+	if (result == C_PREUNDEFINED_MACRO_PTR)
+		result = NULL;
+	else if (!result)
 	{
-		case 0: result = Map_FetchWithHash(pp->obj_macros, name, hash); break;
-		case 1: result = Map_FetchWithHash(pp->func_macros, name, hash); break;
-		
-		case 2: case 3:
+		switch (type)
 		{
-			result = Map_FetchWithHash(pp->func_macros, name, hash);
-			if (!result)
-				result = Map_FetchWithHash(pp->obj_macros, name, hash);
-		} break;
+			case 0: result = Map_FetchWithHash(pp->obj_macros, name, hash); break;
+			case 1: result = Map_FetchWithHash(pp->func_macros, name, hash); break;
+			
+			case 2: case 3:
+			{
+				result = Map_FetchWithHash(pp->func_macros, name, hash);
+				if (!result)
+					result = Map_FetchWithHash(pp->obj_macros, name, hash);
+			} break;
+			
+			default: Unreachable(); break;
+		}
 	}
 	
 	return result;
@@ -445,9 +452,9 @@ C_TracePreprocessor(C_Context* ctx, C_Lexer* lex, uint32 flags)
 		};
 		
 		if (flags)
-			Arena_Printf(ctx->persistent_arena, "# %i \"%S\" %s\n", lex->trace.line, StrFmt(lex->trace.file->path), flag_table[flags]);
+			Arena_Printf(ctx->persistent_arena, "# %u \"%S\" %s\n", lex->trace.line, StrFmt(lex->trace.file->path), flag_table[flags]);
 		else
-			Arena_Printf(ctx->persistent_arena, "# %i \"%S\"\n", lex->trace.line, StrFmt(lex->trace.file->path));
+			Arena_Printf(ctx->persistent_arena, "# %u \"%S\"\n", lex->trace.line, StrFmt(lex->trace.file->path));
 	}
 }
 
@@ -735,8 +742,8 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 					OurMemCopy(buf + tok.as_string.size, other_tok.as_string.data, other_tok.as_string.size);
 					buf[tok.as_string.size + other_tok.as_string.size] = 0;
 					
-					// TODO(ljre): Check if result of concatenation should be expanded on the 4th step.
-					C_PushStringOfTokens(parent_lex, buf);
+					if (C_PushStringOfTokens(parent_lex, buf) != 1)
+						C_TraceError(ctx, &parent_lex->trace, "concatenation should result in a single token.");
 				}
 				else if (from_macro &&
 						 tok.kind == C_TokenKind_Identifier &&
@@ -1189,197 +1196,204 @@ C_PreprocessFile(C_Context* ctx, String path, const char* source, C_Lexer* from)
 	bool32 previous_was_newline = true;
 	while (lex->token.kind != C_TokenKind_Eof)
 	{
-		switch (lex->token.kind)
+		if (lex->token.kind == C_TokenKind_NewLine)
 		{
-			case C_TokenKind_Hashtag:
+			previous_was_newline = true;
+			
+			do
 			{
-				if (!previous_was_newline)
-				{
-					C_TraceError(ctx, &lex->token.trace, "'#' should be the first token in a line.");
-					C_NextToken(lex);
-					break;
-				}
+				if (!ctx->tokens)
+					C_PreprocessWriteToken(ctx, &lex->token);
+				C_NextToken(lex);
+			}
+			while (lex->token.kind == C_TokenKind_NewLine);
+		}
+		
+		if (lex->token.kind == C_TokenKind_Hashtag)
+		{
+			if (!previous_was_newline)
+			{
+				C_TraceError(ctx, &lex->token.trace, "'#' should be the first token in a line.");
+				C_NextToken(lex);
+				continue;
+			}
+			
+			C_NextToken(lex);
+			String directive = lex->token.as_string;
+			
+			if (lex->token.kind != C_TokenKind_Identifier)
+			{
+				C_TraceError(ctx, &lex->token.trace, "preprocessor directive has to be identifier.");
+				C_IgnoreUntilNewline(lex);
+				continue;
+			}
+			
+			bool32 not = false;
+			if (MatchCString("include", directive))
+			{
+				C_NextToken(lex);
+				C_PreprocessInclude(ctx, lex);
+			}
+			else if (MatchCString("ifdef", directive) ||
+					 (not = MatchCString("ifndef", directive)))
+			{
+				C_NextToken(lex);
+				C_PreprocessIfDef(ctx, lex, not);
+			}
+			else if (MatchCString("if", directive))
+			{
+				C_NextToken(lex);
+				C_PreprocessIf(ctx, lex);
+			}
+			else if (MatchCString("elif", directive) ||
+					 MatchCString("elifdef", directive) ||
+					 MatchCString("elifndef", directive) ||
+					 MatchCString("else", directive))
+			{
+				C_NextToken(lex);
+				C_IgnoreUntilEndOfIf(ctx, lex, true);
+			}
+			else if (MatchCString("endif", directive))
+			{
+				C_NextToken(lex);
+				// NOTE(ljre): :P
+			}
+			else if (MatchCString("line", directive))
+			{
+				C_NextToken(lex);
+				
+				int32 line = lex->trace.line;
+				if (C_AssertToken(lex, C_TokenKind_IntLiteral))
+					line = lex->token.value_int;
+				
+				lex->trace.line = line-1; // NOTE(ljre): :P
+				C_TracePreprocessor(ctx, lex, 0);
+			}
+			else if (MatchCString("define", directive))
+			{
+				const char* def = lex->head;
 				
 				C_NextToken(lex);
-				String directive = lex->token.as_string;
-				
-				if (lex->token.kind != C_TokenKind_Identifier)
+				if (C_AssertToken(lex, C_TokenKind_Identifier))
 				{
-					C_TraceError(ctx, &lex->token.trace, "preprocessor directive has to be identifier.");
-					C_IgnoreUntilNewline(lex);
-					break;
-				}
-				
-				bool32 not = false;
-				if (MatchCString("include", directive))
-				{
-					C_NextToken(lex);
-					C_PreprocessInclude(ctx, lex);
-				}
-				else if (MatchCString("ifdef", directive) ||
-						 (not = MatchCString("ifndef", directive)))
-				{
-					C_NextToken(lex);
-					C_PreprocessIfDef(ctx, lex, not);
-				}
-				else if (MatchCString("if", directive))
-				{
-					C_NextToken(lex);
-					C_PreprocessIf(ctx, lex);
-				}
-				else if (MatchCString("elif", directive) ||
-						 MatchCString("elifdef", directive) ||
-						 MatchCString("elifndef", directive) ||
-						 MatchCString("else", directive))
-				{
-					C_NextToken(lex);
-					C_IgnoreUntilEndOfIf(ctx, lex, true);
-				}
-				else if (MatchCString("endif", directive))
-				{
-					C_NextToken(lex);
-					// NOTE(ljre): :P
-				}
-				else if (MatchCString("line", directive))
-				{
-					C_NextToken(lex);
-					
-					int32 line = lex->trace.line;
-					if (C_AssertToken(lex, C_TokenKind_IntLiteral))
-						line = lex->token.value_int;
-					
-					lex->trace.line = line-1; // NOTE(ljre): :P
-					C_TracePreprocessor(ctx, lex, 0);
-				}
-				else if (MatchCString("define", directive))
-				{
-					const char* def = lex->head;
-					
-					C_NextToken(lex);
-					if (C_AssertToken(lex, C_TokenKind_Identifier))
+					const char* end = lex->head;
+					while (lex->token.kind && lex->token.kind != C_TokenKind_NewLine)
 					{
-						while (lex->head[0] && (lex->head[0] != '\n' || lex->head[-1] == '\\'))
-							++lex->head;
-						
-						const char* end = lex->head;
-						
-						String macro_def = {
-							.size = (uintsize)(end - def),
-							.data = def,
+						end = lex->head;
+						C_NextToken(lex);
+					}
+					
+					String macro_def = {
+						.size = (uintsize)(end - def),
+						.data = def,
+					};
+					
+					C_DefineMacro(ctx, macro_def, &lex->token.trace);
+				}
+			}
+			else if (MatchCString("undef", directive))
+			{
+				C_NextToken(lex);
+				
+				if (C_AssertToken(lex, C_TokenKind_Identifier))
+					C_UndefineMacro(ctx, lex->token.value_ident);
+			}
+			else if (MatchCString("error", directive))
+			{
+				const char* begin = lex->head;
+				const char* end = lex->head;
+				
+				while (*end && *end != '\n')
+					++end;
+				
+				uintsize len = end - begin;
+				
+				C_TraceError(ctx, &lex->token.trace, "\"%S\"", len, begin);
+				
+				lex->head = end;
+			}
+			else if (MatchCString("warning", directive))
+			{
+				const char* begin = lex->head;
+				const char* end = lex->head;
+				
+				while (*end && *end != '\n')
+					++end;
+				
+				uintsize len = end - begin;
+				C_TraceWarning(ctx, &lex->token.trace, C_Warning_UserWarning, "\"%S\"", len, begin);
+				
+				lex->head = end;
+			}
+			else if (MatchCString("pragma", directive))
+			{
+				String leading = lex->token.leading_spaces;
+				C_SourceTrace saved_trace = lex->token.trace;
+				C_NextToken(lex);
+				
+				if (lex->token.kind == C_TokenKind_Identifier &&
+					MatchCString("once", lex->token.value_ident))
+				{
+					C_PragmaOncePPFile(ctx, path);
+				}
+				else
+				{
+					if (ctx->tokens)
+					{
+						C_Token pragma = {
+							.kind = C_TokenKind_HashtagPragma,
+							.trace = saved_trace,
+							.as_string = { .data = "#pragma", .size = 7 },
 						};
 						
-						C_DefineMacro(ctx, macro_def, &lex->token.trace);
-					}
-				}
-				else if (MatchCString("undef", directive))
-				{
-					C_NextToken(lex);
-					
-					if (C_AssertToken(lex, C_TokenKind_Identifier))
-						C_UndefineMacro(ctx, lex->token.value_ident);
-				}
-				else if (MatchCString("error", directive))
-				{
-					const char* begin = lex->head;
-					const char* end = lex->head;
-					
-					while (*end && *end != '\n')
-						++end;
-					
-					uintsize len = end - begin;
-					C_TraceError(ctx, &lex->token.trace, "\"%S\"", len, begin);
-					
-					lex->head = end;
-				}
-				else if (MatchCString("warning", directive))
-				{
-					const char* begin = lex->head;
-					const char* end = lex->head;
-					
-					while (*end && *end != '\n')
-						++end;
-					
-					uintsize len = end - begin;
-					C_TraceWarning(ctx, &lex->token.trace, C_Warning_UserWarning, "\"%S\"", len, begin);
-					
-					lex->head = end;
-				}
-				else if (MatchCString("pragma", directive))
-				{
-					String leading = lex->token.leading_spaces;
-					C_SourceTrace saved_trace = lex->token.trace;
-					C_NextToken(lex);
-					
-					if (lex->token.kind == C_TokenKind_Identifier &&
-						MatchCString("once", lex->token.value_ident))
-					{
-						C_PragmaOncePPFile(ctx, path);
+						C_PreprocessWriteToken(ctx, &pragma);
+						
+						do
+						{
+							if (lex->token.kind != C_TokenKind_Identifier || !C_TryToExpandIdent(ctx, lex))
+							{
+								C_PreprocessWriteToken(ctx, &lex->token);
+								C_NextToken(lex);
+							}
+						}
+						while (lex->token.kind && lex->token.kind != C_TokenKind_NewLine);
+						
+						C_PreprocessWriteNewlineToken(ctx, &lex->token.trace);
 					}
 					else
 					{
-						if (ctx->tokens)
-						{
-							C_Token pragma = {
-								.kind = C_TokenKind_HashtagPragma,
-								.trace = saved_trace,
-								.as_string = { .data = "#pragma", .size = 7 },
-							};
-							
-							C_PreprocessWriteToken(ctx, &pragma);
-							
-							do
-							{
-								if (lex->token.kind != C_TokenKind_Identifier || !C_TryToExpandIdent(ctx, lex))
-								{
-									C_PreprocessWriteToken(ctx, &lex->token);
-									C_NextToken(lex);
-								}
-							}
-							while (lex->token.kind && lex->token.kind != C_TokenKind_NewLine);
-							
-							C_PreprocessWriteNewlineToken(ctx, &lex->token.trace);
-						}
-						else
-						{
-							Arena_Printf(ctx->persistent_arena, "#pragma%S", StrFmt(leading));
-						}
-						break;
+						Arena_Printf(ctx->persistent_arena, "#pragma%S", StrFmt(leading));
 					}
+					
+					continue;
 				}
-				else
-					C_TraceError(ctx, &lex->token.trace, "unknown pre-processor directive '%S'.", StrFmt(directive));
-				
-				C_IgnoreUntilNewline(lex);
-				C_NextToken(lex);
-				
-				if (!ctx->tokens)
-					Arena_PushMemory(ctx->persistent_arena, 1, "\n");
-			} break;
-			
-			case C_TokenKind_Identifier:
+			}
+			else if (MatchCString("include_next", directive))
 			{
-				if (!C_TryToExpandIdent(ctx, lex))
-				{
-					C_PreprocessWriteToken(ctx, &lex->token);
-					C_NextToken(lex);
-				}
-				
-				previous_was_newline = false;
-			} break;
+				// TODO
+			}
+			else
+				C_TraceError(ctx, &lex->token.trace, "unknown pre-processor directive '%S'.", StrFmt(directive));
 			
-			default:
+			C_IgnoreUntilNewline(lex);
+			C_NextToken(lex);
+			
+			if (!ctx->tokens)
+				Arena_PushMemory(ctx->persistent_arena, 1, "\n");
+			
+			continue;
+		}
+		// NOTE(ljre): No need for 'else' here.
+		
+		while (lex->token.kind && lex->token.kind != C_TokenKind_Hashtag && lex->token.kind != C_TokenKind_NewLine)
+		{
+			previous_was_newline = false;
+			
+			if (lex->token.kind != C_TokenKind_Identifier || !C_TryToExpandIdent(ctx, lex))
 			{
-				previous_was_newline = false;
-				
-				if (false)
-				{
-					case C_TokenKind_NewLine:
-					previous_was_newline = true;
-				}
-				
 				C_PreprocessWriteToken(ctx, &lex->token);
 				C_NextToken(lex);
-			} break;
+			}
 		}
 	}
 	
@@ -1412,9 +1426,6 @@ C_Preprocess(C_Context* ctx)
 			ctx->pp.obj_macros = Map_Create(ctx->persistent_arena, 2048);
 			ctx->pp.func_macros = Map_Create(ctx->persistent_arena, 2048);
 		}
-		
-		for (StringList* it = ctx->options->predefined_macros; it; it = it->next)
-			C_DefineMacro(ctx, it->value, NULL);
 		
 		C_PreprocessFile(ctx, fullpath, ctx->source, NULL);
 	}

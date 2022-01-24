@@ -184,9 +184,10 @@ C_PushTokenToFront(C_Lexer* lex, C_Token* token)
 	}
 }
 
-internal void
+internal int32
 C_PushStringOfTokens(C_Lexer* lex, const char* str)
 {
+	int32 pushed_count = 0;
 	C_Lexer temp_lex = {
 		.preprocessor = lex->preprocessor,
 		.trace = lex->trace,
@@ -197,11 +198,14 @@ C_PushStringOfTokens(C_Lexer* lex, const char* str)
 	
 	while (temp_lex.token.kind)
 	{
+		++pushed_count;
 		C_PushToken(lex, &temp_lex.token);
 		
 		temp_lex.trace = lex->trace;
 		C_NextToken(&temp_lex);
 	}
+	
+	return pushed_count;
 }
 
 internal C_Token
@@ -256,9 +260,13 @@ C_IgnoreWhitespaces(const char** p, bool32 newline)
 				++*p;
 		}
 		// NOTE(ljre): General whitespaces & newlines
-		else if (**p == ' ' || **p == '\t' || **p == '\r' || (newline && **p == '\n'))
+		else if (**p == ' ' || **p == '\t' || (newline && **p == '\n'))
 		{
 			++*p;
+		}
+		else if (newline && **p == '\r' && (*p)[1] == '\n')
+		{
+			*p += 2;
 		}
 		// NOTE(ljre): Treating a \ followed by a newline as a whitespace. Yes, this is incorrect by the standard.
 		else if (**p == '\\' && (*p)[1] == '\n')
@@ -413,6 +421,7 @@ C_NextToken(C_Lexer* lex)
 			lex->token.kind = C_TokenKind_Eof;
 		} break;
 		
+		case '\r': ++lex->head;
 		case '\n':
 		{
 			lex->token.kind = C_TokenKind_NewLine;

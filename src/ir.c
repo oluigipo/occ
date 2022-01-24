@@ -10,7 +10,7 @@
 *      - Locals;
 *      - Code;
 *  The last 2 (locals and code) are only needed if it's a function definition. Otherwise, only the
-*  return value and parameters are important because they incluence how a function is called in the IR.
+*  return value and parameters are important because they influence how a function is called in the IR.
 *
 *  With the exception of code, all those things are just "variables", mutable pieces of data. Their type
 *  is defined with the 'struct Ir_Locals'.

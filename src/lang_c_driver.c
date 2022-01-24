@@ -50,13 +50,15 @@ C_DefaultDriver(int32 argc, const char** argv)
 		.index_ptrdifft = 9,
 	};
 	
+	options.predefined_macros = Map_Create(global_arena, 1024);
+	
 	// NOTE(ljre): Those macros are handled internally, but a definition is still needed.
-	C_PredefineMacro(&options, Str("__LINE__"));
-	C_PredefineMacro(&options, Str("__FILE__"));
+	C_PredefineMacro(&options, "__LINE__");
+	C_PredefineMacro(&options, "__FILE__");
 	
 	//~ NOTE(ljre): Setup system include directory
 	{
-		static const char include[] = "_include-mingw/";
+		static const char include[] = "_include-ming/";
 		//static const char include[] = "include/";
 		
 		int32 last_slash_index = -1;
@@ -172,16 +174,18 @@ C_DefaultDriver(int32 argc, const char** argv)
 				++flag;
 			const char* name_end = flag;
 			
+			const char* def;
 			if (*flag == '=')
 			{
 				const char* value_begin = ++flag;
-				String def = Arena_SPrintf(global_arena, "%S %s", name_end - name_begin, name_begin, value_begin);
-				C_PredefineMacro(&options, def);
+				def = Arena_SPrintf(global_arena, "%S %s%0", name_end - name_begin, name_begin, value_begin).data;
 			}
 			else
 			{
-				C_PredefineMacro(&options, StrMake(name_begin, name_end - name_begin));
+				def = Arena_NullTerminateString(global_arena, StrMake(name_begin, name_end - name_begin));
 			}
+			
+			C_PredefineMacro(&options, def);
 		}
 		else if (StringStartsWith(strflag, "help") || StringStartsWith(strflag, "-help"))
 		{
@@ -199,45 +203,46 @@ C_DefaultDriver(int32 argc, const char** argv)
 	Assert(input_files);
 	
 	//~ NOTE(ljre): Default predefined macros.
-	C_PredefineMacro(&options, Str("__STDC__ 1"));
-	C_PredefineMacro(&options, Str("__STDC_HOSTED__ 1"));
-	C_PredefineMacro(&options, Str("__STDC_VERSION__ 199901L"));
-	C_PredefineMacro(&options, Str("__x86_64 1"));
-	C_PredefineMacro(&options, Str("__x86_64__ 1"));
-	C_PredefineMacro(&options, Str("_M_AMD64 1"));
-	C_PredefineMacro(&options, Str("_M_X64 1"));
-	C_PredefineMacro(&options, Str("_WIN32 1"));
-	C_PredefineMacro(&options, Str("_WIN64 1"));
-	C_PredefineMacro(&options, Str("__OCC__ 1"));
+	C_PredefineMacro(&options, "__STDC__ 1");
+	C_PredefineMacro(&options, "__STDC_HOSTED__ 1");
+	C_PredefineMacro(&options, "__STDC_VERSION__ 199901L");
+	C_PredefineMacro(&options, "__x86_64 1");
+	C_PredefineMacro(&options, "__x86_64__ 1");
+	C_PredefineMacro(&options, "_M_AMD64 1");
+	C_PredefineMacro(&options, "_M_X64 1");
+	C_PredefineMacro(&options, "_WIN32 1");
+	C_PredefineMacro(&options, "_WIN64 1");
+	C_PredefineMacro(&options, "__OCC__ 1");
 	
 	// NOTE(ljre): Polyfills
-	C_PredefineMacro(&options, Str("__int64 long long"));
-	C_PredefineMacro(&options, Str("__int32 int"));
-	C_PredefineMacro(&options, Str("__int16 short"));
-	C_PredefineMacro(&options, Str("__int8 char"));
-	C_PredefineMacro(&options, Str("__inline inline"));
-	C_PredefineMacro(&options, Str("__inline__ inline"));
-	C_PredefineMacro(&options, Str("__restrict restrict"));
-	C_PredefineMacro(&options, Str("__restrict__ restrict"));
-	C_PredefineMacro(&options, Str("__const const"));
-	C_PredefineMacro(&options, Str("__const__ const"));
-	C_PredefineMacro(&options, Str("__volatile volatile"));
-	C_PredefineMacro(&options, Str("__volatile__ volatile"));
-	C_PredefineMacro(&options, Str("__attribute __attribute__"));
-	//C_PredefineMacro(&options, Str("__forceinline inline"));
-	//C_PredefineMacro(&options, Str("__attribute__(...)"));
-	//C_PredefineMacro(&options, Str("__declspec(...)"));
-	C_PredefineMacro(&options, Str("__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)"));
-	C_PredefineMacro(&options, Str("__builtin_va_list void*"));
+	C_PredefineMacro(&options, "__int64 long long");
+	C_PredefineMacro(&options, "__int32 int");
+	C_PredefineMacro(&options, "__int16 short");
+	C_PredefineMacro(&options, "__int8 char");
+	C_PredefineMacro(&options, "__inline inline");
+	C_PredefineMacro(&options, "__inline__ inline");
+	C_PredefineMacro(&options, "__restrict restrict");
+	C_PredefineMacro(&options, "__restrict__ restrict");
+	C_PredefineMacro(&options, "__const const");
+	C_PredefineMacro(&options, "__const__ const");
+	C_PredefineMacro(&options, "__volatile volatile");
+	C_PredefineMacro(&options, "__volatile__ volatile");
+	C_PredefineMacro(&options, "__attribute __attribute__");
+	C_PredefineMacro(&options, "__pragma _Pragma");
+	//C_PredefineMacro(&options, "__forceinline inline");
+	//C_PredefineMacro(&options, "__attribute__(...)");
+	//C_PredefineMacro(&options, "__declspec(...)");
+	C_PredefineMacro(&options, "__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)");
+	C_PredefineMacro(&options, "__builtin_va_list void*");
 	
 #if 1
 	// NOTE(ljre): MINGW macros
-	C_PredefineMacro(&options, Str("_MSC_VER 1910"));
-	C_PredefineMacro(&options, Str("_MSC_FULL_VER 191025017"));
-	//C_PredefineMacro(&options, Str("__MINGW_ATTRIB_DEPRECATED_STR(x)"));
-	//C_PredefineMacro(&options, Str("__MINGW_ATTRIB_NONNULL(x)"));
-	//C_PredefineMacro(&options, Str("__MINGW_NOTHROW"));
-	//C_PredefineMacro(&options, Str("__mingw_ovr"));
+	C_PredefineMacro(&options, "_MSC_VER 1910");
+	C_PredefineMacro(&options, "_MSC_FULL_VER 191025017");
+	//C_PredefineMacro(&options, "__MINGW_ATTRIB_DEPRECATED_STR(x)");
+	//C_PredefineMacro(&options, "__MINGW_ATTRIB_NONNULL(x)");
+	//C_PredefineMacro(&options, "__MINGW_NOTHROW");
+	//C_PredefineMacro(&options, "__mingw_ovr");
 #endif
 	
 	//~ NOTE(ljre): Build.

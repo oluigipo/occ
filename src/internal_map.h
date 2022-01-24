@@ -92,7 +92,7 @@ Map_InsertWithHash(Map* map, String key, void* value, uint64 hash)
 }
 
 internal void*
-Map_FetchWithHash(Map* map, String key, uint64 hash)
+Map_FetchWithHash(const Map* map, String key, uint64 hash)
 {
 	TraceName(key);
 	
@@ -165,7 +165,7 @@ Map_Insert(Map* map, String key, void* value)
 { Map_InsertWithHash(map, key, value, SimpleHash(key)); }
 
 internal inline void*
-Map_Fetch(Map* map, String key)
+Map_Fetch(const Map* map, String key)
 { return Map_FetchWithHash(map, key, SimpleHash(key)); }
 
 internal inline bool32

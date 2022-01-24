@@ -53,16 +53,34 @@
 #define C_VERSION_MINOR 0
 #define C_VERSION_PATCH 1
 #define C_VERSION_STR StrMacro(C_VERSION_MAJOR) "." StrMacro(C_VERSION_MINOR) "." StrMacro(C_VERSION_PATCH)
+#define C_PREUNDEFINED_MACRO_PTR ((void*)1)
 
 #include "lang_c_definitions.h"
 
-internal void
-C_PredefineMacro(C_CompilerOptions* options, String def)
-{ PushToStringList(global_arena, &options->predefined_macros, &options->last_predefined_macro, def); }
+internal inline bool32 C_IsIdentChar(char ch);
 
 internal void
-C_PreundefineMacro(C_CompilerOptions* options, String def)
-{ PushToStringList(global_arena, &options->preundefined_macros, &options->last_preundefined_macro, def); }
+C_PredefineMacro(C_CompilerOptions* options, const char* def)
+{
+	const char* name_begin = def;
+	const char* name_end = def;
+	
+	while (C_IsIdentChar(*name_end))
+		++name_end;
+	
+	C_Macro* macro = Arena_Push(global_arena, sizeof(*macro));
+	
+	macro->name = StrMake(name_begin, name_end - name_begin);
+	macro->def = def;
+	macro->line = macro->col = 1;
+	macro->param_count = UINT32_MAX;
+	
+	Map_Insert(options->predefined_macros, macro->name, macro);
+}
+
+internal void
+C_PreundefineMacro(C_CompilerOptions* options, String name)
+{ Map_Insert(options->predefined_macros, name, C_PREUNDEFINED_MACRO_PTR); }
 
 internal inline bool32
 C_IsWarningEnabled(C_Context* ctx, C_Warning warning)

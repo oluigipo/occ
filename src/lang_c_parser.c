@@ -4,6 +4,7 @@ C_StreamDealWithPragmaToken(C_Context* ctx)
 {
 	if (Unlikely(ctx->token->kind == C_TokenKind_HashtagPragma))
 	{
+		Trace();
 		// TODO(ljre): Deal with pragma token.
 		
 		do
@@ -17,8 +18,6 @@ C_StreamDealWithPragmaToken(C_Context* ctx)
 internal void
 C_StreamNextToken(C_Context* ctx)
 {
-	Trace();
-	
 	if (ctx->token->kind == C_TokenKind_Eof)
 		return;
 	
@@ -1266,10 +1265,10 @@ C_ParseBlock(C_Context* ctx, C_Node** out_last)
 }
 
 internal C_AstType**
-C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstAttribute** attrib_head, C_AstDecl* decl, bool32 type_only, bool32 is_global)
+C_ParseDeclaratorIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstAttribute** attrib_head, C_AstDecl* decl, bool32 type_only, bool32 is_global)
 {
+	// TODO(ljre): This function is nasty
 	Trace();
-	// TODO(ljre): Fix
 	
 	C_AstType** result = head;
 	uint32 saved_flags = 0;
@@ -1326,7 +1325,7 @@ C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstA
 			{
 				C_StreamNextToken(ctx);
 				C_AstType* hh = *head;
-				result = C_ParseRestOfDeclIt(ctx, head, &saved_flags, &saved_attrib, decl, type_only, is_global);
+				result = C_ParseDeclaratorIt(ctx, head, &saved_flags, &saved_attrib, decl, type_only, is_global);
 				
 				if (hh != *head)
 				{
@@ -1451,13 +1450,13 @@ C_ParseRestOfDeclIt(C_Context* ctx, C_AstType** head, uint32* flags_head, C_AstA
 }
 
 internal C_AstType*
-C_ParseRestOfDecl(C_Context* ctx, C_AstType* base, C_AstDecl* decl, bool32 type_only, bool32 is_global)
+C_ParseDeclarator(C_Context* ctx, C_AstType* base, C_AstDecl* decl, bool32 type_only, bool32 is_global)
 {
 	uint32 flags = 0;
 	C_AstAttribute* attrib = NULL;
 	C_AstType* head = base;
 	
-	C_AstType* result = *C_ParseRestOfDeclIt(ctx, &head, &flags, &attrib, decl, type_only, is_global);
+	C_AstType* result = *C_ParseDeclaratorIt(ctx, &head, &flags, &attrib, decl, type_only, is_global);
 	
 	if (flags || attrib)
 	{
@@ -1876,7 +1875,7 @@ C_ParseDecl(C_Context* ctx, C_Node** out_last, int32 options, bool32* out_should
 	}
 	
 	right_before_parsing_rest_of_decl:;
-	C_AstType* type = C_ParseRestOfDecl(ctx, base, decl, options & 1, options & 2);
+	C_AstType* type = C_ParseDeclarator(ctx, base, decl, options & 1, options & 2);
 	
 	if (implicit_int)
 	{
@@ -1974,7 +1973,7 @@ C_ParseDecl(C_Context* ctx, C_Node** out_last, int32 options, bool32* out_should
 		while (C_StreamTryEatToken(ctx, C_TokenKind_Comma))
 		{
 			C_AstDecl* new_node = C_CreateNode(ctx, decl->h.kind, sizeof(C_AstDecl));
-			new_node->type = C_ParseRestOfDecl(ctx, base, new_node, false, options & 2);
+			new_node->type = C_ParseDeclarator(ctx, base, new_node, false, options & 2);
 			last = last->next = (void*)new_node;
 			
 			// TODO(ljre): Apply 'callconv'

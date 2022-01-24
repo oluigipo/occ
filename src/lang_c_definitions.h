@@ -410,6 +410,7 @@ typedef C_Lexer;
 //~ NOTE(ljre): Preprocessor
 struct C_Macro
 {
+	// NOTE(ljre): To check if this is a function-like macro, check 'param_count != UINT32_MAX'.
 	String name;
 	const char* def;
 	
@@ -876,10 +877,7 @@ struct C_CompilerOptions
 	uint64 enabled_warnings[(C_Warning__Count + 63) / 64];
 	StringList* include_dirs;
 	
-	StringList* predefined_macros;
-	StringList* last_predefined_macro;
-	StringList* preundefined_macros;
-	StringList* last_preundefined_macro;
+	Map* predefined_macros;
 	
 	C_CompilerMode mode;
 }

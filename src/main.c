@@ -86,8 +86,10 @@ int main(int argc, char* argv[])
 	// Testing
 	int32 result = C_Main(argc, (const char**)argv);
 	
+#ifndef TRACY_ENABLE
 	OS_Exit(result);
-	return 0;
+#endif
+	return result;
 }
 
 // NOTE(ljre): Let it stay here so we can avoid weird OS's headers macros and declarations
