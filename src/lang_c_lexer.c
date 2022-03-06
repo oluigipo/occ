@@ -153,6 +153,7 @@ internal void
 C_PushToken(C_Lexer* lex, C_Token* token)
 {
 	C_TokenList* node = Arena_Push(lex->arena, sizeof *node);
+	
 	node->token = *token;
 	
 	if (!lex->waiting_token)
@@ -170,6 +171,7 @@ internal void
 C_PushTokenToFront(C_Lexer* lex, C_Token* token)
 {
 	C_TokenList* node = Arena_Push(lex->arena, sizeof *node);
+	
 	node->token = *token;
 	
 	if (!lex->waiting_token)

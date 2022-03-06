@@ -21,6 +21,7 @@ internal inline void Arena_Pop(Arena* arena, void* ptr);
 internal inline void Arena_Clear(Arena* arena);
 internal inline void* Arena_End(Arena* arena);
 internal inline void* Arena_PushMemory(Arena* arena, uintsize size, const void* data);
+internal inline String Arena_PushString(Arena* arena, String str);
 internal uintsize Arena_VPrintf(Arena* arena, const char* fmt, va_list args);
 internal uintsize Arena_Printf(Arena* arena, const char* fmt, ...);
 internal const char* Arena_NullTerminateString(Arena* arena, String str);

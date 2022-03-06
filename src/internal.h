@@ -35,8 +35,9 @@ typedef int8_t bool8;
 typedef int16_t bool16;
 typedef int32_t bool32;
 typedef int64_t bool64;
+typedef _Bool bool;
 
-// NOTE(ljre): A 'String' is just an immutable slice of bytes. 'str.data[str.size-1]' can be NULL, but doesn't need to be.
+// NOTE(ljre): A 'String' is just an immutable slice of bytes.
 struct String
 {
 	uintsize size;
@@ -46,7 +47,7 @@ typedef String;
 
 #define Str(str) (String) StrInit(str)
 #define StrFrom(cstr) (String) { .size = strlen(cstr), .data = (cstr) }
-#define StrInit(str) { .size = sizeof(str), .data = (str) }
+#define StrInit(str) { .size = sizeof(str)-1, .data = (str) }
 #define StrFmt(str) (str).size, (str).data
 #define StrNull (String) { 0 }
 #define StrMake(str,len) (String) { .size = (len), .data = (str) }
@@ -68,10 +69,10 @@ typedef String;
 
 // NOTE(ljre): Compiler specifics
 #ifdef __clang__
-#   define Assume(x) __builtin_assume(x)
+#   define Assume(...) __builtin_assume(__VA_ARGS__)
 #   define DebugBreak_() __builtin_debugtrap()
-#   define Likely(x) __builtin_expect(!!(x), 1)
-#   define Unlikely(x) __builtin_expect((x), 0)
+#   define Likely(...) __builtin_expect(!!(__VA_ARGS__), 1)
+#   define Unlikely(...) __builtin_expect((__VA_ARGS__), 0)
 #   ifdef TRACY_ENABLE
 #       include "../../../ext/tracy/TracyC.h"
 internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
@@ -86,28 +87,28 @@ internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 #       define TraceSetName(x) ((void)0)
 #   endif
 #elif defined _MSC_VER
-#   define Assume(x) __assume(x)
+#   define Assume(...) __assume(__VA_ARGS__)
 #   define DebugBreak_() __debugbreak()
-#   define Likely(x) (x)
-#   define Unlikely(x) (x)
+#   define Likely(...) (__VA_ARGS__)
+#   define Unlikely(...) (__VA_ARGS__)
 #   define Trace(x) ((void)0)
 #   define TraceName(x) ((void)0)
 #   define TraceColor(x) ((void)0)
 #   define TraceSetName(x) ((void)0)
 #elif defined __GNUC__
-#   define Assume(x) do { if (!(x)) __builtin_unreachable(); } while (0)
+#   define Assume(...) do { if (!(__VA_ARGS__)) __builtin_unreachable(); } while (0)
 #   define DebugBreak_() __asm__ __volatile__ ("int $3")
-#   define Likely(x) __builtin_expect(!!(x), 1)
-#   define Unlikely(x) __builtin_expect((x), 0)
+#   define Likely(...) __builtin_expect(!!(__VA_ARGS__), 1)
+#   define Unlikely(...) __builtin_expect((__VA_ARGS__), 0)
 #   define Trace(x) ((void)0)
 #   define TraceName(x) ((void)0)
 #   define TraceColor(x) ((void)0)
 #   define TraceSetName(x) ((void)0)
 #else
-#   define Assume(x) ((void)0)
+#   define Assume(...) ((void)0)
 #   define DebugBreak_() ((void)0)
-#   define Likely(x) (x)
-#   define Unlikely(x) (x)
+#   define Likely(...) (__VA_ARGS__)
+#   define Unlikely(...) (__VA_ARGS__)
 #   define Trace(x) ((void)0)
 #   define TraceName(x) ((void)0)
 #   define TraceColor(x) ((void)0)
@@ -116,9 +117,9 @@ internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 
 // NOTE(ljre): Assert
 #ifdef NDEBUG
-#   define Assert(x) Assume(x)
+#   define Assert(...) Assume(__VA_ARGS__)
 #else
-#   define Assert(x) do { if (!(x)) { DebugBreak_(); Panic("\n########## ASSERTION FAILURE\nFile: " __FILE__ "\nLine: " StrMacro(__LINE__) "\nExpression: " #x "\n"); } } while (0)
+#   define Assert(...) do { if (!(__VA_ARGS__)) { DebugBreak_(); Panic("\n########## ASSERTION FAILURE\nFile: " __FILE__ "\nLine: " StrMacro(__LINE__) "\nExpression: " #__VA_ARGS__ "\n"); } } while (0)
 #endif
 
 internal void* PushMemory(uintsize size);

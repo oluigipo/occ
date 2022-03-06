@@ -10,7 +10,7 @@
 
 // NOTE(ljre): This function *does* accept overlapping memory.
 internal inline void*
-OurMemCopy(void* restrict dst, const void* restrict src, uintsize size)
+MemCopy(void* dst, const void* src, uintsize size)
 {
 #if defined(__clang__) || defined(__GNUC__)
 	void* d = dst;
@@ -31,7 +31,7 @@ OurMemCopy(void* restrict dst, const void* restrict src, uintsize size)
 
 // NOTE(ljre): For overlapping memory where 'dst > src'.
 internal inline void*
-OurMemCopyReversed(void* dst, const void* src, uintsize size)
+MemCopyReversed(void* dst, const void* src, uintsize size)
 {
 	uint8* d = dst;
 	const uint8* s = src;
@@ -46,7 +46,7 @@ OurMemCopyReversed(void* dst, const void* src, uintsize size)
 }
 
 internal inline void*
-OurMemSet(void* restrict dst, uint8 byte, uintsize size)
+MemSet(void* restrict dst, uint8 byte, uintsize size)
 {
 #if defined(__clang__) || defined(__GNUC__)
 	void* d = dst;
@@ -135,12 +135,12 @@ SimpleHashNullTerminated(const char* str)
 }
 
 internal String
-SliceString(String str, uintsize offset)
+SliceString(String str, uintsize offset, intsize count /* = -1 for str.size*/)
 {
-	str.data += offset;
-	str.size -= offset;
+	if (count < 0)
+		count = str.size - offset;
 	
-	return str;
+	return StrMake(str.data + offset, count);
 }
 
 internal String
@@ -165,22 +165,8 @@ MatchCString(const char* a, String cmp)
 }
 
 internal inline int32
-CompareStringFast(String a, String b)
-{
-	if (a.size != b.size)
-		return (int32)a.size - (int32)b.size;
-	
-	return memcmp(a.data, b.data, a.size);
-}
-
-internal int32
 CompareString(String a, String b)
 {
-	Trace();
-	
-	a = IgnoreNullTerminator(a);
-	b = IgnoreNullTerminator(b);
-	
 	if (a.size != b.size)
 		return (int32)a.size - (int32)b.size;
 	
@@ -246,7 +232,7 @@ StringLastChar(String str, char ch)
 internal void
 StringParsePath(String path, String* out_dir, String* out_filename, String* out_fileext)
 {
-	
+	// TODO(ljre)
 }
 
 internal uintsize

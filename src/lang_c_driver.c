@@ -58,7 +58,7 @@ C_DefaultDriver(int32 argc, const char** argv)
 	
 	//~ NOTE(ljre): Setup system include directory
 	{
-		static const char include[] = "_include-ming/";
+		static const char include[] = "_include-mingw/";
 		//static const char include[] = "include/";
 		
 		int32 last_slash_index = -1;

@@ -151,47 +151,30 @@ C_NodeWarning(C_Context* ctx, C_Node* node_, C_Warning warning, const char* fmt,
 	va_end(args);
 }
 
-internal C_SymbolScope*
+internal void
 C_PushSymbolScope(C_Context* ctx)
 {
-	C_SymbolScope* scope = Arena_Push(ctx->persistent_arena, sizeof(*scope));
+	C_Typedefed* newone = Arena_Push(ctx->stage_arena, sizeof(*newone));
 	
-	if (ctx->previous_scope)
-	{
-		ctx->previous_scope->next = scope;
-		ctx->previous_scope = NULL;
-		ctx->scope->down = scope;
-	}
-	
-	scope->up = ctx->scope;
-	ctx->scope = scope;
-	
-	return scope;
+	newone->up = ctx->typedefed;
+	ctx->typedefed = newone;
 }
 
 internal void
 C_PopSymbolScope(C_Context* ctx)
 {
-	ctx->previous_scope = ctx->scope;
-	ctx->scope = ctx->scope->up;
+	ctx->typedefed = ctx->typedefed->up;
 }
 
 internal void
 C_TypedefDecl(C_Context* ctx, C_AstDecl* decl)
 {
-	C_Symbol* sym = Arena_Push(ctx->persistent_arena, sizeof(*sym));
 	String name = decl->name;
 	
-	sym->kind = C_SymbolKind_Typename;
-	sym->decl = decl;
-	sym->name = name;
+	if (!ctx->typedefed->data)
+		ctx->typedefed->data = Map_Create(ctx->persistent_arena, 128);
 	
-	decl->h.symbol = sym;
-	
-	if (!ctx->scope->types)
-		ctx->scope->types = Map_Create(ctx->persistent_arena, 128);
-	
-	Map_Insert(ctx->scope->types, name, sym);
+	Map_Insert(ctx->typedefed->data, name, (void*)1);
 }
 
 internal bool32
@@ -205,11 +188,12 @@ C_IsBeginningOfDeclOrType(C_Context* ctx)
 		{
 			String ident = ctx->token->value_ident;
 			uint64 hash = SimpleHash(ident);
-			C_SymbolScope* scope = ctx->scope;
+			
+			C_Typedefed* scope = ctx->typedefed;
 			
 			while (scope)
 			{
-				if (scope->types && Map_FetchWithHash(scope->types, ident, hash))
+				if (scope->data && Map_FetchWithHash(scope->data, ident, hash))
 					return true;
 				
 				scope = scope->up;
@@ -1244,7 +1228,7 @@ C_ParseBlock(C_Context* ctx, C_Node** out_last)
 	}
 	else if (ctx->token->kind)
 	{
-		result->compound.scope = C_PushSymbolScope(ctx);
+		C_PushSymbolScope(ctx);
 		result->compound.stmts = C_ParseStmt(ctx, (void*)&last, true);
 		
 		while (ctx->token->kind && !C_StreamTryEatToken(ctx, C_TokenKind_RightCurl))
@@ -2042,12 +2026,6 @@ C_ParseFile(C_Context* ctx)
 	C_StreamDealWithPragmaToken(ctx);
 	
 	C_PushSymbolScope(ctx);
-	
-	ctx->scope->names = Map_Create(ctx->persistent_arena, 1 << 14);
-	ctx->scope->types = Map_Create(ctx->persistent_arena, 1 << 14);
-	ctx->scope->structs = Map_Create(ctx->persistent_arena, 1 << 13);
-	ctx->scope->unions = Map_Create(ctx->persistent_arena, 1 << 13);
-	ctx->scope->enums = Map_Create(ctx->persistent_arena, 1 << 13);
 	
 	while (ctx->token->kind == C_TokenKind_Semicolon)
 		C_StreamNextToken(ctx);

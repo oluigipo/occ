@@ -129,7 +129,6 @@ C_FlushWarnings(C_Context* ctx)
 #include "lang_c_lexer.c"
 #include "lang_c_preprocessor.c"
 #include "lang_c_parser.c"
-#include "lang_c_analyzer.c"
 #include "lang_c_gen.c"
 
 struct C_ThreadWork
@@ -196,7 +195,7 @@ C_ThreadDoWork(C_ThreadWork* work)
 			
 			if (ctx->output_file.size > 0)
 			{
-				if (!OS_WriteWholeFile(Arena_NullTerminateString(ctx->stage_arena, ctx->output_file), ctx->pre_source, OurStrLen(ctx->pre_source), ctx->stage_arena))
+				if (!OS_WriteWholeFile(ctx->output_file, ctx->pre_source, OurStrLen(ctx->pre_source), ctx->stage_arena))
 				{
 					Print("error: could not open output file.\n");
 					++ctx->error_count;

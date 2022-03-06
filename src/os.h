@@ -23,8 +23,8 @@ internal void OS_Exit(int32 code);
 
 internal uint64 OS_Time(void);
 internal uintsize OS_GetMyPath(Arena* arena);
-internal uintsize OS_ReadWholeFile(const char* path, Arena* arena);
-internal bool32 OS_WriteWholeFile(const char* path, const void* data, uintsize size, Arena* scratch_arena);
+internal uintsize OS_ReadWholeFile(String path, Arena* arena);
+internal bool32 OS_WriteWholeFile(String path, const void* data, uintsize size, Arena* scratch_arena);
 internal void OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE], Arena* scratch_arena);
 internal void* OS_ReserveMemory(uintsize size);
 internal void* OS_CommitMemory(void* ptr, uintsize size);
@@ -252,7 +252,7 @@ OS_GetMyPath(Arena* arena)
 	char* path = Arena_PushDirtyAligned(arena, path_len, 1);
 	WideCharToMultiByte(CP_UTF8, 0, wpath, -1, path, path_len, NULL, NULL);
 	
-	OurMemCopy(arena_end, path, path_len);
+	MemCopy(arena_end, path, path_len);
 	Arena_Pop(arena, arena_end + path_len);
 	
 	path = arena_end;
@@ -273,17 +273,18 @@ OS_GetMyPath(Arena* arena)
 }
 
 internal uintsize
-OS_ReadWholeFile(const char* path, Arena* arena)
+OS_ReadWholeFile(String path, Arena* arena)
 {
 	TraceName(StrFrom(path));
 	char* arena_end = Arena_End(arena);
 	
-	int32 wpath_len = MultiByteToWideChar(CP_UTF8, 0, path, -1, NULL, 0);
+	int32 wpath_len = MultiByteToWideChar(CP_UTF8, 0, path.data, path.size, NULL, 0) + 1;
 	if (wpath_len <= 0)
 		return 0;
 	
 	wchar_t* wpath = Arena_PushDirtyAligned(arena, wpath_len * sizeof(*wpath), 2);
-	MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, wpath_len);
+	MultiByteToWideChar(CP_UTF8, 0, path.data, path.size, wpath, wpath_len);
+	wpath[wpath_len-1] = 0;
 	
 	HANDLE file = CreateFileW(wpath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
 	if (file == INVALID_HANDLE_VALUE)
@@ -322,24 +323,25 @@ OS_ReadWholeFile(const char* path, Arena* arena)
 	
 	p[0] = 0; // null terminated
 	
-	OurMemCopy(arena_end, file_data, file_size + 1);
+	MemCopy(arena_end, file_data, file_size + 1);
 	Arena_Pop(arena, arena_end + file_size + 1);
 	
 	return file_size;
 }
 
 internal bool32
-OS_WriteWholeFile(const char* path, const void* data, uintsize size, Arena* scratch_arena)
+OS_WriteWholeFile(String path, const void* data, uintsize size, Arena* scratch_arena)
 {
 	TraceName(StrFrom(path));
 	char* arena_end = Arena_End(scratch_arena);
 	
-	int32 wpath_len = MultiByteToWideChar(CP_UTF8, 0, path, -1, NULL, 0);
+	int32 wpath_len = MultiByteToWideChar(CP_UTF8, 0, path.data, path.size, NULL, 0) + 1;
 	if (wpath_len <= 0)
 		return false;
 	
 	wchar_t* wpath = Arena_PushDirtyAligned(scratch_arena, wpath_len * sizeof(*wpath), 2);
-	MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, wpath_len);
+	MultiByteToWideChar(CP_UTF8, 0, path.data, path.size, wpath, wpath_len);
+	wpath[wpath_len-1] = 0;
 	
 	bool32 result = true;
 	DWORD bytes_written = 0;

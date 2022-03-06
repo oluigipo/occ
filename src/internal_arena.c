@@ -46,6 +46,8 @@ Arena_CommitAtLeast(Arena* arena, uintsize desired_offset)
 internal void*
 Arena_PushDirtyAligned(Arena* arena, uintsize size, uintsize alignment)
 {
+	//Trace();
+	
 	arena->offset = AlignUp(arena->offset, alignment-1);
 	
 	void* ptr = arena->memory + arena->offset;
@@ -105,7 +107,7 @@ Arena_NullTerminateString(Arena* arena, String str)
 		return str.data;
 	
 	char* mem = Arena_PushDirtyAligned(arena, str.size+1, 1);
-	OurMemCopy(mem, str.data, str.size);
+	MemCopy(mem, str.data, str.size);
 	mem[str.size] = 0;
 	
 	return mem;
@@ -159,7 +161,7 @@ Arena_End(Arena* arena)
 
 internal inline void*
 Arena_PushMemory(Arena* arena, uintsize size, const void* data)
-{ return OurMemCopy(Arena_PushDirtyAligned(arena, size, 1), data, size); }
+{ return MemCopy(Arena_PushDirtyAligned(arena, size, 1), data, size); }
 
 internal void
 Arena_Destroy(Arena* arena)
@@ -170,8 +172,15 @@ internal inline void* Arena_PushDirty(Arena* arena, uintsize size)
 
 internal void*
 Arena_PushAligned(Arena* arena, uintsize size, uintsize alignment)
-{ return OurMemSet(Arena_PushDirtyAligned(arena, size, alignment), 0, size); }
+{ return MemSet(Arena_PushDirtyAligned(arena, size, alignment), 0, size); }
 
 internal inline void*
 Arena_Push(Arena* arena, uintsize size)
-{ return OurMemSet(Arena_PushDirtyAligned(arena, size, 8), 0, size); }
+{ return MemSet(Arena_PushDirtyAligned(arena, size, 8), 0, size); }
+
+internal inline String
+Arena_PushString(Arena* arena, String str)
+{
+	char* mem = Arena_PushMemory(arena, str.size, str.data);
+	return StrMake(mem, str.size);
+}

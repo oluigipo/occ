@@ -23,6 +23,13 @@ struct Map
 	Map_Entry entries[];
 };
 
+struct InternedString
+{
+	uintsize size;
+	char data[];
+}
+typedef InternedString;
+
 internal inline bool32
 Map_IsEntryDead_(const Map_Entry* entry)
 { return entry->hash == UINT64_MAX && entry->value == NULL; }
@@ -72,7 +79,7 @@ Map_InsertWithHash(Map* map, String key, void* value, uint64 hash)
 	
 	while ((index+1 & map->cap-1) != start_index)
 	{
-		if (map->entries[index].hash == hash && CompareStringFast(key, map->entries[index].key) == 0)
+		if (map->entries[index].hash == hash && CompareString(key, map->entries[index].key) == 0)
 			Unreachable();
 		
 		if (!map->entries[index].value)
@@ -107,7 +114,7 @@ Map_FetchWithHash(const Map* map, String key, uint64 hash)
 		{
 			if (map->entries[index].hash == hash)
 			{
-				if (CompareStringFast(map->entries[index].key, key) == 0)
+				if (CompareString(map->entries[index].key, key) == 0)
 					return map->entries[index].value;
 				else
 					continue;
@@ -139,7 +146,7 @@ Map_RemoveWithHash(Map* map, String key, uint64 hash)
 		{
 			if (map->entries[index].hash == hash)
 			{
-				if (CompareStringFast(map->entries[index].key, key) == 0)
+				if (CompareString(map->entries[index].key, key) == 0)
 				{
 					map->entries[index].value = NULL;
 					map->entries[index].hash = UINT64_MAX;
@@ -171,6 +178,25 @@ Map_Fetch(const Map* map, String key)
 internal inline bool32
 Map_Remove(Map* map, String key)
 { return Map_RemoveWithHash(map, key, SimpleHash(key)); }
+
+internal InternedString*
+Map_InternString(Map* map, String str)
+{
+	uint64 hash = SimpleHash(str);
+	InternedString* result = Map_FetchWithHash(map, str, hash);
+	
+	if (!result)
+	{
+		result = Arena_Push(map->arena, sizeof(InternedString) + str.size);
+		
+		result->size = str.size;
+		MemCopy(result->data, str.data, str.size);
+		
+		Map_InsertWithHash(map, StrMake(result->data, result->size), result, hash);
+	}
+	
+	return result;
+}
 
 struct Map_Iterator
 {

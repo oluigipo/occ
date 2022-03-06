@@ -87,12 +87,13 @@ C_LoadFileFromDisk(C_Context* ctx, char* path, uint64 calculated_hash, bool32 re
 	Arena* arena = (ctx->tokens) ? ctx->persistent_arena : ctx->stage_arena;
 	
 	const char* contents = Arena_End(arena);
-	uintsize len = OS_ReadWholeFile(path, arena);
+	uintsize path_len = strlen(path);
+	
+	uintsize len = OS_ReadWholeFile(StrMake(path, path_len), arena);
 	C_Preprocessor* const pp = &ctx->pp;
 	
 	if (len)
 	{
-		uintsize path_len = strlen(path);
 		C_PPLoadedFile* file;
 		
 		if (pp->loaded_files)
@@ -736,7 +737,7 @@ C_ExpandMacro(C_Context* ctx, C_Macro* macro, C_Lexer* parent_lex, String leadin
 					C_NextToken(lex);
 					
 					uintsize len = tok.as_string.size + other_tok.as_string.size + 1;
-					char* buf = Arena_Push(ctx->stage_arena, len);
+					char* buf = Arena_PushDirtyAligned(ctx->stage_arena, len, 1);
 					
 					OurMemCopy(buf, tok.as_string.data, tok.as_string.size);
 					OurMemCopy(buf + tok.as_string.size, other_tok.as_string.data, other_tok.as_string.size);
