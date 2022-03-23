@@ -275,7 +275,7 @@ OS_GetMyPath(Arena* arena)
 internal uintsize
 OS_ReadWholeFile(String path, Arena* arena)
 {
-	TraceName(StrFrom(path));
+	TraceName(path);
 	char* arena_end = Arena_End(arena);
 	
 	int32 wpath_len = MultiByteToWideChar(CP_UTF8, 0, path.data, path.size, NULL, 0) + 1;
@@ -332,7 +332,7 @@ OS_ReadWholeFile(String path, Arena* arena)
 internal bool32
 OS_WriteWholeFile(String path, const void* data, uintsize size, Arena* scratch_arena)
 {
-	TraceName(StrFrom(path));
+	TraceName(path);
 	char* arena_end = Arena_End(scratch_arena);
 	
 	int32 wpath_len = MultiByteToWideChar(CP_UTF8, 0, path.data, path.size, NULL, 0) + 1;

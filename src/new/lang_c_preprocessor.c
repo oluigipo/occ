@@ -41,16 +41,17 @@ C_PushTokenRangeToQueue(Arena* arena, const C_Token* first, const C_Token* end, 
 }
 
 internal inline C_TokenQueue**
-C_PushTokenFromMacroToQueue(Arena* arena, const C_Token* first, const C_Token* end, C_TokenQueue** queue, C_SourceTrace* invocation, C_Macro* macro_def)
+C_PushTokenFromMacroToQueue(C_Context* ctx, const C_Token* first, const C_Token* end, C_TokenQueue** queue, C_SourceTrace* invocation, C_Macro* macro_def)
 {
 	for (; first < end; ++first)
 	{
 		C_Token tok = *first;
 		
+		tok.trace.file = macro_def->file;
 		tok.trace.invocation = invocation;
 		tok.trace.macro_def = macro_def;
 		
-		queue = C_PushTokenToQueue(arena, &tok, queue);
+		queue = C_PushTokenToQueue(ctx->scratch_arena, &tok, queue);
 	}
 	
 	return queue;
@@ -121,10 +122,11 @@ C_TryToLoadFile(C_Context* ctx, C_Preprocessor* pp, String path, bool relative, 
 		}
 		
 		String fullpath_str = StrFrom(fullpath);
+		uint64 hash = SimpleHash(fullpath_str);
 		
 		// NOTE(ljre): Try to load from cache.
 		{
-			C_PpLoadedFile* file = Map_Fetch(pp->loaded_files, fullpath_str);
+			C_PpLoadedFile* file = Map_FetchWithHash(pp->loaded_files, fullpath_str, hash);
 			
 			if (file)
 				return file;
@@ -143,11 +145,13 @@ C_TryToLoadFile(C_Context* ctx, C_Preprocessor* pp, String path, bool relative, 
 			file->relative = true;
 			file->pragma_onced = false;
 			
+			Map_InsertWithHash(pp->loaded_files, fullpath_str, file, hash);
+			
 			return file;
 		}
 	}
 	
-	for (uintsize i = 0; i < ctx->options->include_dirs_count; ++i)
+	for (int32 i = ctx->options->include_dirs_count - 1; i >= 0 ; --i)
 	{
 		String include_dir = ctx->options->include_dirs[i];
 		
@@ -157,10 +161,11 @@ C_TryToLoadFile(C_Context* ctx, C_Preprocessor* pp, String path, bool relative, 
 		OS_ResolveFullPath(StrMake(fullpath, include_dir.size + path.size), fullpath, ctx->scratch_arena);
 		
 		String fullpath_str = StrFrom(fullpath);
+		uint64 hash = SimpleHash(fullpath_str);
 		
 		// NOTE(ljre): Try to load from cache.
 		{
-			C_PpLoadedFile* file = Map_Fetch(pp->loaded_files, fullpath_str);
+			C_PpLoadedFile* file = Map_FetchWithHash(pp->loaded_files, fullpath_str, hash);
 			
 			if (file)
 				return file;
@@ -178,6 +183,8 @@ C_TryToLoadFile(C_Context* ctx, C_Preprocessor* pp, String path, bool relative, 
 			file->contents = file_data;
 			file->relative = true;
 			file->pragma_onced = false;
+			
+			Map_InsertWithHash(pp->loaded_files, fullpath_str, file, hash);
 			
 			return file;
 		}
@@ -198,7 +205,7 @@ C_PragmaOnceFile(C_Context* ctx, C_Preprocessor* pp, String fullpath)
 
 //~ NOTE(ljre): Macro management.
 internal C_Macro*
-C_DefineMacro(C_Context* ctx, C_Preprocessor* pp, C_TokenReader* rd)
+C_ParseMacroDefinition(C_Context* ctx, C_Preprocessor* pp, C_TokenReader* rd, uint64* out_hash, bool* out_is_func_like)
 {
 	Assert(rd->head->kind == C_TokenKind_Identifier);
 	Assert(!rd->queue);
@@ -217,7 +224,7 @@ C_DefineMacro(C_Context* ctx, C_Preprocessor* pp, C_TokenReader* rd)
 	// NOTE(ljre): Parse function-like macro.
 	C_Token* peeking = C_PeekToken(rd);
 	
-	if (peeking->leading_spaces == 0 && peeking->kind == C_TokenKind_LeftParen)
+	if (peeking && peeking->leading_spaces == 0 && peeking->kind == C_TokenKind_LeftParen)
 	{
 		C_NextToken(rd);
 		C_NextToken(rd);
@@ -251,10 +258,10 @@ C_DefineMacro(C_Context* ctx, C_Preprocessor* pp, C_TokenReader* rd)
 	while (rd->head && rd->head->kind != C_TokenKind_NewLine)
 		C_NextToken(rd);
 	
-	macro->tokens.size = rd->head - macro->tokens.data;
-	
-	// NOTE(ljre): Ignore newline at the end
-	//macro->tokens.size -= (rd->head->kind == C_TokenKind_NewLine);
+	if (rd->head)
+		macro->tokens.size = rd->head - macro->tokens.data;
+	else
+		macro->tokens.size = rd->slice_end - macro->tokens.data;
 	
 #ifndef NDEBUG
 	{
@@ -269,6 +276,25 @@ C_DefineMacro(C_Context* ctx, C_Preprocessor* pp, C_TokenReader* rd)
 	}
 #endif
 	
+	*out_hash = hash;
+	*out_is_func_like = is_func_like;
+	
+	return macro;
+}
+
+internal C_Macro*
+C_DefineMacro(C_Context* ctx, C_Preprocessor* pp, C_TokenReader* rd)
+{
+	Assert(rd->head->kind == C_TokenKind_Identifier);
+	Assert(!rd->queue);
+	
+	if (pp->predefined_macros && Map_Fetch(pp->predefined_macros, rd->head->as_string))
+		return NULL;
+	
+	uint64 hash;
+	bool is_func_like;
+	C_Macro* macro = C_ParseMacroDefinition(ctx, pp, rd, &hash, &is_func_like);
+	
 	// NOTE(ljre): If this is a redefinition, check if both are exactly the same.
 	C_Macro* other_macro = Map_FetchWithHash(pp->func_macros, macro->name, hash);
 	if (!other_macro)
@@ -276,8 +302,8 @@ C_DefineMacro(C_Context* ctx, C_Preprocessor* pp, C_TokenReader* rd)
 	
 	if (other_macro)
 	{
-		bool equal = (other_macro->param_count != macro->param_count ||
-					  other_macro->tokens.size != macro->tokens.size);
+		bool equal = (other_macro->param_count == macro->param_count ||
+					  other_macro->tokens.size == macro->tokens.size);
 		
 		if (equal)
 		{
@@ -303,7 +329,10 @@ C_DefineMacro(C_Context* ctx, C_Preprocessor* pp, C_TokenReader* rd)
 		if (!equal)
 			C_TraceErrorRd(ctx, rd, "incompatible redefinition of macro.");
 		
-		Map_RemoveWithHash(pp->func_macros, macro->name, hash);
+		if (other_macro->param_count >= 0)
+			Map_RemoveWithHash(pp->func_macros, macro->name, hash);
+		else
+			Map_RemoveWithHash(pp->obj_macros, macro->name, hash);
 	}
 	
 	// NOTE(ljre): Add macro to map.
@@ -313,6 +342,32 @@ C_DefineMacro(C_Context* ctx, C_Preprocessor* pp, C_TokenReader* rd)
 		Map_InsertWithHash(pp->obj_macros, macro->name, macro, hash);
 	
 	return macro;
+}
+
+internal void
+C_PredefineBuiltinMacros(C_Context* ctx, C_Preprocessor* pp)
+{
+	const char* defs[] = {
+		"__LINE__",
+		"__FILE__",
+	};
+	
+	for (int32 i = 0; i < ArrayLength(defs); ++i)
+	{
+		C_TokenSlice slice = C_Tokenize(ctx, ctx->array_arena, defs[i], &(C_SourceTrace) { 0 });
+		C_TokenReader rd = {
+			.slice_head = slice.data,
+			.slice_end = slice.data + slice.size,
+		};
+		
+		C_NextToken(&rd);
+		
+		bool is_func_like;
+		uint64 hash;
+		C_Macro* macro = C_ParseMacroDefinition(ctx, pp, &rd, &hash, &is_func_like);
+		
+		Map_InsertWithHash(pp->predefined_macros, macro->name, macro, hash);
+	}
 }
 
 internal void
@@ -329,10 +384,12 @@ C_FindMacro(C_Context* ctx, C_Preprocessor* pp, String name, bool obj_like_only)
 {
 	TraceName(name);
 	
-	C_Macro* result = NULL;
 	uint64 hash = SimpleHash(name);
+	C_Macro* result = Map_FetchWithHash(pp->predefined_macros, name, hash);
 	
-	if (!obj_like_only)
+	if (result && result->param_count >= 0 && obj_like_only)
+		result = NULL;
+	if (!result && !obj_like_only)
 		result = Map_FetchWithHash(pp->func_macros, name, hash);
 	if (!result)
 		result = Map_FetchWithHash(pp->obj_macros, name, hash);
@@ -352,6 +409,15 @@ C_WasExpandedByMacro(C_Macro* macro, C_SourceTrace* trace)
 	return false;
 }
 
+struct C_MacroParameter
+{
+	String name;
+	
+	C_Token* tokens;
+	C_Token* end;
+}
+typedef C_MacroParameter;
+
 internal void
 C_ExpandMacro(C_Context* ctx, C_Preprocessor* pp, C_Macro* macro, C_TokenReader* up_rd)
 {
@@ -363,8 +429,29 @@ C_ExpandMacro(C_Context* ctx, C_Preprocessor* pp, C_Macro* macro, C_TokenReader*
 	uint32 invocation_leading_spaces = up_rd->head->leading_spaces;
 	C_TokenQueue* saved_up_rd_queue = up_rd->queue;
 	
-	if (macro->param_count < 0)
+	if (MatchCString("__LINE__", macro->name))
 	{
+		C_Token tmp = {
+			.kind = C_TokenKind_IntLiteral,
+			.as_string = Arena_SPrintf(ctx->tree_arena, "%u", invocation_trace->line + 1),
+			.trace = *invocation_trace,
+		};
+		
+		C_PushTokenToQueue(ctx->tree_arena, &tmp, &up_rd->queue);
+	}
+	else if (MatchCString("__FILE__", macro->name))
+	{
+		C_Token tmp = {
+			.kind = C_TokenKind_StringLiteral,
+			.as_string = Arena_SPrintf(ctx->tree_arena, "\"%S\"", invocation_trace->file->path),
+			.trace = *invocation_trace,
+		};
+		
+		C_PushTokenToQueue(ctx->tree_arena, &tmp, &up_rd->queue);
+	}
+	else if (macro->param_count < 0)
+	{
+		//- NOTE(ljre): This is an object-like macro.
 		C_Token* mhead = macro->tokens.data + 1; // NOTE(ljre): Ignore macro name
 		C_Token* mend = macro->tokens.data + macro->tokens.size;
 		
@@ -373,6 +460,7 @@ C_ExpandMacro(C_Context* ctx, C_Preprocessor* pp, C_Macro* macro, C_TokenReader*
 		{
 			C_Token tmp = *mhead;
 			
+			tmp.trace.file = macro->file;
 			tmp.trace.invocation = invocation_trace;
 			tmp.trace.macro_def = macro;
 			
@@ -381,28 +469,22 @@ C_ExpandMacro(C_Context* ctx, C_Preprocessor* pp, C_Macro* macro, C_TokenReader*
 	}
 	else
 	{
-		struct Parameter
-		{
-			String name;
-			
-			C_Token* tokens;
-			C_Token* end;
-		};
-		
-		struct Parameter* params = (macro->param_count > 0) ? Arena_Push(ctx->scratch_arena, macro->param_count * sizeof(*params)) : NULL;
+		//- NOTE(ljre): This is a function-like macro.
+		C_MacroParameter* params = (macro->param_count > 0) ? Arena_Push(ctx->scratch_arena, macro->param_count * sizeof(*params)) : NULL;
 		
 		C_Token* mhead = macro->tokens.data;
 		C_Token* mend = macro->tokens.data + macro->tokens.size;
 		
-		C_NextToken(up_rd); // NOTE(ljre): Consume macro name
-		C_NextToken(up_rd); // NOTE(ljre): Consume '('
+		C_EatToken(ctx, up_rd, C_TokenKind_Identifier); // NOTE(ljre): Consume macro name
+		C_EatToken(ctx, up_rd, C_TokenKind_LeftParen); // NOTE(ljre): Consume '('
 		
 		mhead += 2; // same as above
 		
+		//- NOTE(ljre): Read parameters
 		for (int32 param_index = 0; param_index < macro->param_count; ++param_index)
 		{
 			Assert(mhead->kind != C_TokenKind_RightParen);
-			bool is_last_arg = (param_index + 1 < macro->param_count);
+			bool is_last_arg = (param_index + 1 >= macro->param_count);
 			
 			if (up_rd->head->kind == C_TokenKind_RightParen)
 			{
@@ -481,12 +563,13 @@ C_ExpandMacro(C_Context* ctx, C_Preprocessor* pp, C_Macro* macro, C_TokenReader*
 				params[param_index].end = tok;
 			}
 			
-			mhead += 1 + is_last_arg;
+			mhead += 1 + !is_last_arg;
 			
-			if (is_last_arg)
+			if (!is_last_arg)
 				C_TryToEatToken(up_rd, C_TokenKind_Comma);
 		}
 		
+		//- NOTE(ljre): Check for end of arguments list.
 		if (up_rd->head->kind == C_TokenKind_Comma)
 		{
 			C_TraceWarningRd(ctx, up_rd, C_Warning_ExcessiveMacroArguments, "excessive macro arguments (expected only %i).", macro->param_count);
@@ -520,6 +603,7 @@ C_ExpandMacro(C_Context* ctx, C_Preprocessor* pp, C_Macro* macro, C_TokenReader*
 			//C_NextToken(up_rd);
 		}
 		
+		//- NOTE(ljre): Expand tokens.
 		C_TokenReader rd = {
 			.queue = NULL,
 			.slice_head = mhead,
@@ -543,7 +627,7 @@ C_ExpandMacro(C_Context* ctx, C_Preprocessor* pp, C_Macro* macro, C_TokenReader*
 					if (!rd.head || rd.head->kind != C_TokenKind_Identifier)
 						C_TraceErrorRd(ctx, &rd, "expected macro parameter for stringification.");
 					
-					struct Parameter* param = NULL;
+					C_MacroParameter* param = NULL;
 					
 					for (int32 i = 0; i < macro->param_count; ++i)
 					{
@@ -572,8 +656,25 @@ C_ExpandMacro(C_Context* ctx, C_Preprocessor* pp, C_Macro* macro, C_TokenReader*
 							token.as_string = StrMake(buf, (char*)Arena_End(ctx->tree_arena) - buf);
 						}
 						
-						token.trace.invocation = invocation_trace;
-						token.trace.macro_def = macro;
+						if (param->tokens < param->end && param->tokens[0].trace.invocation)
+						{
+							C_SourceTrace* trace = Arena_Push(ctx->tree_arena, sizeof(*trace));
+							*trace = token.trace;
+							
+							trace->file = param->tokens[0].trace.file;
+							trace->invocation = param->tokens[0].trace.invocation;
+							trace->macro_def = param->tokens[0].trace.macro_def;
+							
+							token.trace.file = macro->file;
+							token.trace.invocation = trace;
+							token.trace.macro_def = macro;
+						}
+						else
+						{
+							token.trace.file = macro->file;
+							token.trace.invocation = invocation_trace;
+							token.trace.macro_def = macro;
+						}
 						
 						parent_queue = C_PushTokenToQueue(ctx->scratch_arena, &token, parent_queue);
 						C_NextToken(&rd);
@@ -587,7 +688,7 @@ C_ExpandMacro(C_Context* ctx, C_Preprocessor* pp, C_Macro* macro, C_TokenReader*
 					
 					if (!from_parameter)
 					{
-						struct Parameter* param = NULL;
+						C_MacroParameter* param = NULL;
 						
 						for (int32 i = 0; i < macro->param_count; ++i)
 						{
@@ -600,7 +701,7 @@ C_ExpandMacro(C_Context* ctx, C_Preprocessor* pp, C_Macro* macro, C_TokenReader*
 						
 						if (param)
 						{
-							C_PushTokenFromMacroToQueue(ctx->scratch_arena, param->tokens, param->end, &rd.queue, invocation_trace, macro);
+							C_PushTokenFromMacroToQueue(ctx, param->tokens, param->end, &rd.queue, invocation_trace, macro);
 							C_NextToken(&rd);
 							break;
 						}
@@ -614,12 +715,22 @@ C_ExpandMacro(C_Context* ctx, C_Preprocessor* pp, C_Macro* macro, C_TokenReader*
 					
 					if (incoming->kind == C_TokenKind_DoubleHashtag)
 					{
+						// TODO(ljre): Tokens being generated from ## concatenation don't seem to have
+						//             correct invocation trace. Feeling like this come from parameter
+						//             expansion though.
+						
 						C_NextToken(&rd); // Eat left side
+						C_SourceTrace hh_trace = rd.head->trace;
 						C_NextToken(&rd); // Eat ##
+						
+						if (!rd.head)
+						{
+							// TODO(ljre): handle case where ## is followed by no token :clown:
+						}
 						
 						if (rd.head->kind == C_TokenKind_Identifier)
 						{
-							struct Parameter* param = NULL;
+							C_MacroParameter* param = NULL;
 							
 							for (int32 i = 0; i < macro->param_count; ++i)
 							{
@@ -632,7 +743,7 @@ C_ExpandMacro(C_Context* ctx, C_Preprocessor* pp, C_Macro* macro, C_TokenReader*
 							
 							if (param)
 							{
-								C_PushTokenFromMacroToQueue(ctx->scratch_arena, param->tokens, param->end, &rd.queue, invocation_trace, macro);
+								C_PushTokenFromMacroToQueue(ctx, param->tokens, param->end, &rd.queue, invocation_trace, macro);
 								C_NextToken(&rd);
 							}
 						}
@@ -647,9 +758,16 @@ C_ExpandMacro(C_Context* ctx, C_Preprocessor* pp, C_Macro* macro, C_TokenReader*
 						MemCopy(buf + tok->as_string.size, other_tok->as_string.data, other_tok->as_string.size);
 						buf[total_size-1] = 0;
 						
-						C_TokenSlice slice = C_Tokenize(ctx, ctx->scratch_arena, buf, &tok->trace);
+						C_SourceTrace* inv_trace = Arena_Push(ctx->tree_arena, sizeof(*inv_trace));
+						*inv_trace = tok->trace;
 						
-						parent_queue = C_PushTokenFromMacroToQueue(ctx->scratch_arena, slice.data, slice.data + slice.size, parent_queue, invocation_trace, macro);
+						hh_trace.file = macro->file;
+						hh_trace.invocation = inv_trace;
+						hh_trace.macro_def = macro;
+						
+						C_TokenSlice slice = C_Tokenize(ctx, ctx->scratch_arena, buf, &hh_trace);
+						
+						parent_queue = C_PushTokenFromMacroToQueue(ctx, slice.data, slice.data + slice.size, parent_queue, invocation_trace, macro);
 						
 						C_NextToken(&rd);
 						
@@ -677,6 +795,7 @@ C_ExpandMacro(C_Context* ctx, C_Preprocessor* pp, C_Macro* macro, C_TokenReader*
 						{
 							C_Token tmp = *tok;
 							
+							tmp.trace.file = macro->file;
 							tmp.trace.invocation = invocation_trace;
 							tmp.trace.macro_def = macro;
 							
@@ -686,12 +805,12 @@ C_ExpandMacro(C_Context* ctx, C_Preprocessor* pp, C_Macro* macro, C_TokenReader*
 				} break;
 			}
 		}
+		
+		// NOTE(ljre): End of function-like macro :)
 	}
 	
 	if (up_rd->queue && saved_up_rd_queue != up_rd->queue)
-	{
 		up_rd->queue->token.leading_spaces = invocation_leading_spaces;
-	}
 	
 	// NOTE(ljre): Done!
 	C_NextToken(up_rd);
@@ -995,7 +1114,11 @@ C_PreprocessInclude(C_Context* ctx, C_Preprocessor* pp, C_TokenReader* rd, C_Sou
 		Unreachable();
 	}
 	
-	if (file)
+	if (!file)
+	{
+		C_TraceErrorRd(ctx, rd, "could not find file '%S' when including.", path);
+	}
+	else if (!file->pragma_onced)
 	{
 		C_SourceFileTrace* file_trace = Arena_Push(ctx->tree_arena, sizeof(*file_trace));
 		
@@ -1005,13 +1128,11 @@ C_PreprocessInclude(C_Context* ctx, C_Preprocessor* pp, C_TokenReader* rd, C_Sou
 		file_trace->is_system_file = file->is_system_file;
 		
 		if (!file->tokens.data)
-			file->tokens = C_Tokenize(ctx, ctx->tree_arena, file->contents, &(C_SourceTrace) { 0 });
+			file->tokens = C_Tokenize(ctx, ctx->tree_arena, file->contents, &(C_SourceTrace) {
+										  .file = file_trace,
+									  });
 		
 		C_PreprocessFile(ctx, pp, file->tokens, file_trace);
-	}
-	else
-	{
-		C_TraceErrorRd(ctx, rd, "could not find file '%S' when including.", path);
 	}
 }
 
@@ -1065,7 +1186,7 @@ C_IgnoreUntilEndIf(C_Context* ctx, C_Preprocessor* pp, C_TokenReader* rd, bool a
 			{
 				C_NextToken(rd);
 				
-				if (C_AssertToken(ctx, rd, C_TokenKind_Identifier))
+				if (rd->head->kind == C_TokenKind_Identifier)
 				{
 					String directive = rd->head->as_string;
 					bool not = false;
@@ -1170,9 +1291,7 @@ C_PreprocessFile(C_Context* ctx, C_Preprocessor* pp, C_TokenSlice input, C_Sourc
 			{
 				C_NextToken(&rd);
 				
-				if (rd.head->kind != C_TokenKind_Identifier)
-					C_TraceErrorRd(ctx, &rd, "expected directive name, but got '%S'.", StrFmt(rd.head->as_string));
-				else
+				if (rd.head && rd.head->kind == C_TokenKind_Identifier)
 				{
 					String ident = rd.head->as_string;
 					bool not = false;
@@ -1186,6 +1305,13 @@ C_PreprocessFile(C_Context* ctx, C_Preprocessor* pp, C_TokenSlice input, C_Sourc
 					{
 						C_NextToken(&rd);
 						C_PreprocessInclude(ctx, pp, &rd, file_trace);
+					}
+					else if (MatchCString("undef", ident))
+					{
+						C_NextToken(&rd);
+						
+						if (C_AssertToken(ctx, &rd, C_TokenKind_Identifier))
+							C_UndefineMacro(ctx, pp, rd.head->as_string);
 					}
 					else if (MatchCString("ifdef", ident) || (not = MatchCString("ifndef", ident)))
 					{
@@ -1215,6 +1341,13 @@ C_PreprocessFile(C_Context* ctx, C_Preprocessor* pp, C_TokenSlice input, C_Sourc
 					else if (MatchCString("error", ident))
 					{
 						
+					}
+					else if (MatchCString("pragma", ident))
+					{
+						C_NextToken(&rd);
+						
+						if (rd.head && MatchCString("once", rd.head->as_string) && file_trace->included_from)
+							C_PragmaOnceFile(ctx, pp, file_trace->path);
 					}
 					else
 					{
@@ -1246,29 +1379,49 @@ C_PreprocessFile(C_Context* ctx, C_Preprocessor* pp, C_TokenSlice input, C_Sourc
 internal C_TokenSlice
 C_Preprocess(C_Context* ctx, String file)
 {
-	Trace();
+	TraceName(file);
 	
-	C_Token* result;
+	//- NOTE(ljre): Read & Tokenize translation-unit.
+	C_SourceFileTrace* file_trace = Arena_Push(ctx->tree_arena, sizeof(*file_trace));
+	file_trace->path = file;
+	
+	const char* source = Arena_End(ctx->tree_arena);
+	OS_ReadWholeFile(file, ctx->tree_arena);
+	C_TokenSlice tokens = C_Tokenize(ctx, ctx->array_arena, source, &(C_SourceTrace) { .file = file_trace });
+	
+	//- NOTE(ljre): Preprocess it.
 	C_Preprocessor pp = {
 		.func_macros = Map_Create(ctx->tree_arena, 4096),
 		.obj_macros = Map_Create(ctx->tree_arena, 4096),
 		.loaded_files = Map_Create(ctx->tree_arena, 256),
+		.predefined_macros = Map_Create(ctx->tree_arena, 256),
 	};
 	
-	// NOTE(ljre): Do the thing
+	C_PredefineBuiltinMacros(ctx, &pp);
+	
+	for (int32 i = 0; i < ctx->options->predefined_macros_count; ++i)
 	{
-		C_SourceFileTrace* file_trace = Arena_Push(ctx->tree_arena, sizeof(*file_trace));
-		file_trace->path = file;
+		const char* cstr = ctx->options->predefined_macros[i];
 		
-		const char* source = Arena_End(ctx->tree_arena);
-		OS_ReadWholeFile(file, ctx->tree_arena);
-		C_TokenSlice tokens = C_Tokenize(ctx, ctx->tree_arena, source, &(C_SourceTrace) { .file = file_trace });
+		C_TokenSlice slice = C_Tokenize(ctx, ctx->array_arena, cstr, &(C_SourceTrace) { 0 });
+		C_TokenReader rd = {
+			.slice_head = slice.data,
+			.slice_end = slice.data + slice.size,
+		};
 		
-		result = Arena_Push(ctx->array_arena, sizeof(*pp.out));
-		pp.out = result;
+		C_NextToken(&rd);
 		
-		C_PreprocessFile(ctx, &pp, tokens, file_trace);
+		uint64 hash;
+		bool is_func_like;
+		C_Macro* macro = C_ParseMacroDefinition(ctx, &pp, &rd, &hash, &is_func_like);
+		
+		Map_InsertWithHash(pp.predefined_macros, macro->name, macro, hash);
 	}
+	
+	C_Token* result = Arena_Push(ctx->array_arena, sizeof(*result));
+	pp.out = result;
+	
+	C_PreprocessFile(ctx, &pp, tokens, file_trace);
 	
 	Arena_Clear(ctx->scratch_arena);
 	return (C_TokenSlice) { .size = pp.out - result, .data = result };
@@ -1290,6 +1443,7 @@ C_PrintTokensGnuStyle(C_Context* ctx, Arena* arena, C_TokenSlice tokens)
 			MemSet(buf, ' ', head->leading_spaces);
 		}
 		
+		Arena_Printf(arena, "# %u \"%S\"\n", head->trace.line + 1, StrFmt(head->trace.file->path));
 		Arena_PushMemory(arena, head->as_string.size, head->as_string.data);
 		
 		// NOTE(ljre): Now 'previous' is always a valid token. No need to check for NULL.

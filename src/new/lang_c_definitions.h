@@ -63,8 +63,9 @@ enum C_TokenKind
 	C_TokenKind_MsvcStdcall, // __stdcall
 	C_TokenKind_MsvcVectorcall, // __vectorcall
 	C_TokenKind_MsvcFastcall, // __fastcall
+	C_TokenKind_MsvcPragma, // __pragma
 	
-	C_TokenKind__LastKeyword = C_TokenKind_MsvcFastcall,
+	C_TokenKind__LastKeyword = C_TokenKind_MsvcPragma,
 	
 	//- NOTE(ljre): Rest
 	// NOTE(ljre): those 3 below shall be in order
@@ -133,10 +134,9 @@ enum C_TokenKind
 	C_TokenKind_AndAssign, // &=
 	C_TokenKind_OrAssign, // |=
 	C_TokenKind_XorAssign, // ^=
-	C_TokenKind_Hashtag, // #
-	C_TokenKind_HashtagPragma, // #pragma -- field .value_str will have pragma string
 	
-	// only used when 'C_Lexer.preprocessor' is true
+	C_TokenKind_Hashtag, // #
+	C_TokenKind_HashtagPragma, // #pragma
 	C_TokenKind_NewLine,
 	C_TokenKind_DoubleHashtag, // ##
 	
@@ -197,6 +197,7 @@ internal const char* C_token_str_table[C_TokenKind__Count] = {
 	[C_TokenKind_MsvcStdcall] = "__stdcall",
 	[C_TokenKind_MsvcVectorcall] = "__vectorcall",
 	[C_TokenKind_MsvcFastcall] = "__fastcall",
+	[C_TokenKind_MsvcPragma] = "__pragma",
 	
 	[C_TokenKind_IntLiteral] = "(int literal)",
 	[C_TokenKind_LIntLiteral] = "(long literal)",
@@ -208,6 +209,8 @@ internal const char* C_token_str_table[C_TokenKind__Count] = {
 	[C_TokenKind_WideStringLiteral] = "(const wchar_t[] literal)",
 	[C_TokenKind_FloatLiteral] = "(float literal)",
 	[C_TokenKind_DoubleLiteral] = "(double literal)",
+	[C_TokenKind_CharLiteral] = "(char literal)",
+	[C_TokenKind_UnclosedQuote] = "(unclosed quote)",
 	
 	[C_TokenKind_Identifier] = "(identifier)",
 	
@@ -261,6 +264,7 @@ internal const char* C_token_str_table[C_TokenKind__Count] = {
 	[C_TokenKind_NewLine] = "(EOL)",
 	[C_TokenKind_DoubleHashtag] = "##",
 	[C_TokenKind_Hashtag] = "#",
+	[C_TokenKind_HashtagPragma] = "#pragma",
 };
 
 struct C_OperatorPrecedence
@@ -331,6 +335,8 @@ struct C_SourceTrace
 	uint32 line, col;
 	C_SourceFileTrace* file;
 	
+	// NOTE(ljre): If 'invocation' is not NULL but 'macro_def' is, then 'invocation' came from a
+	//             parameter of 'invocation->macro_def'.
 	C_SourceTrace* invocation;
 	C_Macro* macro_def;
 };
@@ -386,7 +392,6 @@ struct C_Macro
 }
 typedef C_Macro;
 
-struct C_PpLoadedFile typedef C_PpLoadedFile;
 struct C_PpLoadedFile
 {
 	String fullpath;
@@ -396,18 +401,357 @@ struct C_PpLoadedFile
 	bool16 relative;
 	bool8 pragma_onced;
 	bool8 is_system_file;
-};
+}
+typedef C_PpLoadedFile;
 
 struct C_Preprocessor
 {
 	Map* func_macros;
 	Map* obj_macros;
+	Map* predefined_macros;
 	
 	Map* loaded_files;
 	
 	C_Token* out;
 }
 typedef C_Preprocessor;
+
+//~ NOTE(ljre): Parser
+enum C_AstKind
+{
+	C_AstKind_Null = 0,
+	C_AstKind__Category = 12,
+	C_AstKind__CategoryMask = ~((1<<C_AstKind__Category)-1),
+	C_AstKind__CategoryCount = 8,
+	
+	C_AstKind_Type = 1 << C_AstKind__Category,
+	C_AstKind_TypeBaseChar,
+	C_AstKind_TypeBaseInt,
+	C_AstKind_TypeBaseFloat,
+	C_AstKind_TypeBaseDouble,
+	C_AstKind_TypeBaseVoid,
+	C_AstKind_TypeBaseBool,
+	C_AstKind_TypeBaseTypename,
+	C_AstKind_TypeBaseStruct,
+	C_AstKind_TypeBaseUnion,
+	C_AstKind_TypeBaseEnum,
+	C_AstKind_TypeFunction,
+	C_AstKind_TypePointer,
+	C_AstKind_TypeArray,
+	
+	C_AstKind_Decl = 2 << C_AstKind__Category,
+	C_AstKind_DeclStatic,
+	C_AstKind_DeclExtern,
+	C_AstKind_DeclAuto,
+	C_AstKind_DeclTypedef,
+	C_AstKind_DeclRegister,
+	
+	C_AstKind_Stmt = 3 << C_AstKind__Category,
+	C_AstKind_StmtEmpty,
+	C_AstKind_StmtExpr,
+	C_AstKind_StmtIf,
+	C_AstKind_StmtDoWhile,
+	C_AstKind_StmtWhile,
+	C_AstKind_StmtFor,
+	C_AstKind_StmtSwitch,
+	C_AstKind_StmtReturn,
+	C_AstKind_StmtGoto,
+	C_AstKind_StmtCompound,
+	C_AstKind_StmtLabel,
+	C_AstKind_StmtCase,
+	C_AstKind_StmtBreak,
+	C_AstKind_StmtContinue,
+	C_AstKind_StmtGccAsm,
+	
+	C_AstKind_ExprFactor = 4 << C_AstKind__Category,
+	C_AstKind_ExprIdent,
+	C_AstKind_ExprInt,
+	C_AstKind_ExprLInt,
+	C_AstKind_ExprLLInt,
+	C_AstKind_ExprUInt,
+	C_AstKind_ExprULInt,
+	C_AstKind_ExprULLInt,
+	C_AstKind_ExprFloat,
+	C_AstKind_ExprDouble,
+	C_AstKind_ExprString,
+	C_AstKind_ExprWideString,
+	C_AstKind_ExprChar,
+	C_AstKind_ExprCompoundLiteral,
+	C_AstKind_ExprInitializer,
+	
+	C_AstKind_Expr1 = 5 << C_AstKind__Category,
+	C_AstKind_Expr1Positive,
+	C_AstKind_Expr1Negative,
+	C_AstKind_Expr1Not,
+	C_AstKind_Expr1LogicalNot,
+	C_AstKind_Expr1Deref,
+	C_AstKind_Expr1Ref,
+	C_AstKind_Expr1PrefixInc,
+	C_AstKind_Expr1PrefixDec,
+	C_AstKind_Expr1PostfixInc,
+	C_AstKind_Expr1PostfixDec,
+	C_AstKind_Expr1Sizeof,
+	C_AstKind_Expr1SizeofType,
+	C_AstKind_Expr1Cast,
+	
+	C_AstKind_Expr2 = 6 << C_AstKind__Category,
+	C_AstKind_Expr2Add,
+	C_AstKind_Expr2Sub,
+	C_AstKind_Expr2Mul,
+	C_AstKind_Expr2Div,
+	C_AstKind_Expr2Mod,
+	C_AstKind_Expr2LThan,
+	C_AstKind_Expr2GThan,
+	C_AstKind_Expr2LEqual,
+	C_AstKind_Expr2GEqual,
+	C_AstKind_Expr2Equals,
+	C_AstKind_Expr2NotEquals,
+	C_AstKind_Expr2LeftShift,
+	C_AstKind_Expr2RightShift,
+	C_AstKind_Expr2And,
+	C_AstKind_Expr2Or,
+	C_AstKind_Expr2Xor,
+	C_AstKind_Expr2LogicalAnd,
+	C_AstKind_Expr2LogicalOr,
+	C_AstKind_Expr2Assign,
+	C_AstKind_Expr2AssignAdd,
+	C_AstKind_Expr2AssignSub,
+	C_AstKind_Expr2AssignMul,
+	C_AstKind_Expr2AssignDiv,
+	C_AstKind_Expr2AssignMod,
+	C_AstKind_Expr2AssignLeftShift,
+	C_AstKind_Expr2AssignRightShift,
+	C_AstKind_Expr2AssignAnd,
+	C_AstKind_Expr2AssignOr,
+	C_AstKind_Expr2AssignXor,
+	C_AstKind_Expr2Comma,
+	C_AstKind_Expr2Call,
+	C_AstKind_Expr2Index,
+	C_AstKind_Expr2Access,
+	C_AstKind_Expr2DerefAccess,
+	
+	C_AstKind_Expr3 = 7 << C_AstKind__Category,
+	C_AstKind_Expr3Condition,
+}
+typedef C_AstKind;
+
+enum C_AstFlags
+{
+	C_AstFlags_Poisoned = (int32)(1u << 31),
+	C_AstFlags_Implicit = 1 << 30,
+	C_AstFlags_ComptimeKnown = 1 << 29,
+	C_AstFlags_Decayed = 1 << 28,
+	
+	// NOTE(ljre): For C_AstKind_Type*
+	C_AstFlags_Volatile = 1 << 10,
+	C_AstFlags_Restrict = 1 << 9,
+	C_AstFlags_Const = 1 << 8,
+	
+	// NOTE(ljre): For C_AstKind_Decl*
+	C_AstFlags_Inline = 1 << 0,
+	
+	// NOTE(ljre): For C_AstKind_TypeFunction
+	C_AstFlags_VarArgs = 1 << 0,
+	
+	// NOTE(ljre): For C_AstKind_TypeBase*
+	C_AstFlags_Signed = 1 << 0,
+	C_AstFlags_Unsigned = 1 << 1,
+	C_AstFlags_Long = 1 << 2,
+	C_AstFlags_LongLong = 1 << 3,
+	C_AstFlags_Short = 1 << 4,
+	C_AstFlags_Complex = 1 << 5,
+	
+	// NOTE(ljre): For C_AstKind_GccAsm
+	C_AstFlags_GccAsmVolatile = 1 << 0,
+	C_AstFlags_GccAsmInline = 1 << 1,
+	C_AstFlags_GccAsmGoto = 1 << 2,
+	
+	// NOTE(ljre): For ???
+	C_AstFlags_MsvcCdecl = 1 << 0,
+	C_AstFlags_MsvcStdcall = 1 << 1,
+	C_AstFlags_MsvcVectorcall = 1 << 2,
+	C_AstFlags_MsvcFastcall = 1 << 3,
+};
+
+struct C_AstNode typedef C_AstNode;
+struct C_AstDecl typedef C_AstDecl;
+struct C_AstType typedef C_AstType;
+struct C_AstExpr typedef C_AstExpr;
+struct C_AstStmt typedef C_AstStmt;
+
+#define C_NODE_HEADER(Name,...) \
+struct __VA_ARGS__\
+{\
+C_AstKind kind;\
+uint32 flags;\
+Name* next;\
+C_SourceTrace* trace;\
+}
+
+C_NODE_HEADER(C_AstNode, C_AstNode);
+
+struct C_AstDecl
+{
+	union
+	{
+		C_AstNode header;
+		C_NODE_HEADER(C_AstDecl);
+	};
+	
+	String name;
+	C_AstType* type;
+	
+	union
+	{
+		C_AstExpr* init;
+		C_AstStmt* body;
+	};
+};
+
+struct C_AstType
+{
+	union
+	{
+		C_AstNode header;
+		C_NODE_HEADER(C_AstDecl);
+	};
+	
+	uint64 size;
+	uint32 alignment;
+	bool32 is_unsigned;
+	
+	union
+	{
+		C_AstType* base;
+		
+		struct { C_AstType* of; C_AstExpr* length; } array;
+		C_AstType* ptr;
+		struct { C_AstType* ret; C_AstDecl* params; } function;
+		
+		struct { C_AstDecl* body; String name; } structure;
+		struct { C_AstType* base; String name; } typedefed;
+		struct { C_AstDecl* entries; String name; } enumerator;
+	};
+};
+
+struct C_AstStmt
+{
+	union
+	{
+		C_AstNode header;
+		C_NODE_HEADER(C_AstDecl);
+	};
+	
+	union
+	{
+		C_AstStmt* compound;
+		C_AstExpr* expr;
+		String go_to;
+		
+		struct { C_AstStmt* stmt; String name; } label;
+		
+		struct
+		{
+			C_AstExpr* code;
+			C_AstExpr* outputs;
+			C_AstExpr* inputs;
+			C_AstExpr* clobbers;
+			C_AstExpr* goto_labels;
+		}
+		gcc_asm;
+	};
+};
+
+struct C_AstExpr
+{
+	union
+	{
+		C_AstNode header;
+		C_NODE_HEADER(C_AstDecl);
+	};
+	
+	union
+	{
+		uint64 value_uint;
+		int64 value_int;
+		String value_str;
+		float value_float;
+		double value_double;
+		
+		C_AstExpr* unary;
+		C_AstExpr* init;
+		struct { C_AstExpr* left, * right; } binary;
+		struct { C_AstExpr* left, * middle, * right; } ternary;
+		struct { C_AstExpr* expr; String field; } access;
+		struct { C_AstExpr* expr; C_AstType* to; } cast;
+		struct { C_AstExpr* init; C_AstType* type; } compound;
+		C_AstExpr* sizeof_expr;
+		C_AstType* sizeof_type;
+		
+		struct { C_AstExpr* designated; C_AstExpr* expr; } init_entry;
+		String desig_field;
+		C_AstExpr* desig_index;
+	};
+};
+
+#undef C_NODE_HEADER
+
+struct C_ParserScope typedef C_ParserScope;
+struct C_ParserScope
+{
+	C_ParserScope* up;
+	Map* typedefed;
+};
+
+struct C_Parser
+{
+	C_TokenReader rd;
+	
+	C_ParserScope* scope;
+	
+}
+typedef C_Parser;
+
+//~ NOTE(ljre): ABI Information
+struct C_ABIType
+{
+	uint16 size;
+	uint8 alignment;
+	bool8 is_unsigned;
+}
+typedef C_ABIType;
+
+struct C_ABI
+{
+	union
+	{
+		struct
+		{
+			C_ABIType t_bool;
+			C_ABIType t_schar;
+			C_ABIType t_char;
+			C_ABIType t_uchar;
+			C_ABIType t_short;
+			C_ABIType t_ushort;
+			C_ABIType t_int;
+			C_ABIType t_uint;
+			C_ABIType t_long;
+			C_ABIType t_ulong;
+			C_ABIType t_longlong;
+			C_ABIType t_ulonglong;
+			C_ABIType t_float;
+			C_ABIType t_double;
+			C_ABIType t_ptr;
+		};
+		
+		C_ABIType t[15];
+	};
+	
+	uint8 char_bit;
+	int8 index_sizet;
+	int8 index_ptrdifft;
+}
+typedef C_ABI;
 
 //~ NOTE(ljre): Compiler Context
 enum C_Warning
@@ -426,8 +770,13 @@ struct C_CompilerOptions
 {
 	uint64 warnings[(C_Warning__Count + 63) / 64];
 	
-	String* include_dirs;
+	const String* include_dirs;
 	uintsize include_dirs_count;
+	
+	const char** predefined_macros;
+	uintsize predefined_macros_count;
+	
+	C_ABI abi;
 }
 typedef C_CompilerOptions;
 
@@ -475,7 +824,7 @@ C_FindKeywordByString(String str)
 }
 
 internal void
-C_IgnoreWhitespaces(const char** p, bool32 newline)
+C_IgnoreWhitespaces(const char** p, bool newline)
 {
 	for (;;)
 	{
@@ -593,6 +942,54 @@ C_ValueOfEscaped(const char** ptr, const char* end)
 	}
 	
 	return value;
+}
+
+internal C_AstKind
+C_TokenToExprKind(C_TokenKind kind)
+{
+	switch (kind)
+	{
+		case C_TokenKind_Comma: return C_AstKind_Expr2Comma;
+		
+		case C_TokenKind_Assign: return C_AstKind_Expr2Assign;
+		case C_TokenKind_PlusAssign: return C_AstKind_Expr2AssignAdd;
+		case C_TokenKind_MinusAssign: return C_AstKind_Expr2AssignSub;
+		case C_TokenKind_MulAssign: return C_AstKind_Expr2AssignMul;
+		case C_TokenKind_DivAssign: return C_AstKind_Expr2AssignDiv;
+		case C_TokenKind_LeftShiftAssign: return C_AstKind_Expr2AssignLeftShift;
+		case C_TokenKind_RightShiftAssign: return C_AstKind_Expr2AssignRightShift;
+		case C_TokenKind_AndAssign: return C_AstKind_Expr2AssignAnd;
+		case C_TokenKind_OrAssign: return C_AstKind_Expr2AssignOr;
+		case C_TokenKind_XorAssign: return C_AstKind_Expr2AssignXor;
+		
+		case C_TokenKind_QuestionMark: return C_AstKind_Expr3Condition;
+		
+		case C_TokenKind_LOr: return C_AstKind_Expr2LogicalOr;
+		case C_TokenKind_LAnd: return C_AstKind_Expr2LogicalAnd;
+		case C_TokenKind_Or: return C_AstKind_Expr2Or;
+		case C_TokenKind_Xor: return C_AstKind_Expr2Xor;
+		case C_TokenKind_And: return C_AstKind_Expr2And;
+		
+		case C_TokenKind_Equals: return C_AstKind_Expr2Equals;
+		case C_TokenKind_NotEquals: return C_AstKind_Expr2NotEquals;
+		
+		case C_TokenKind_LThan: return C_AstKind_Expr2LThan;
+		case C_TokenKind_GThan: return C_AstKind_Expr2GThan;
+		case C_TokenKind_LEqual: return C_AstKind_Expr2LEqual;
+		case C_TokenKind_GEqual: return C_AstKind_Expr2GEqual;
+		
+		case C_TokenKind_LeftShift: return C_AstKind_Expr2LeftShift;
+		case C_TokenKind_RightShift: return C_AstKind_Expr2RightShift;
+		
+		case C_TokenKind_Plus: return C_AstKind_Expr2Add;
+		case C_TokenKind_Minus: return C_AstKind_Expr2Sub;
+		
+		case C_TokenKind_Mul: return C_AstKind_Expr2Mul;
+		case C_TokenKind_Div: return C_AstKind_Expr2Div;
+		case C_TokenKind_Mod: return C_AstKind_Expr2Mod;
+		
+		default: Unreachable(); return 0;
+	}
 }
 
 #endif //LANG_C_DEFINITIONS_H

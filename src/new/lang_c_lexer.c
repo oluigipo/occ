@@ -12,7 +12,7 @@ C_TokenizeStringLiteral(C_Context* ctx, const char** phead, char close)
 		if (end[0] == '\n')
 			break;
 		
-		if (end[0] == '\\' && end[1] == close)
+		if (end[0] == '\\' && (end[1] == close || end[1] == '\\'))
 			end += 2;
 		else
 			++end;
@@ -25,8 +25,8 @@ C_TokenizeStringLiteral(C_Context* ctx, const char** phead, char close)
 	}
 	
 	String result = {
-		.size = (uintsize)(end - begin - 1),
-		.data = begin + 1,
+		.size = (uintsize)(end - begin),
+		.data = begin,
 	};
 	
 	*phead = end + 1;
@@ -37,7 +37,7 @@ C_TokenizeStringLiteral(C_Context* ctx, const char** phead, char close)
 internal C_TokenSlice
 C_Tokenize(C_Context* ctx, Arena* arena, const char* source, C_SourceTrace* up_trace)
 {
-	Trace();
+	TraceName(up_trace->file ? up_trace->file->path : Str("internal string"));
 	
 	C_Token* result = Arena_Push(arena, sizeof(*result));
 	C_Token* tok = result;

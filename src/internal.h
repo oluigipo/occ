@@ -91,7 +91,7 @@ internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 #   define DebugBreak_() __debugbreak()
 #   define Likely(...) (__VA_ARGS__)
 #   define Unlikely(...) (__VA_ARGS__)
-#   define Trace(x) ((void)0)
+#   define Trace() ((void)0)
 #   define TraceName(x) ((void)0)
 #   define TraceColor(x) ((void)0)
 #   define TraceSetName(x) ((void)0)
@@ -100,7 +100,7 @@ internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 #   define DebugBreak_() __asm__ __volatile__ ("int $3")
 #   define Likely(...) __builtin_expect(!!(__VA_ARGS__), 1)
 #   define Unlikely(...) __builtin_expect((__VA_ARGS__), 0)
-#   define Trace(x) ((void)0)
+#   define Trace() ((void)0)
 #   define TraceName(x) ((void)0)
 #   define TraceColor(x) ((void)0)
 #   define TraceSetName(x) ((void)0)
@@ -109,7 +109,7 @@ internal void ___my_tracy_zone_end(TracyCZoneCtx* ctx) { TracyCZoneEnd(*ctx); }
 #   define DebugBreak_() ((void)0)
 #   define Likely(...) (__VA_ARGS__)
 #   define Unlikely(...) (__VA_ARGS__)
-#   define Trace(x) ((void)0)
+#   define Trace() ((void)0)
 #   define TraceName(x) ((void)0)
 #   define TraceColor(x) ((void)0)
 #   define TraceSetName(x) ((void)0)
@@ -128,7 +128,7 @@ internal void PrintVarargs(const char* fmt, va_list args);
 internal void PrintFast(const char* str);
 internal void Panic(const char* str);
 
-internal const char* const* global_colors = (const char* const[]) {
+internal const char* const* global_colors = (const char* const[]){
 	"\x1B[0m", // RESET
 	"\x1B[93m", // PATHS
 	"\x1B[91m", // ERROR

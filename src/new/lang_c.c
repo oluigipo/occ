@@ -53,115 +53,166 @@
 #define C_VERSION_MINOR 0
 #define C_VERSION_PATCH 1
 #define C_VERSION_STR StrMacro(C_VERSION_MAJOR) "." StrMacro(C_VERSION_MINOR) "." StrMacro(C_VERSION_PATCH)
-#define C_PREUNDEFINED_MACRO_PTR ((void*)1)
 
 #include "lang_c_definitions.h"
 
-internal void
-C_TraceErrorVarArgs(C_Context* ctx, C_SourceTrace* trace, const char* fmt, va_list args)
-{
-	PrintVarargs(fmt, args);
-}
-
-internal void
-C_TraceWarningVarArgs(C_Context* ctx, C_SourceTrace* trace, C_Warning warning, const char* fmt, va_list args)
-{
-	PrintVarargs(fmt, args);
-}
-
-internal inline void
-C_TraceError(C_Context* ctx, C_SourceTrace* trace, const char* fmt, ...)
-{
-	va_list args;
-	va_start(args, fmt);
-	C_TraceErrorVarArgs(ctx, trace, fmt, args);
-	va_end(args);
-}
-
-internal inline void
-C_TraceWarning(C_Context* ctx, C_SourceTrace* trace, C_Warning warning, const char* fmt, ...)
-{
-	va_list args;
-	va_start(args, fmt);
-	C_TraceWarningVarArgs(ctx, trace, warning, fmt, args);
-	va_end(args);
-}
-
-internal inline void
-C_TraceErrorRd(C_Context* ctx, C_TokenReader* rd, const char* fmt, ...)
-{
-	va_list args;
-	va_start(args, fmt);
-	
-	if (rd->file_trace)
-	{
-		C_SourceTrace trace = rd->head->trace;
-		trace.file = rd->file_trace;
-		
-		C_TraceErrorVarArgs(ctx, &trace, fmt, args);
-	}
-	else
-	{
-		C_TraceErrorVarArgs(ctx, &rd->head->trace, fmt, args);
-	}
-	
-	va_end(args);
-}
-
-internal inline void
-C_TraceWarningRd(C_Context* ctx, C_TokenReader* rd, C_Warning warning, const char* fmt, ...)
-{
-	va_list args;
-	va_start(args, fmt);
-	
-	if (rd->file_trace)
-	{
-		C_SourceTrace trace = rd->head->trace;
-		trace.file = rd->file_trace;
-		
-		C_TraceWarningVarArgs(ctx, &trace, warning, fmt, args);
-	}
-	else
-	{
-		C_TraceWarningVarArgs(ctx, &rd->head->trace, warning, fmt, args);
-	}
-	
-	
-	va_end(args);
-}
-
+#include "lang_c_log.c"
 #include "lang_c_lexer.c"
 #include "lang_c_preprocessor.c"
+#include "lang_c_parser.c"
 
 internal int32
-C_Main(int32 argc, const char** argv)
+C_ParseArgsToOptions(C_Context* ctx, C_CompilerOptions* options, int32 argc, const char* const* argv, String* out_file_to_build)
+{
+	//- NOTE(ljre): Know which dirs to include
+	String* include_dirs = Arena_Push(ctx->array_arena, sizeof(*include_dirs));
+	*include_dirs = Str("include/");
+	
+	for (int32 i = 1; i < argc; ++i)
+	{
+		const char* arg = argv[i];
+		
+		if (arg[0] == '-' && arg[1] == 'I')
+		{
+			if (arg[2] == '\0')
+				arg = argv[i++];
+			else
+				arg = arg + 2;
+			
+			if (!arg) // NOTE(ljre): argv[argv] == NULL
+			{
+				Print("expected path after -I flag.");
+				return 1;
+			}
+			
+			String str;
+			uintsize len = strlen(arg);
+			
+			if (arg[len-1] != '/')
+				str = Arena_SPrintf(ctx->tree_arena, "%S/", len, arg);
+			else
+				str = StrMake(arg, len);
+			
+			String* ptr = Arena_Push(ctx->array_arena, sizeof(*ptr));
+			*ptr = str;
+			
+			continue;
+		}
+		
+		if (arg[0] != '-' && !out_file_to_build->size)
+			*out_file_to_build = StrFrom(arg);
+	}
+	
+	options->include_dirs = include_dirs;
+	options->include_dirs_count = (String*)Arena_End(ctx->array_arena) - include_dirs;
+	
+	return 0;
+}
+
+internal int32
+C_Main(int32 argc, const char* const* argv)
 {
 	Trace();
 	
-	int32 result = 0;
-	
-	String include_dirs[] = {
-		StrInit("include/"),
-	};
-	
 	C_CompilerOptions options = {
-		.include_dirs = include_dirs,
-		.include_dirs_count = ArrayLength(include_dirs),
+		.warnings = { 0xFF },
+		
+		.abi = {
+			.char_bit = 8,
+			.index_sizet = 11,
+			.index_ptrdifft = 10,
+			
+			.t_bool = { 1, 1, false },
+			.t_schar = { 1, 1, false },
+			.t_char = { 1, 1, true },
+			.t_uchar = { 1, 1, true },
+			.t_short = { 2, 2, false },
+			.t_ushort = { 2, 2, true },
+			.t_int = { 4, 4, false },
+			.t_uint = { 4, 4, true },
+			.t_long = { 4, 4, false },
+			.t_ulong = { 4, 4, true },
+			.t_longlong = { 8, 8, false },
+			.t_ulonglong = { 8, 8, true },
+			.t_float = { 4, 4, false },
+			.t_double = { 8, 8, false },
+			.t_ptr = { 8, 8, true },
+		},
 	};
 	
 	C_Context ctx = {
 		.array_arena = Arena_Create(Megabytes(32)),
-		.tree_arena = Arena_Create(Megabytes(32)),
+		.tree_arena = Arena_Create(Megabytes(64)),
 		.scratch_arena = Arena_Create(Megabytes(32)),
 		
 		.options = &options,
 	};
 	
-	C_TokenSlice source = C_Preprocess(&ctx, Str("tests/pp-test.c"));
+	String file_to_build = { 0 };
 	
-	String str = C_PrintTokensGnuStyle(&ctx, ctx.array_arena, source);
+	// NOTE(ljre): Setup 'options'
+	int32 result = C_ParseArgsToOptions(&ctx, &options, argc, argv, &file_to_build);
+	if (result != 0)
+		return result;
 	
-	OS_WriteWholeFile(Str("test.c"), str.data, str.size, ctx.scratch_arena);
+	const char* macro_defs[] = {
+		"__STDC__ 1",
+		"__STDC_HOSTED__ 1",
+		"__STDC_VERSION__ 199901L",
+		"__x86_64 1",
+		"__x86_64__ 1",
+		"_M_AMD64 1",
+		"_M_X64 1",
+		"_WIN32 1",
+		"_WIN64 1",
+		"__OCC__ 1",
+		"__int64 long long",
+		"__int32 int",
+		"__int16 short",
+		"__int8 char",
+		"__inline inline",
+		"__inline__ inline",
+		"__restrict restrict",
+		"__restrict__ restrict",
+		"__const const",
+		"__const__ const",
+		"__volatile volatile",
+		"__volatile__ volatile",
+		"__attribute __attribute__",
+		
+		//"__forceinline inline",
+		//"__attribute__(...)",
+		//"__declspec(...)",
+		
+		"__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)",
+		"__builtin_va_list void*",
+		
+		// NOTE(ljre): MINGW macros
+		"_MSC_VER 1910",
+		"_MSC_FULL_VER 191025017",
+		
+		//"__MINGW_ATTRIB_DEPRECATED_STR(x)",
+		//"__MINGW_ATTRIB_NONNULL(x)",
+		//"__MINGW_NOTHROW",
+		//"__mingw_ovr",
+	};
 	
-	return result;
+	options.predefined_macros = macro_defs;
+	options.predefined_macros_count = ArrayLength(macro_defs);
+	
+	if (!file_to_build.size)
+	{
+		Print("%C2error:%C0 no input files.\n");
+		return 1;
+	}
+	
+	C_TokenSlice source = C_Preprocess(&ctx, file_to_build);
+	{
+		String str = C_PrintTokensGnuStyle(&ctx, ctx.array_arena, source);
+		OS_WriteWholeFile(Str("test.c"), str.data, str.size, ctx.scratch_arena);
+	}
+	
+	C_AstDecl* ast = C_Parse(&ctx, source);
+	
+	return 0;
 }

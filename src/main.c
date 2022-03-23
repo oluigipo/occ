@@ -18,6 +18,8 @@ internal OS_RWLock global_lock;
 internal void
 Print(const char* fmt, ...)
 {
+	Trace();
+	
 	OS_LockRWLockWrite(global_lock);
 	{
 		va_list args;
@@ -35,6 +37,8 @@ Print(const char* fmt, ...)
 internal void
 PrintVarargs(const char* fmt, va_list args)
 {
+	Trace();
+	
 	OS_LockRWLockWrite(global_lock);
 	{
 		char* mem = Arena_End(global_arena);
@@ -49,6 +53,8 @@ PrintVarargs(const char* fmt, va_list args)
 internal void
 PrintFast(const char* message)
 {
+	Trace();
+	
 	OS_LockRWLockWrite(global_lock);
 	fputs(message, stdout);
 	OS_UnlockRWLockWrite(global_lock);
