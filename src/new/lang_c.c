@@ -60,6 +60,7 @@
 #include "lang_c_lexer.c"
 #include "lang_c_preprocessor.c"
 #include "lang_c_parser.c"
+#include "lang_c_analyzer.c"
 
 internal int32
 C_ParseArgsToOptions(C_Context* ctx, C_CompilerOptions* options, int32 argc, const char* const* argv, String* out_file_to_build)
@@ -142,7 +143,7 @@ C_Main(int32 argc, const char* const* argv)
 	
 	C_Context ctx = {
 		.array_arena = Arena_Create(Megabytes(32)),
-		.tree_arena = Arena_Create(Megabytes(64)),
+		.tree_arena = Arena_Create(Megabytes(128)),
 		.scratch_arena = Arena_Create(Megabytes(32)),
 		
 		.options = &options,
@@ -200,19 +201,32 @@ C_Main(int32 argc, const char* const* argv)
 	options.predefined_macros = macro_defs;
 	options.predefined_macros_count = ArrayLength(macro_defs);
 	
-	if (!file_to_build.size)
+	if (file_to_build.size <= 0)
 	{
 		Print("%C2error:%C0 no input files.\n");
 		return 1;
 	}
 	
 	C_TokenSlice source = C_Preprocess(&ctx, file_to_build);
+	
+	// NOTE(ljre): DEBUG
 	{
 		String str = C_PrintTokensGnuStyle(&ctx, ctx.array_arena, source);
 		OS_WriteWholeFile(Str("test.c"), str.data, str.size, ctx.scratch_arena);
 	}
 	
 	C_AstDecl* ast = C_Parse(&ctx, source);
+	
+	(void)ast;
+	
+	if (ctx.error_count > 0)
+		Print("%C2compilation failed%C0 with %u errors and %u warnings.\n", ctx.error_count, ctx.warning_count);
+	else
+		Print("%C4compilation successful%C0 with %u warnings.\n", ctx.warning_count);
+	
+	Print("\t%C1ctx.array_arena->   commited:%C0 %z\toffset: %z\n", ctx.array_arena->commited, ctx.array_arena->offset);
+	Print("\t%C1ctx.tree_arena->    commited:%C0 %z\toffset: %z\n", ctx.tree_arena->commited, ctx.tree_arena->offset);
+	Print("\t%C1ctx.scratch_arena-> commited:%C0 %z\toffset: %z\n", ctx.scratch_arena->commited, ctx.scratch_arena->offset);
 	
 	return 0;
 }

@@ -23,6 +23,7 @@ C_PrintFileTrace(C_Context* ctx, Arena* arena, C_SourceFileTrace* file, uint32 i
 internal void
 C_TraceErrorVarArgs(C_Context* ctx, C_SourceTrace* trace, const char* fmt, va_list args)
 {
+	++ctx->error_count;
 	Arena* arena = ctx->scratch_arena;
 	char* msg = Arena_End(arena);
 	
@@ -54,6 +55,7 @@ C_TraceWarningVarArgs(C_Context* ctx, C_SourceTrace* trace, C_Warning warning, c
 	if (!C_IsWarningEnabled(ctx, warning))
 		return;
 	
+	++ctx->warning_count;
 	Arena* arena = ctx->scratch_arena;
 	char* msg = Arena_End(arena);
 	

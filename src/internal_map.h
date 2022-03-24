@@ -52,6 +52,7 @@ Map_Create(Arena* arena, uint32 cap)
 	Assert((cap-1 & cap) == 0);
 	
 	Map* map = Arena_Push(arena, sizeof(*map) + sizeof(*map->entries) * cap);
+	Assert(map);
 	
 	map->next = NULL;
 	map->arena = arena;

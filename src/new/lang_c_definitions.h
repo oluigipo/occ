@@ -416,7 +416,7 @@ struct C_Preprocessor
 }
 typedef C_Preprocessor;
 
-//~ NOTE(ljre): Parser
+//~ NOTE(ljre): AST
 enum C_AstKind
 {
 	C_AstKind_Null = 0,
@@ -445,6 +445,7 @@ enum C_AstKind
 	C_AstKind_DeclAuto,
 	C_AstKind_DeclTypedef,
 	C_AstKind_DeclRegister,
+	C_AstKind_DeclBitfield,
 	
 	C_AstKind_Stmt = 3 << C_AstKind__Category,
 	C_AstKind_StmtEmpty,
@@ -478,6 +479,10 @@ enum C_AstKind
 	C_AstKind_ExprChar,
 	C_AstKind_ExprCompoundLiteral,
 	C_AstKind_ExprInitializer,
+	C_AstKind_ExprDesignatedInitializer,
+	C_AstKind_ExprDesignatedField,
+	C_AstKind_ExprDesignatedIndex,
+	C_AstKind_ExprSizeofType,
 	
 	C_AstKind_Expr1 = 5 << C_AstKind__Category,
 	C_AstKind_Expr1Positive,
@@ -491,7 +496,6 @@ enum C_AstKind
 	C_AstKind_Expr1PostfixInc,
 	C_AstKind_Expr1PostfixDec,
 	C_AstKind_Expr1Sizeof,
-	C_AstKind_Expr1SizeofType,
 	C_AstKind_Expr1Cast,
 	
 	C_AstKind_Expr2 = 6 << C_AstKind__Category,
@@ -571,7 +575,8 @@ enum C_AstFlags
 	C_AstFlags_MsvcStdcall = 1 << 1,
 	C_AstFlags_MsvcVectorcall = 1 << 2,
 	C_AstFlags_MsvcFastcall = 1 << 3,
-};
+}
+typedef C_AstFlags;
 
 struct C_AstNode typedef C_AstNode;
 struct C_AstDecl typedef C_AstDecl;
@@ -601,11 +606,9 @@ struct C_AstDecl
 	String name;
 	C_AstType* type;
 	
-	union
-	{
-		C_AstExpr* init;
-		C_AstStmt* body;
-	};
+	C_AstExpr* init;
+	C_AstStmt* body;
+	C_AstExpr* bitfield;
 };
 
 struct C_AstType
@@ -613,7 +616,7 @@ struct C_AstType
 	union
 	{
 		C_AstNode header;
-		C_NODE_HEADER(C_AstDecl);
+		C_NODE_HEADER(C_AstType);
 	};
 	
 	uint64 size;
@@ -628,9 +631,10 @@ struct C_AstType
 		C_AstType* ptr;
 		struct { C_AstType* ret; C_AstDecl* params; } function;
 		
-		struct { C_AstDecl* body; String name; } structure;
+		String name;
+		struct { C_AstDecl* body; String name; } structure; // NOTE(ljre): Also used by 'union'
 		struct { C_AstType* base; String name; } typedefed;
-		struct { C_AstDecl* entries; String name; } enumerator;
+		struct { C_AstExpr* entries; String name; } enumerator;
 	};
 };
 
@@ -639,16 +643,22 @@ struct C_AstStmt
 	union
 	{
 		C_AstNode header;
-		C_NODE_HEADER(C_AstDecl);
+		C_NODE_HEADER(C_AstStmt);
 	};
 	
 	union
 	{
 		C_AstStmt* compound;
+		C_AstStmt* stmt;
 		C_AstExpr* expr;
 		String go_to;
 		
 		struct { C_AstStmt* stmt; String name; } label;
+		struct { C_AstExpr* expr; C_AstStmt* stmt; } casestmt;
+		struct { C_AstNode* decl_or_expr; C_AstExpr* cond; C_AstExpr* it; C_AstStmt* body; } forloop;
+		struct { C_AstExpr* cond; C_AstStmt* then; C_AstStmt* otherwise; } ifelse;
+		struct { C_AstExpr* cond; C_AstStmt* body; } whileloop; // also 'do while' loop
+		struct { C_AstExpr* num; C_AstStmt* body; } switchcase;
 		
 		struct
 		{
@@ -667,7 +677,7 @@ struct C_AstExpr
 	union
 	{
 		C_AstNode header;
-		C_NODE_HEADER(C_AstDecl);
+		C_NODE_HEADER(C_AstExpr);
 	};
 	
 	union
@@ -675,6 +685,7 @@ struct C_AstExpr
 		uint64 value_uint;
 		int64 value_int;
 		String value_str;
+		String value_ident;
 		float value_float;
 		double value_double;
 		
@@ -685,10 +696,9 @@ struct C_AstExpr
 		struct { C_AstExpr* expr; String field; } access;
 		struct { C_AstExpr* expr; C_AstType* to; } cast;
 		struct { C_AstExpr* init; C_AstType* type; } compound;
-		C_AstExpr* sizeof_expr;
 		C_AstType* sizeof_type;
 		
-		struct { C_AstExpr* designated; C_AstExpr* expr; } init_entry;
+		struct { C_AstExpr* offset; C_AstExpr* expr; } desig_init;
 		String desig_field;
 		C_AstExpr* desig_index;
 	};
@@ -696,6 +706,7 @@ struct C_AstExpr
 
 #undef C_NODE_HEADER
 
+//~ NOTE(ljre): Parser
 struct C_ParserScope typedef C_ParserScope;
 struct C_ParserScope
 {
@@ -708,7 +719,6 @@ struct C_Parser
 	C_TokenReader rd;
 	
 	C_ParserScope* scope;
-	
 }
 typedef C_Parser;
 
@@ -787,6 +797,9 @@ struct alignas(64) C_Context
 	Arena* scratch_arena;
 	
 	const C_CompilerOptions* options;
+	
+	uint32 error_count;
+	uint32 warning_count;
 }
 typedef C_Context;
 

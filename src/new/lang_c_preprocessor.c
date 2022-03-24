@@ -2,12 +2,20 @@
 internal void
 C_PreprocessWriteToken(C_Context* ctx, C_Preprocessor* pp, const C_Token* token, C_SourceFileTrace* file_trace)
 {
-	Assert(token->kind != C_TokenKind_Eof);
+	//Assert(token->kind != C_TokenKind_Eof);
 	
 	*pp->out = *token;
 	
 	if (file_trace)
 		pp->out->trace.file = file_trace;
+	
+	if (pp->out->kind == C_TokenKind_Identifier)
+	{
+		C_TokenKind kw = C_FindKeywordByString(pp->out->as_string);
+		
+		if (kw)
+			pp->out->kind = kw;
+	}
 	
 	if (pp->out->kind == C_TokenKind_UnclosedQuote)
 		C_TraceError(ctx, &pp->out->trace, "unclosed quote.");
@@ -1018,6 +1026,7 @@ C_EvalPreprocessorExprOp(C_TokenKind op, int32 left, int32 right)
 	return 0;
 }
 
+// NOTE(ljre): Operator Precedence Parser (https://en.wikipedia.org/wiki/Operator-precedence_parser)
 internal int32
 C_EvalPreprocessorExpr(C_Context* ctx, C_Preprocessor* pp, C_TokenReader* rd, int32 level)
 {
@@ -1422,6 +1431,7 @@ C_Preprocess(C_Context* ctx, String file)
 	pp.out = result;
 	
 	C_PreprocessFile(ctx, &pp, tokens, file_trace);
+	C_PreprocessWriteToken(ctx, &pp, &(C_Token) { 0 }, NULL);
 	
 	Arena_Clear(ctx->scratch_arena);
 	return (C_TokenSlice) { .size = pp.out - result, .data = result };
@@ -1435,6 +1445,9 @@ C_PrintTokensGnuStyle(C_Context* ctx, Arena* arena, C_TokenSlice tokens)
 	{
 		C_Token* head = tokens.data;
 		C_Token* end = tokens.data + tokens.size;
+		
+		if (tokens.size > 0 && end[-1].kind == C_TokenKind_Eof)
+			--end;
 		
 		// NOTE(ljre): Print at least one token up-front.
 		if (head->leading_spaces)
