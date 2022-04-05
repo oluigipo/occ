@@ -356,7 +356,7 @@ typedef C_Token;
 struct C_TokenSlice
 {
 	uintsize size;
-	C_Token* data;
+	const C_Token* data;
 }
 typedef C_TokenSlice;
 
@@ -369,11 +369,11 @@ struct C_TokenQueue
 
 struct C_TokenReader
 {
-	C_Token* head;
+	const C_Token* head;
 	
 	C_TokenQueue* queue;
-	C_Token* slice_head;
-	C_Token* slice_end;
+	const C_Token* slice_head;
+	const C_Token* slice_end;
 	
 	C_SourceFileTrace* file_trace;
 }
@@ -413,6 +413,8 @@ struct C_Preprocessor
 	Map* loaded_files;
 	
 	C_Token* out;
+	
+	uint32 if_nesting;
 }
 typedef C_Preprocessor;
 
@@ -590,7 +592,7 @@ struct __VA_ARGS__\
 C_AstKind kind;\
 uint32 flags;\
 Name* next;\
-C_SourceTrace* trace;\
+const C_SourceTrace* trace;\
 }
 
 C_NODE_HEADER(C_AstNode, C_AstNode);
@@ -771,6 +773,7 @@ enum C_Warning
 	C_Warning_ImplicitInt,
 	C_Warning_MissingMacroArguments, // when macro is invoked with less arguments than it was declared with
 	C_Warning_ExcessiveMacroArguments,
+	C_Warning_WarningDirective, // #warning
 	
 	C_Warning__Count,
 }

@@ -393,7 +393,8 @@ OS_ResolveFullPath(String path, char out_buf[MAX_PATH_SIZE], Arena* scratch_aren
 	wpath[len-1] = 0;
 	
 	wfullpath = Arena_PushDirtyAligned(scratch_arena, MAX_PATH_SIZE * sizeof(*wfullpath), 2);
-	GetFullPathNameW(wpath, MAX_PATH_SIZE, wfullpath, NULL);
+	DWORD r = GetFullPathNameW(wpath, MAX_PATH_SIZE, wfullpath, NULL);
+	Assert(r);
 	len = WideCharToMultiByte(CP_UTF8, 0, wfullpath, -1, out_buf, MAX_PATH_SIZE, NULL, NULL);
 	
 	for (char* it = out_buf; *it; ++it)

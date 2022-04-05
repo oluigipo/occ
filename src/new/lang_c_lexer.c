@@ -525,6 +525,8 @@ C_TokenizeCharLiteral(C_Context* ctx, String str)
 }
 
 //~ NOTE(ljre): C_TokenReader
+internal const C_Token C_eof_token = { 0 };
+
 internal inline void
 C_NextToken(C_TokenReader* rd)
 {
@@ -534,22 +536,20 @@ C_NextToken(C_TokenReader* rd)
 		rd->queue = rd->queue->next;
 	}
 	else if (rd->slice_head < rd->slice_end)
-	{
 		rd->head = rd->slice_head++;
-	}
 	else
-	{
-		rd->head = NULL;
-	}
+		rd->head = &C_eof_token;
 }
 
-internal inline C_Token*
+internal inline const C_Token*
 C_PeekToken(C_TokenReader* rd)
 {
 	if (rd->queue)
 		return &rd->queue->token;
-	else
+	else if (rd->slice_head < rd->slice_end)
 		return rd->slice_head;
+	else
+		return &C_eof_token;
 }
 
 internal inline bool

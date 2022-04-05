@@ -12,7 +12,7 @@ C_IsWarningEnabled(C_Context* ctx, C_Warning warning)
 }
 
 internal void
-C_PrintFileTrace(C_Context* ctx, Arena* arena, C_SourceFileTrace* file, uint32 included_line)
+C_PrintFileTrace(C_Context* ctx, Arena* arena, const C_SourceFileTrace* file, uint32 included_line)
 {
 	if (file->included_from)
 		C_PrintFileTrace(ctx, arena, file->included_from, file->included_line);
@@ -21,7 +21,7 @@ C_PrintFileTrace(C_Context* ctx, Arena* arena, C_SourceFileTrace* file, uint32 i
 }
 
 internal void
-C_TraceErrorVarArgs(C_Context* ctx, C_SourceTrace* trace, const char* fmt, va_list args)
+C_TraceErrorVarArgs(C_Context* ctx, const C_SourceTrace* trace, const char* fmt, va_list args)
 {
 	++ctx->error_count;
 	Arena* arena = ctx->scratch_arena;
@@ -50,7 +50,7 @@ C_TraceErrorVarArgs(C_Context* ctx, C_SourceTrace* trace, const char* fmt, va_li
 }
 
 internal void
-C_TraceWarningVarArgs(C_Context* ctx, C_SourceTrace* trace, C_Warning warning, const char* fmt, va_list args)
+C_TraceWarningVarArgs(C_Context* ctx, const C_SourceTrace* trace, C_Warning warning, const char* fmt, va_list args)
 {
 	if (!C_IsWarningEnabled(ctx, warning))
 		return;
@@ -82,7 +82,7 @@ C_TraceWarningVarArgs(C_Context* ctx, C_SourceTrace* trace, C_Warning warning, c
 }
 
 internal inline void
-C_TraceError(C_Context* ctx, C_SourceTrace* trace, const char* fmt, ...)
+C_TraceError(C_Context* ctx, const C_SourceTrace* trace, const char* fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);
@@ -91,7 +91,7 @@ C_TraceError(C_Context* ctx, C_SourceTrace* trace, const char* fmt, ...)
 }
 
 internal inline void
-C_TraceWarning(C_Context* ctx, C_SourceTrace* trace, C_Warning warning, const char* fmt, ...)
+C_TraceWarning(C_Context* ctx, const C_SourceTrace* trace, C_Warning warning, const char* fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);

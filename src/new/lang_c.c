@@ -59,8 +59,8 @@
 #include "lang_c_log.c"
 #include "lang_c_lexer.c"
 #include "lang_c_preprocessor.c"
-#include "lang_c_parser.c"
 #include "lang_c_analyzer.c"
+#include "lang_c_parser.c"
 
 internal int32
 C_ParseArgsToOptions(C_Context* ctx, C_CompilerOptions* options, int32 argc, const char* const* argv, String* out_file_to_build)
@@ -188,10 +188,12 @@ C_Main(int32 argc, const char* const* argv)
 		"__builtin_offsetof(_Type, _Field) (&((_Type*)0)->_Field)",
 		"__builtin_va_list void*",
 		
-		// NOTE(ljre): MINGW macros
+		// NOTE(ljre): MSVC macros
 		"_MSC_VER 1910",
 		"_MSC_FULL_VER 191025017",
+		"_INTEGRAL_MAX_BITS 64",
 		
+		// NOTE(ljre): MINGW macros
 		//"__MINGW_ATTRIB_DEPRECATED_STR(x)",
 		//"__MINGW_ATTRIB_NONNULL(x)",
 		//"__MINGW_NOTHROW",
@@ -216,8 +218,12 @@ C_Main(int32 argc, const char* const* argv)
 	}
 	
 	C_AstDecl* ast = C_Parse(&ctx, source);
-	
 	(void)ast;
+	
+	{
+		String test_gen = C_GenTest(&ctx, ast);
+		//OS_WriteWholeFile(Str("test.s", test_gen.data, test_gen.size, ctx.scratch_arena));
+	}
 	
 	if (ctx.error_count > 0)
 		Print("%C2compilation failed%C0 with %u errors and %u warnings.\n", ctx.error_count, ctx.warning_count);

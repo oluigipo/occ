@@ -64,7 +64,7 @@ C_IsBeginningOfType(C_Context* ctx, C_Parser* parser)
 			
 			while (scope)
 			{
-				if (scope->typedefed && Map_FetchWithHash(scope->typedefed, ident, hash))
+				if (scope->typedefed && Map_FetchWithHash(scope->typedefed, ident, hash) == (void*)1)
 					return true;
 				
 				scope = scope->up;
@@ -517,7 +517,6 @@ C_ParseExprFactor(C_Context* ctx, C_Parser* parser)
 	return result;
 }
 
-// NOTE(ljre): Operator Precedence Parser (https://en.wikipedia.org/wiki/Operator-precedence_parser)
 internal C_AstExpr*
 C_ParseExpr(C_Context* ctx, C_Parser* parser, int32 level)
 {
@@ -981,6 +980,8 @@ C_ParseDeclaratorType(C_Context* ctx, C_Parser* parser, C_AstType* base_type, in
 						node->flags |= C_AstFlags_Const;
 					else if (C_TryToEatToken(&parser->rd, C_TokenKind_Restrict))
 						node->flags |= C_AstFlags_Restrict;
+					else if (C_TryToEatToken(&parser->rd, C_TokenKind_Volatile))
+						node->flags |= C_AstFlags_Volatile;
 					else
 						break;
 				}
